@@ -2,21 +2,6 @@
 
 > Consolidated AI agent terminal manager for Neovim.
 
-`neph.nvim` brings together all custom AI tooling into a single lazy-loadable
-plugin: agent registry, context capture, placeholder expansion, multiline
-input, session management, prompt history, and blink.cmp completion.
-
-## Features
-
-| Feature | Description |
-|---------|-------------|
-| **Agent registry** | goose · claude · opencode · amp · copilot · gemini · codex · pi · cursor · crush (auto-filtered by PATH) |
-| **Smart backend** | WezTerm split-panes when available; native snacks.nvim splits as fallback; SSH → always native |
-| **Context placeholders** | `+position` `+file` `+selection` `+diagnostics` `+git` `+diff` `+function` … expand inline in prompts |
-| **Multiline input** | Floating input with history navigation (`↑`/`↓`), auto-resize, and blink.cmp `+token` completion |
-| **Prompt history** | Per-agent persistence in `/tmp`, browsable via Snacks picker |
-| **File refresh** | Periodically calls `:checktime` so files edited by agents reload automatically |
-
 ## Requirements
 
 - Neovim ≥ 0.10
@@ -30,7 +15,11 @@ input, session management, prompt history, and blink.cmp completion.
 -- lazy.nvim
 {
   "roshbhatia/neph.nvim",
-  dependencies = { "folke/snacks.nvim" },
+  dependencies = {
+    "folke/snacks.nvim"
+    -- "nvim-treesitter/nvim-treesitter",
+    -- "Saghen/blink.cmp",
+  },
   opts = {},
 }
 ```
@@ -73,7 +62,7 @@ require("neph").setup({
 
 ## Context Placeholders
 
-Type `+` inside the input prompt for blink.cmp completion.
+These tokens get replaced by `neph` prior to being sent to your agent instance.
 
 | Token | Expands to |
 |-------|-----------|
