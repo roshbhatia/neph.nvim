@@ -72,10 +72,10 @@ require("neph").setup({
   
   -- Diff review sign icons (customize for ASCII-only terminals)
   review_signs = {
-    accept = "✅",      -- shown on accepted hunks
-    reject = "❌",      -- shown on rejected hunks (no comment)
-    current = "👉",     -- shown on current hunk under review
-    commented = "💬❌", -- shown on rejected hunks with comment
+    accept = "✓",     -- shown on accepted hunks
+    reject = "✗",     -- shown on rejected hunks (no comment)
+    current = "→",    -- shown on current hunk under review
+    commented = "💬", -- shown on rejected hunks with comment
   },
   -- ASCII fallback example:
   -- review_signs = { accept = "+", reject = "-", current = ">", commented = "*" },

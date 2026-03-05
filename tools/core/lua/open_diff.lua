@@ -144,21 +144,28 @@ log(string.format("total_hunks: %d", total_hunks))
 log("Setting up sign configuration")
 local config = vim.g.neph_config or {}
 local signs = vim.tbl_extend("force", {
-  accept = "✅",
-  reject = "❌",
-  current = "👉",
-  commented = "💬❌",
+  accept = "✓",     -- single checkmark instead of ✅
+  reject = "✗",     -- single X instead of ❌
+  current = "→",    -- simple arrow instead of 👉
+  commented = "💬", -- just speech bubble, no X
 }, config.review_signs or {})
 
 log(string.format("Sign icons: accept=%s, reject=%s, current=%s, commented=%s",
                   signs.accept, signs.reject, signs.current, signs.commented))
 
 log("Defining signs")
-vim.fn.sign_define("neph_current",   { text = signs.current,   texthl = "DiagnosticInfo" })
-vim.fn.sign_define("neph_accept",    { text = signs.accept,    texthl = "DiagnosticOk" })
-vim.fn.sign_define("neph_reject",    { text = signs.reject,    texthl = "DiagnosticError" })
-vim.fn.sign_define("neph_commented", { text = signs.commented, texthl = "DiagnosticWarn" })
-log("Signs defined successfully")
+local ok, err = pcall(function()
+  vim.fn.sign_define("neph_current",   { text = signs.current,   texthl = "DiagnosticInfo" })
+  vim.fn.sign_define("neph_accept",    { text = signs.accept,    texthl = "DiagnosticOk" })
+  vim.fn.sign_define("neph_reject",    { text = signs.reject,    texthl = "DiagnosticError" })
+  vim.fn.sign_define("neph_commented", { text = signs.commented, texthl = "DiagnosticWarn" })
+end)
+if not ok then
+  log(string.format("ERROR defining signs: %s", tostring(err)))
+  log("Sign text lengths may be too long - signs limited to 2 display cells")
+else
+  log("Signs defined successfully")
+end
 
 local function place_sign(sign_name, line)
   log(string.format("place_sign(%s, %d) on buf=%d", sign_name, line, left_buf))
