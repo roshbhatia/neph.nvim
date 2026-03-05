@@ -144,8 +144,7 @@ describe("shimRun", () => {
 
     expect(spawnMock).toHaveBeenCalled();
     const [cmd, args] = spawnMock.mock.calls[0];
-    expect(typeof cmd).toBe("string");
-    expect(cmd).toMatch(/shim\.py$/);
+    expect(cmd).toBe("shim");
     expect(args).toContain("set");
     cleanup();
   });

@@ -38,8 +38,7 @@ export default function (pi: ExtensionAPI) {
   // Run the shim and await exit. stdin is optional; stdout is returned.
   function shimRun(args: string[], stdin?: string): Promise<string> {
     return new Promise((res, rej) => {
-      const shimCommand = resolve(__dirname, "../core/shim.py");
-      const child = spawn(shimCommand, args, {
+      const child = spawn("shim", args, {
         stdio: ["pipe", "pipe", "pipe"],
         env: process.env,
       });
