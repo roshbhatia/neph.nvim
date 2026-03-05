@@ -200,6 +200,21 @@ local function cleanup()
 end
 
 local function finalize()
+  -- Apply all accepted hunks via diffget
+  vim.api.nvim_set_current_win(left_win)
+  vim.cmd("normal! gg")  -- Start from top
+  for _, hunk in ipairs(hunks) do
+    if hunk.decision == "accept" then
+      -- Jump to this hunk and diffget
+      vim.cmd("normal! ]c")
+      pcall(vim.cmd, "diffget")
+    else
+      -- Still jump to advance position
+      vim.cmd("normal! ]c")
+    end
+  end
+  vim.cmd("diffupdate")
+  
   -- Build final content from left buffer (contains accepted hunks)
   local lines   = vim.api.nvim_buf_get_lines(left_buf, 0, -1, false)
   local content = table.concat(lines, "\n")
@@ -291,13 +306,10 @@ local function prompt_hunk_action()
       end
       
       if choice == "Accept" then
-        vim.api.nvim_set_current_win(left_win)
         if current_hunk_line then
           unplace_sign(current_hunk_line)
           place_sign("neph_accept", current_hunk_line)
         end
-        pcall(vim.cmd, "diffget")
-        vim.cmd("diffupdate")
         table.insert(hunks, { index = hunk_idx, decision = "accept", reason = vim.NIL })
         
         local next_range = next_hunk()
@@ -335,13 +347,10 @@ local function prompt_hunk_action()
         end)
         
       elseif choice == "Accept all" then
-        vim.api.nvim_set_current_win(left_win)
         if current_hunk_line then
           unplace_sign(current_hunk_line)
           place_sign("neph_accept", current_hunk_line)
         end
-        pcall(vim.cmd, "diffget")
-        vim.cmd("diffupdate")
         table.insert(hunks, { index = hunk_idx, decision = "accept", reason = vim.NIL })
         
         while true do
@@ -349,8 +358,6 @@ local function prompt_hunk_action()
           if not next_range then break end
           current_hunk_line = next_range.start_line
           place_sign("neph_accept", current_hunk_line)
-          pcall(vim.cmd, "diffget")
-          vim.cmd("diffupdate")
           table.insert(hunks, { index = hunk_idx, decision = "accept", reason = vim.NIL })
         end
         finalize()
