@@ -303,20 +303,14 @@ show_hints(hunk_ranges[1], 1)
 
 -- ── Interactive review loop using Snacks.picker.select ──────────────────────
 
-local function get_hunk_preview(hunk_range)
-  -- Get the proposed content (right buffer) for this hunk
-  local lines = vim.api.nvim_buf_get_lines(
-    right_buf, 
-    hunk_range.start_line - 1, 
-    hunk_range.end_line, 
-    false
-  )
-  return table.concat(lines, "\n")
-end
-
 local function prompt_hunk_action()
   local current_range = hunk_ranges[hunk_idx]
-  local preview_text = get_hunk_preview(current_range)
+  local preview_lines = vim.api.nvim_buf_get_lines(
+    right_buf, 
+    current_range.start_line - 1, 
+    current_range.end_line, 
+    false
+  )
   
   Snacks.picker.select(
     { 
@@ -335,15 +329,14 @@ local function prompt_hunk_action()
           backdrop = false,
         },
         preview = {
-          enabled = true,
+          enabled = function(item)
+            -- Show preview with hunk content
+            return {
+              lines = preview_lines,
+              ft = vim.filetype.match({ buf = left_buf }) or "",
+            }
+          end,
         },
-        format = function(item, ctx)
-          -- Show hunk content in preview
-          if ctx.preview then
-            return { preview_text, "Normal" }
-          end
-          return item.text
-        end,
       },
     },
     function(choice)
