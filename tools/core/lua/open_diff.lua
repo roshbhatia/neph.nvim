@@ -26,16 +26,13 @@ end
 
 -- ── Hunk range parsing ────────────────────────────────────────────────────────
 
-local function parse_hunk_ranges_via_diff(left_lines, right_lines)
+local function parse_hunk_ranges(left_lines, right_lines)
   -- Use vim.diff() to get actual diff hunks
   local ok, diff_result = pcall(vim.diff, left_lines, right_lines, {
     result_type = "indices",
   })
   
   if not ok or not diff_result then
-    vim.api.nvim_echo({{
-      "open_diff: vim.diff() failed: " .. tostring(diff_result), "ErrorMsg"
-    }}, true, {})
     return {}
   end
   
@@ -54,58 +51,6 @@ local function parse_hunk_ranges_via_diff(left_lines, right_lines)
   end
   
   return ranges
-end
-
-local function parse_hunk_ranges(buf, win)
-  local ok, result = pcall(function()
-    local ranges = {}
-    local line_count = vim.api.nvim_buf_line_count(buf)
-    
-    -- Switch to the window to make diff_hlID() work
-    local saved_win = vim.api.nvim_get_current_win()
-    vim.api.nvim_set_current_win(win)
-    
-    local i = 1
-    local hunk_lines_found = 0
-    while i <= line_count do
-      local hl_id = vim.fn.diff_hlID(i, 1)
-      if hl_id > 0 then
-        hunk_lines_found = hunk_lines_found + 1
-        local start_line = i
-        -- Scan forward to find end of this hunk
-        while i <= line_count and vim.fn.diff_hlID(i, 1) > 0 do
-          i = i + 1
-        end
-        table.insert(ranges, { start_line = start_line, end_line = i - 1 })
-      else
-        i = i + 1
-      end
-    end
-    
-    -- Debug: log what we found
-    if hunk_lines_found == 0 then
-      vim.api.nvim_echo({{
-        string.format("open_diff: scanned %d lines, found 0 diff highlights", line_count), "WarningMsg"
-      }}, true, {})
-    end
-    
-    -- Restore window
-    vim.api.nvim_set_current_win(saved_win)
-    
-    return ranges
-  end)
-  
-  if not ok then
-    vim.api.nvim_echo({{
-      "open_diff: failed to parse hunk ranges, visual feedback disabled", "WarningMsg"
-    }}, true, {})
-    vim.api.nvim_echo({{
-      "Error: " .. tostring(result), "ErrorMsg"
-    }}, true, {})
-    return {}
-  end
-  
-  return result
 end
 
 local ft = vim.filetype.match({ filename = orig_path }) or ""
@@ -149,56 +94,14 @@ vim.cmd("diffthis")
 vim.cmd("wincmd =")
 vim.cmd("wincmd h") -- focus left (current) window
 
--- Force diff computation now that both windows have diffthis set
-vim.cmd("diffupdate")
-vim.cmd("redraw")  -- Ensure display is updated
-
 -- ── Parse hunk ranges after diff is set up ───────────────────────────────────
 
--- Force diff computation and verify diff mode is active
-vim.cmd("diffupdate")
-
--- Debug: check if diff mode is actually active
-local left_diff = vim.wo[left_win].diff
-local right_diff = vim.wo[right_win].diff
-if not left_diff or not right_diff then
-  vim.api.nvim_echo({{
-    string.format("open_diff: diff mode not active! left=%s right=%s", 
-                  tostring(left_diff), tostring(right_diff)), "ErrorMsg"
-  }}, true, {})
-end
-
--- Debug: show buffer contents to verify they're different
+-- Get buffer contents for hunk parsing
 local left_lines = vim.api.nvim_buf_get_lines(left_buf, 0, -1, false)
 local right_lines = vim.api.nvim_buf_get_lines(right_buf, 0, -1, false)
-vim.api.nvim_echo({{
-  string.format("open_diff: left_buf has %d lines, right_buf has %d lines", 
-                #left_lines, #right_lines), "DiagnosticInfo"
-}}, true, {})
 
--- Try using vim.diff() first (more reliable than diff_hlID)
-local hunk_ranges = parse_hunk_ranges_via_diff(left_lines, right_lines)
+local hunk_ranges = parse_hunk_ranges(left_lines, right_lines)
 local total_hunks = #hunk_ranges
-
--- If vim.diff() didn't work, fall back to diff_hlID() method
-if total_hunks == 0 then
-  vim.api.nvim_echo({{
-    "open_diff: vim.diff() found 0 hunks, trying diff_hlID() fallback", "WarningMsg"
-  }}, true, {})
-  hunk_ranges = parse_hunk_ranges(left_buf, left_win)
-  total_hunks = #hunk_ranges
-end
-
--- Debug: print hunk info
-if total_hunks == 0 then
-  vim.api.nvim_echo({{
-    "open_diff: no hunks detected (files may be identical or diff not computed)", "WarningMsg"
-  }}, true, {})
-else
-  vim.api.nvim_echo({{
-    string.format("open_diff: detected %d hunks", total_hunks), "DiagnosticInfo"
-  }}, true, {})
-end
 
 -- ── Sign configuration and setup ──────────────────────────────────────────────
 
