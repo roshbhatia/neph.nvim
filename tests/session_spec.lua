@@ -7,15 +7,23 @@ local session
 
 local function make_stub_backend(visible)
   return {
-    setup        = function() end,
-    open         = function(_, agent_cfg, _)
+    setup = function() end,
+    open = function(_, agent_cfg, _)
       return { pane_id = 999, cmd = agent_cfg.cmd, cwd = "/tmp", name = "stub" }
     end,
-    focus        = function() return true end,
-    hide         = function(td) td.pane_id = nil end,
-    is_visible   = function(td) return visible and td ~= nil and td.pane_id ~= nil end,
-    kill         = function(td) td.pane_id = nil end,
-    cleanup_all  = function() end,
+    focus = function()
+      return true
+    end,
+    hide = function(td)
+      td.pane_id = nil
+    end,
+    is_visible = function(td)
+      return visible and td ~= nil and td.pane_id ~= nil
+    end,
+    kill = function(td)
+      td.pane_id = nil
+    end,
+    cleanup_all = function() end,
   }
 end
 

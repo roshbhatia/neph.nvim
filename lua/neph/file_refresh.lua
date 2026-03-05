@@ -12,13 +12,19 @@ local timer = nil
 ---@param config neph.Config
 function M.setup(config)
   local cfg = (config or {}).file_refresh or {}
-  if not cfg.enable then return end
+  if not cfg.enable then
+    return
+  end
 
   local augroup = vim.api.nvim_create_augroup("NephFileRefresh", { clear = true })
 
   vim.api.nvim_create_autocmd({
-    "CursorHold", "CursorHoldI", "FocusGained",
-    "BufEnter", "InsertLeave", "TextChanged",
+    "CursorHold",
+    "CursorHoldI",
+    "FocusGained",
+    "BufEnter",
+    "InsertLeave",
+    "TextChanged",
   }, {
     group = augroup,
     pattern = "*",
@@ -31,12 +37,20 @@ function M.setup(config)
   })
 
   -- Also check on a timer
-  if timer then timer:stop(); timer:close(); timer = nil end
+  if timer then
+    timer:stop()
+    timer:close()
+    timer = nil
+  end
   timer = vim.loop.new_timer()
   if timer then
-    timer:start(0, cfg.timer_interval or 1000, vim.schedule_wrap(function()
-      vim.cmd("silent! checktime")
-    end))
+    timer:start(
+      0,
+      cfg.timer_interval or 1000,
+      vim.schedule_wrap(function()
+        vim.cmd("silent! checktime")
+      end)
+    )
   end
 
   if cfg.updatetime then

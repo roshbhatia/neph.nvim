@@ -8,14 +8,18 @@ local M = {}
 local done = false
 
 function M.setup()
-  if done then return end
+  if done then
+    return
+  end
 
   local ok, blink = pcall(require, "blink.cmp")
-  if not ok then return end
+  if not ok then
+    return
+  end
 
   blink.add_source_provider("neph_context", {
     module = "neph.completion",
-    name   = "neph_context",
+    name = "neph_context",
   })
   blink.add_filetype_source("ai_terminals_input", "neph_context")
   blink.add_filetype_source("ai_terminals_input", "path")
@@ -56,14 +60,14 @@ function source:get_completions(_, callback)
 
   for _, p in ipairs(require("neph.placeholders").descriptions) do
     table.insert(items, {
-      label           = p.token,
-      kind            = types.CompletionItemKind.Variable,
-      filterText      = p.token:sub(2),
-      insertText      = p.token,
+      label = p.token,
+      kind = types.CompletionItemKind.Variable,
+      filterText = p.token:sub(2),
+      insertText = p.token,
       insertTextFormat = vim.lsp.protocol.InsertTextFormat.PlainText,
-      sortText        = "0" .. p.token,
-      documentation   = { kind = "markdown", value = string.format("**%s**\n\n%s", p.token, p.description) },
-      data            = { source = "neph_context", type = "placeholder" },
+      sortText = "0" .. p.token,
+      documentation = { kind = "markdown", value = string.format("**%s**\n\n%s", p.token, p.description) },
+      data = { source = "neph_context", type = "placeholder" },
     })
   end
 

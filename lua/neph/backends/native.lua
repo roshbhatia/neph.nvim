@@ -27,17 +27,19 @@ function M.open(termname, agent_config, cwd)
   })
 
   return {
-    buf  = term.buf,
-    win  = term.win,
+    buf = term.buf,
+    win = term.win,
     term = term,
-    cmd  = agent_config.cmd,
-    cwd  = cwd,
+    cmd = agent_config.cmd,
+    cwd = cwd,
     name = termname,
   }
 end
 
 function M.focus(term_data)
-  if not M.is_visible(term_data) then return false end
+  if not M.is_visible(term_data) then
+    return false
+  end
   vim.api.nvim_set_current_win(term_data.win)
   return true
 end
@@ -46,8 +48,8 @@ function M.hide(term_data)
   if term_data.win and vim.api.nvim_win_is_valid(term_data.win) then
     vim.api.nvim_win_close(term_data.win, true)
   end
-  term_data.win  = nil
-  term_data.buf  = nil
+  term_data.win = nil
+  term_data.buf = nil
   term_data.term = nil
 end
 
@@ -56,9 +58,7 @@ function M.show(_term_data)
 end
 
 function M.is_visible(term_data)
-  return term_data ~= nil
-    and term_data.win ~= nil
-    and vim.api.nvim_win_is_valid(term_data.win)
+  return term_data ~= nil and term_data.win ~= nil and vim.api.nvim_win_is_valid(term_data.win)
 end
 
 function M.kill(term_data)

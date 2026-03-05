@@ -11,9 +11,10 @@ describe("neph.context", function()
 
     it("returns false for terminal buffers", function()
       local buf = vim.api.nvim_create_buf(false, true)
-      vim.api.nvim_set_option_value("buftype", "terminal", { buf = buf })
+      local win = vim.api.nvim_open_win(buf, true, { relative = "editor", width = 10, height = 2, row = 1, col = 1 })
+      vim.api.nvim_set_option_value("buftype", "nofile", { buf = buf })
       assert.is_false(context.is_file(buf))
-      vim.api.nvim_buf_delete(buf, { force = true })
+      vim.api.nvim_win_close(win, true)
     end)
   end)
 

@@ -25,10 +25,14 @@ local augroup = nil
 
 ---@return "wezterm"|"native"
 local function detect_backend()
-  if vim.env.SSH_CONNECTION then return "native" end
+  if vim.env.SSH_CONNECTION then
+    return "native"
+  end
   if vim.env.WEZTERM_PANE and tonumber(vim.env.WEZTERM_PANE) then
     vim.fn.system("wezterm cli list 2>/dev/null")
-    if vim.v.shell_error == 0 then return "wezterm" end
+    if vim.v.shell_error == 0 then
+      return "wezterm"
+    end
   end
   return "native"
 end
@@ -60,9 +64,11 @@ function M.setup(opts)
         for name, td in pairs(terminals) do
           if not backend.is_visible(td) then
             td.pane_id = nil
-            td.win     = nil
+            td.win = nil
             td.stale_since = os.time()
-            if active_terminal == name then active_terminal = nil end
+            if active_terminal == name then
+              active_terminal = nil
+            end
           elseif td.stale_since then
             td.stale_since = nil
           end
@@ -72,7 +78,9 @@ function M.setup(opts)
 
     vim.api.nvim_create_autocmd("VimLeavePre", {
       group = augroup,
-      callback = function() backend.cleanup_all(terminals) end,
+      callback = function()
+        backend.cleanup_all(terminals)
+      end,
     })
   end
 end
@@ -97,8 +105,8 @@ function M.open(termname)
 
   -- Build agent_config expected by backends: { cmd, args, full_cmd }
   local agent_config = {
-    cmd      = agent.full_cmd or agent.cmd,
-    args     = agent.args or {},
+    cmd = agent.full_cmd or agent.cmd,
+    args = agent.args or {},
     full_cmd = agent.full_cmd or agent.cmd,
   }
 
@@ -120,14 +128,18 @@ end
 
 function M.focus(termname)
   local td = terminals[termname]
-  if not td or not backend then return end
+  if not td or not backend then
+    return
+  end
   if not backend.is_visible(td) then
-    td.pane_id = nil; td.win = nil
+    td.pane_id = nil
+    td.win = nil
     M.open(termname)
     return
   end
   if not backend.focus(td) then
-    td.pane_id = nil; td.win = nil
+    td.pane_id = nil
+    td.win = nil
     M.open(termname)
     return
   end
@@ -136,10 +148,14 @@ end
 
 function M.hide(termname)
   local td = terminals[termname]
-  if not td or not backend then return end
+  if not td or not backend then
+    return
+  end
   backend.hide(td)
   terminals[termname] = nil
-  if active_terminal == termname then active_terminal = nil end
+  if active_terminal == termname then
+    active_terminal = nil
+  end
 end
 
 function M.activate(termname)
@@ -154,27 +170,34 @@ end
 
 function M.kill_session(termname)
   local td = terminals[termname]
-  if td and backend then backend.kill(td) end
+  if td and backend then
+    backend.kill(td)
+  end
   terminals[termname] = nil
-  if active_terminal == termname then active_terminal = nil end
+  if active_terminal == termname then
+    active_terminal = nil
+  end
 end
 
 function M.send(termname, text, opts)
   opts = opts or {}
   local td = terminals[termname]
-  if not td then return end
+  if not td then
+    return
+  end
 
   if td.pane_id then
-    vim.fn.system(string.format(
-      "wezterm cli send-text --pane-id %d --no-paste %s",
-      td.pane_id, vim.fn.shellescape(text)
-    ))
+    vim.fn.system(
+      string.format("wezterm cli send-text --pane-id %d --no-paste %s", td.pane_id, vim.fn.shellescape(text))
+    )
     if opts.submit then
       vim.fn.system(string.format("wezterm cli send-text --pane-id %d --no-paste '\n'", td.pane_id))
     end
   elseif td.term then
     td.term:send(text)
-    if opts.submit then td.term:send("\n") end
+    if opts.submit then
+      td.term:send("\n")
+    end
   end
 end
 
@@ -205,8 +228,14 @@ end
 -- Query helpers
 -- ---------------------------------------------------------------------------
 
-function M.get_active()   return active_terminal end
-function M.set_active(n)  if terminals[n] then active_terminal = n end end
+function M.get_active()
+  return active_terminal
+end
+function M.set_active(n)
+  if terminals[n] then
+    active_terminal = n
+  end
+end
 
 function M.is_visible(termname)
   local td = terminals[termname]
@@ -215,7 +244,9 @@ end
 
 function M.is_tracked(termname)
   local td = terminals[termname]
-  if not td then return false end
+  if not td then
+    return false
+  end
   return backend and backend.is_visible(td) or false
 end
 
@@ -225,15 +256,17 @@ end
 
 function M.get_info(termname)
   local td = terminals[termname]
-  if not td or not backend then return nil end
+  if not td or not backend then
+    return nil
+  end
   return {
-    name    = termname,
+    name = termname,
     visible = backend.is_visible(td),
     pane_id = td.pane_id,
-    cmd     = td.cmd,
-    cwd     = td.cwd,
-    win     = td.win,
-    buf     = td.buf,
+    cmd = td.cmd,
+    cwd = td.cwd,
+    win = td.win,
+    buf = td.buf,
   }
 end
 

@@ -7,9 +7,9 @@ local M = {}
 
 --- Toggle the active session, or open a Snacks picker to choose an agent.
 function M.pick_agent()
-  local agents  = require("neph.agents")
+  local agents = require("neph.agents")
   local session = require("neph.session")
-  local active  = session.get_active()
+  local active = session.get_active()
 
   -- Toggle existing visible session
   if active and session.is_tracked(active) then
@@ -25,10 +25,10 @@ function M.pick_agent()
   for _, agent in ipairs(agents.get_all()) do
     local is_active = agent.name == active
     table.insert(items, {
-      text  = string.format("%s %s%s", agent.icon, agent.label, is_active and " (active)" or ""),
-      icon  = agent.icon,
+      text = string.format("%s %s%s", agent.icon, agent.label, is_active and " (active)" or ""),
+      icon = agent.icon,
       label = agent.label,
-      name  = agent.name,
+      name = agent.name,
       agent = agent,
     })
   end
@@ -45,7 +45,9 @@ function M.pick_agent()
     end,
     confirm = function(picker, item)
       picker:close()
-      if item then session.activate(item.name) end
+      if item then
+        session.activate(item.name)
+      end
     end,
   })
 end
@@ -54,7 +56,9 @@ end
 function M.kill_and_pick()
   local session = require("neph.session")
   local active = session.get_active()
-  if active then session.kill_session(active) end
+  if active then
+    session.kill_session(active)
+  end
   M.pick_agent()
 end
 
@@ -62,7 +66,9 @@ end
 function M.kill_active()
   local session = require("neph.session")
   local active = session.get_active()
-  if active then session.kill_session(active) end
+  if active then
+    session.kill_session(active)
+  end
 end
 
 return M

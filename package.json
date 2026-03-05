@@ -10,7 +10,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@mariozechner/pi-coding-agent": "^0.1.2"
+    "@mariozechner/pi-coding-agent": "^0.56.0"
   },
   "devDependencies": {
     "@types/node": "^20.11.25",

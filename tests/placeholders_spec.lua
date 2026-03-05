@@ -19,10 +19,12 @@ describe("neph.placeholders", function()
     it("expands a known token when provider returns a value", function()
       -- Inject a fake context object
       local fake_ctx = {
-        ctx   = { buf = 0, win = 0, row = 1, col = 1, cwd = "/", range = nil },
+        ctx = { buf = 0, win = 0, row = 1, col = 1, cwd = "/", range = nil },
         cache = {},
-        get   = function(self, name)
-          if name == "word" then return "myword" end
+        get = function(self, name)
+          if name == "word" then
+            return "myword"
+          end
           return nil
         end,
       }
@@ -32,9 +34,11 @@ describe("neph.placeholders", function()
 
     it("leaves unknown tokens unexpanded", function()
       local fake_ctx = {
-        ctx   = {},
+        ctx = {},
         cache = {},
-        get   = function() return nil end,
+        get = function()
+          return nil
+        end,
       }
       local out = placeholders.apply("do +unknown thing", fake_ctx)
       assert.equals("do +unknown thing", out)
@@ -60,10 +64,7 @@ describe("neph.placeholders", function()
     it("has a provider for every description token", function()
       for _, d in ipairs(placeholders.descriptions) do
         local key = d.token:sub(2) -- strip leading +
-        assert.is_not_nil(
-          placeholders.providers[key],
-          "missing provider for token: " .. d.token
-        )
+        assert.is_not_nil(placeholders.providers[key], "missing provider for token: " .. d.token)
       end
     end)
   end)

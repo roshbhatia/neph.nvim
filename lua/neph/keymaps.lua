@@ -8,7 +8,7 @@ local M = {}
 
 local function get_active_agent()
   local session = require("neph.session")
-  local active  = session.get_active()
+  local active = session.get_active()
   if not active then
     vim.notify("No active AI terminal – pick one with <leader>jj", vim.log.levels.WARN)
     return nil
@@ -18,10 +18,14 @@ end
 
 local function input_for_active(action, default_text)
   local active = get_active_agent()
-  if not active then return end
+  if not active then
+    return
+  end
   local agents = require("neph.agents")
-  local agent  = agents.get_by_name(active)
-  if not agent then return end
+  local agent = agents.get_by_name(active)
+  if not agent then
+    return
+  end
   require("neph.input").create_input(active, agent.icon, {
     action = action,
     default = default_text,
@@ -68,7 +72,9 @@ function M.generate_all_keymaps()
     },
     {
       "<leader>jf",
-      function() input_for_active("Fix diagnostics", " Fix +diagnostics: ") end,
+      function()
+        input_for_active("Fix diagnostics", " Fix +diagnostics: ")
+      end,
       desc = "Neph: fix diagnostics",
     },
     {
@@ -81,7 +87,9 @@ function M.generate_all_keymaps()
       "<leader>jv",
       function()
         local active = get_active_agent()
-        if not active then return end
+        if not active then
+          return
+        end
         local last = require("neph.terminal").get_last_prompt(active)
         if last and last ~= "" then
           require("neph.session").ensure_active_and_send(last)
@@ -93,7 +101,9 @@ function M.generate_all_keymaps()
     },
     {
       "<leader>jh",
-      function() history.pick(nil) end,
+      function()
+        history.pick(nil)
+      end,
       desc = "Neph: browse history",
     },
   }

@@ -22,7 +22,7 @@ function M.ensure_and_send(termname, text)
     session.open(termname)
     session.focus(termname)
 
-    local retries  = 15
+    local retries = 15
     local delay_ms = 25
 
     for _ = 1, retries do

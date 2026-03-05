@@ -33,7 +33,9 @@ function utils.clamp(value, min, max)
 end
 
 function utils.split_wrapped_lines(text, width)
-  if text == "" then return {} end
+  if text == "" then
+    return {}
+  end
   local lines = {}
   local len = vim.fn.strchars(text, true)
   local i = 0
@@ -75,8 +77,8 @@ function MultilineInput:open(default)
 
   self.bufnr = vim.api.nvim_create_buf(false, true)
   utils.set_options({
-    filetype  = "ai_terminals_input",
-    buftype   = "prompt",
+    filetype = "ai_terminals_input",
+    buftype = "prompt",
     bufhidden = "wipe",
     modifiable = true,
   }, { buf = self.bufnr })
@@ -101,7 +103,9 @@ function MultilineInput:open(default)
     end
   end)
 
-  vim.api.nvim_win_call(self.winnr, function() vim.cmd("startinsert!") end)
+  vim.api.nvim_win_call(self.winnr, function()
+    vim.cmd("startinsert!")
+  end)
 end
 
 function MultilineInput:close(result)
@@ -111,7 +115,9 @@ function MultilineInput:close(result)
   end
   if vim.api.nvim_win_is_valid(self.parent_win) then
     vim.api.nvim_set_current_win(self.parent_win)
-    if self.mode == "i" then vim.cmd("startinsert") end
+    if self.mode == "i" then
+      vim.cmd("startinsert")
+    end
   end
   self.on_confirm(result)
 end
@@ -132,7 +138,9 @@ function MultilineInput:resize()
     return
   end
   local lines = utils.split_wrapped_lines(text, self.config.width.max)
-  local lens = vim.tbl_map(function(l) return vim.fn.strdisplaywidth(l) end, lines)
+  local lens = vim.tbl_map(function(l)
+    return vim.fn.strdisplaywidth(l)
+  end, lines)
   self:_set_size(math.max(unpack(lens)), #lines)
 end
 
@@ -150,7 +158,9 @@ function MultilineInput:_autocmds()
   vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
     group = augroup,
     buffer = self.bufnr,
-    callback = function() self:resize() end,
+    callback = function()
+      self:resize()
+    end,
   })
 end
 
@@ -168,8 +178,12 @@ function MultilineInput:_mappings()
   map("i", "<s-cr>", function()
     vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<cr>", true, false, true), "n", false)
   end)
-  map("n", "<esc>", function() self:close() end)
-  map("n", "q",     function() self:close() end)
+  map("n", "<esc>", function()
+    self:close()
+  end)
+  map("n", "q", function()
+    self:close()
+  end)
 end
 
 -- ---------------------------------------------------------------------------
@@ -192,8 +206,8 @@ function M.create_input(termname, agent_icon, opts)
   local cfg = {
     numbers = "never",
     padding = 5,
-    width  = { min = 20, max = 80 },
-    height = { min = 1,  max = 10 },
+    width = { min = 20, max = 80 },
+    height = { min = 1, max = 10 },
     win = {
       title = title,
       style = "minimal",
@@ -214,7 +228,9 @@ function M.create_input(termname, agent_icon, opts)
   end)
 
   vim.schedule(function()
-    if not vim.api.nvim_buf_is_valid(input.bufnr) then return end
+    if not vim.api.nvim_buf_is_valid(input.bufnr) then
+      return
+    end
 
     local function fwd()
       if cur_idx[termname] < #hist then
@@ -242,10 +258,10 @@ function M.create_input(termname, agent_icon, opts)
       end
     end
 
-    vim.keymap.set("i", "<Up>",  bwd, { buffer = input.bufnr, desc = "History backward" })
-    vim.keymap.set("i", "<Down>", fwd, { buffer = input.bufnr, desc = "History forward"  })
+    vim.keymap.set("i", "<Up>", bwd, { buffer = input.bufnr, desc = "History backward" })
+    vim.keymap.set("i", "<Down>", fwd, { buffer = input.bufnr, desc = "History forward" })
     vim.keymap.set("i", "<C-k>", bwd, { buffer = input.bufnr, desc = "History backward" })
-    vim.keymap.set("i", "<C-j>", fwd, { buffer = input.bufnr, desc = "History forward"  })
+    vim.keymap.set("i", "<C-j>", fwd, { buffer = input.bufnr, desc = "History forward" })
   end)
 
   input:open(opts.default or "")

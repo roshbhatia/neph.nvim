@@ -27,7 +27,9 @@ end
 ---@param termname string
 ---@param prompt   string
 function M.save(termname, prompt)
-  if not prompt or prompt == "" then return end
+  if not prompt or prompt == "" then
+    return
+  end
   local f = io.open(M.get_history_file(termname), "a")
   if f then
     f:write(string.format("%s|%s\n", os.date("%Y-%m-%d %H:%M:%S"), prompt))
@@ -80,7 +82,9 @@ function M.pick(termname)
     for _, agent in ipairs(require("neph.agents").get_all()) do
       load_for(agent.name)
     end
-    table.sort(data, function(a, b) return a.timestamp > b.timestamp end)
+    table.sort(data, function(a, b)
+      return a.timestamp > b.timestamp
+    end)
   end
 
   Snacks.picker.pick({
@@ -100,7 +104,11 @@ end
 
 M.create_history_picker = M.pick
 
-function M.get_current_history_index() return current_index end
-function M.set_current_history_index(termname, idx) current_index[termname] = idx end
+function M.get_current_history_index()
+  return current_index
+end
+function M.set_current_history_index(termname, idx)
+  current_index[termname] = idx
+end
 
 return M
