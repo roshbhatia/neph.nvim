@@ -253,6 +253,22 @@ end
 
 -- ── Jump to first hunk ────────────────────────────────────────────────────────
 
+-- Handle manual tab close (user closes diff before finishing review)
+vim.api.nvim_create_autocmd("TabClosed", {
+  pattern = tostring(vim.api.nvim_tabpage_get_number(diff_tab)),
+  once = true,
+  callback = function()
+    -- Collect any decisions made so far
+    local partial_content = vim.api.nvim_buf_get_lines(left_buf, 0, -1, false)
+    write_result({
+      schema   = "review/v1",
+      decision = "reject",
+      content  = "",
+      hunks    = hunks,
+      reason   = "User manually closed diff - review incomplete. Please provide more context or clarify requirements.",
+    })
+  end,
+})
 
 -- Check if there are any hunks to review
 if total_hunks == 0 then
@@ -284,17 +300,47 @@ show_hints(hunk_ranges[1], 1)
 
 -- ── Interactive review loop using Snacks.picker.select ──────────────────────
 
+local function get_hunk_preview(hunk_range)
+  -- Get the proposed content (right buffer) for this hunk
+  local lines = vim.api.nvim_buf_get_lines(
+    right_buf, 
+    hunk_range.start_line - 1, 
+    hunk_range.end_line, 
+    false
+  )
+  return table.concat(lines, "\n")
+end
+
 local function prompt_hunk_action()
+  local current_range = hunk_ranges[hunk_idx]
+  local preview_text = get_hunk_preview(current_range)
+  
   Snacks.picker.select(
-    { "Accept", "Reject", "Accept all", "Reject all", "Manual edit" },
+    { 
+      { text = "Accept", action = "accept" },
+      { text = "Reject", action = "reject" },
+      { text = "Accept all", action = "accept_all" },
+      { text = "Reject all", action = "reject_all" },
+      { text = "Manual edit", action = "manual" },
+    },
     {
       prompt = string.format("Hunk %d/%d", hunk_idx, total_hunks),
-      format_item = function(item) return item end,
+      format_item = function(item) return item.text end,
       snacks = {
         layout = {
           preset = "ivy",
           backdrop = false,
         },
+        preview = {
+          enabled = true,
+        },
+        format = function(item, ctx)
+          -- Show hunk content in preview
+          if ctx.preview then
+            return { preview_text, "Normal" }
+          end
+          return item.text
+        end,
       },
     },
     function(choice)
@@ -311,7 +357,9 @@ local function prompt_hunk_action()
         return
       end
       
-      if choice == "Accept" then
+      local action = choice.action
+      
+      if action == "accept" then
         if current_hunk_line then
           unplace_sign(current_hunk_line)
           place_sign("neph_accept", current_hunk_line)
@@ -328,7 +376,7 @@ local function prompt_hunk_action()
           finalize()
         end
         
-      elseif choice == "Reject" then
+      elseif action == "reject" then
         vim.ui.input({ prompt = "Reject reason (optional): " }, function(reason)
           if current_hunk_line then
             unplace_sign(current_hunk_line)
@@ -352,7 +400,7 @@ local function prompt_hunk_action()
           end
         end)
         
-      elseif choice == "Accept all" then
+      elseif action == "accept_all" then
         if current_hunk_line then
           unplace_sign(current_hunk_line)
           place_sign("neph_accept", current_hunk_line)
@@ -368,7 +416,7 @@ local function prompt_hunk_action()
         end
         finalize()
         
-      elseif choice == "Reject all" then
+      elseif action == "reject_all" then
         vim.ui.input({ prompt = "Reject reason: " }, function(reason)
           if current_hunk_line then
             unplace_sign(current_hunk_line)
@@ -386,7 +434,7 @@ local function prompt_hunk_action()
           finalize()
         end)
         
-      elseif choice == "Manual edit" then
+      elseif action == "manual" then
         table.insert(hunks, { index = hunk_idx, decision = "reject", reason = "Manual resolution" })
         cleanup()
         write_result({
