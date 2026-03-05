@@ -239,11 +239,20 @@ end
 
 local ESC = vim.api.nvim_replace_termcodes('<Esc>', true, false, true)
 
--- Jump to first hunk from top of file
+-- Jump to first hunk reliably.
+-- `]c` from inside a hunk skips to the NEXT one, so starting from `gg`
+-- breaks when diffs begin at line 1. Instead: go to end of file, enable
+-- wrapscan, then `]c` wraps around to the very first diff.
 vim.api.nvim_set_current_win(left_win)
-vim.cmd('normal! gg')
+vim.cmd('normal! G')
+local _before = vim.api.nvim_win_get_cursor(0)
+vim.o.wrapscan = true
+pcall(vim.cmd, 'normal! ]c')
+vim.o.wrapscan = false
+local _after = vim.api.nvim_win_get_cursor(0)
 
-if not next_hunk() then
+if _before[1] == _after[1] and _before[2] == _after[2] then
+  -- cursor didn't move = no diffs exist (files identical)
   cleanup()
   local lines = vim.api.nvim_buf_get_lines(left_buf, 0, -1, false)
   return { decision = 'accept', content = table.concat(lines, '\n') }
