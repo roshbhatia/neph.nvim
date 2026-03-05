@@ -1,55 +1,55 @@
 ## Why
 
-Current architecture uses a Python subprocess shim with blocking shell commands and msgpack serialization, limiting testability, extensibility, and integration patterns. Research into amp.nvim (pure Lua WebSocket), claudecode.nvim (MCP protocol), claude-code.nvim (terminal wrapper), Amp toolboxes (stdin/stdout executables), and Claude Code hooks (shell scripts at lifecycle events) reveals multiple viable patterns for agent-editor integration. We need an architecture that supports multiple protocols (WebSocket for streaming, scripts for shell agents, direct RPC for native clients) while maximizing testability through pure Lua APIs and thin language clients.
+Current architecture uses a Python subprocess shim with blocking shell commands and msgpack serialization, limiting testability, extensibility, and integration patterns. Research into amp.nvim (pure Lua WebSocket), claudecode.nvim (MCP protocol), claude-code.nvim (terminal wrapper), Amp toolboxes (stdin/stdout executables), and Claude Code hooks (shell scripts at lifecycle events) reveals multiple viable patterns for agent-editor integration. We need a clean-slate architecture that supports multiple protocols while maximizing testability, composability, and graceful degradation.
 
 ## What Changes
 
-- **New**: Pure Lua API layer (`lua/neph/api/`) exposing write, edit, delete, read operations independent of protocol
-- **New**: WebSocket server option in Lua using `vim.loop` for event-driven streaming (file changes, diagnostics, selections)
-- **New**: Script-based tool protocol (Amp toolbox-style) with stdin/stdout communication and lifecycle hooks
-- **New**: Node client library (`@neph/client`) using `@neovim/node-client` for direct RPC communication
-- **New**: Comprehensive testing pyramid: 70% unit tests (plenary.nvim), 25% integration tests (vitest + headless nvim), 5% e2e tests (real agents)
-- **Modified**: Existing Python shim becomes one of multiple language client options, not the sole integration point
-- **Modified**: Tool registration moves from pi.ts extension overrides to protocol-agnostic registration in Lua
-- **Breaking**: Public API signatures remain compatible but internal tool protocol changes require agent-specific adapters
+- **BREAKING**: Complete architectural redesign - no backward compatibility with existing plugin (pre-1.0, no users)
+- **New**: Pure Lua API layer (`lua/neph/api/`) as the single source of truth for all file operations
+- **New**: Protocol adapters as thin translation layers (WebSocket, RPC, Script) with graceful fallback
+- **New**: Node client library (`@neph/client`) using `@neovim/node-client` for direct RPC
+- **New**: Quality-focused testing: unit (pure Lua, fast), integration (real protocols), e2e (real agents, minimal)
+- **New**: Lifecycle hooks system for extensibility at agent boundaries
+- **Removed**: Python shim subprocess model - replaced by direct RPC or optional script protocol
+- **Removed**: pi.ts extension override pattern - replaced by Lua registry with protocol adapters
+- **Removed**: All migration complexity - clean break enables clean design
 
 ## Capabilities
 
 ### New Capabilities
 
-- `lua-api-layer`: Pure Lua API for all file operations (write, edit, delete, read) with protocol-agnostic interface
-- `websocket-protocol`: WebSocket server implementation using vim.loop with lockfile discovery and event streaming
-- `script-tool-protocol`: Executable-based tool system with stdin/stdout communication (describe/execute actions)
-- `lifecycle-hooks`: Event-driven hooks at agent lifecycle points (session_start, pre_tool, post_tool, session_end)
-- `node-client`: TypeScript client library for direct RPC communication with Neovim
-- `protocol-negotiation`: Auto-detection and registration of available protocols per agent
-- `testing-infrastructure`: Comprehensive test suite with mocked Neovim instances and protocol adapters
+- `lua-api-layer`: Pure Lua API for all file operations - single source of truth, fully testable
+- `node-client`: TypeScript client library for direct RPC (primary integration pattern)
+- `protocol-registry`: Clean protocol adapter interface with graceful degradation
+- `lifecycle-hooks`: Extensibility at session and tool boundaries
+- `testing-strategy`: Quality-focused tests (unit: fast feedback, integration: real behavior, e2e: user flows)
 
 ### Modified Capabilities
 
-- `tool-registration`: Tool definitions move from pi.ts extension to protocol-agnostic Lua registry with adapter pattern
-- `shim-protocol`: Python shim becomes optional protocol adapter, not mandatory subprocess dependency
+None - this is a clean-slate redesign with no backward compatibility constraints.
 
 ## Impact
 
 **Code Changes:**
 - New directory structure: `lua/neph/api/`, `lua/neph/protocols/`, `lua/neph/hooks/`
-- Refactor `tools/pi/pi.ts` to use `@neph/client` instead of shim.py subprocess
+- Replace `tools/core/shim.py` subprocess model with direct RPC
+- Refactor `tools/pi/pi.ts` to use `@neph/client` for RPC communication
 - Add `tools/client/` for Node client library package
-- Create `lua/neph/protocols/{websocket,script,rpc}.lua` protocol adapters
-- Add `tests/unit/`, `tests/integration/`, `tests/e2e/` test organization
+- Simplify to 2 core protocols: RPC (primary), Script (optional for shell-based agents)
+- Clean test organization: `tests/unit/`, `tests/integration/`, `tests/e2e/`
 
 **APIs:**
-- Public API (`lua/neph/api.lua`) remains backward compatible
-- Internal tool protocol changes require migration guide for custom agents
-- New protocol registration API for agent definitions
+- **BREAKING**: Public API (`lua/neph/api.lua`) completely redesigned - focus on simplicity
+- **BREAKING**: Agent configuration schema changes - `protocol` field replaces implicit subprocess
+- **BREAKING**: No tool override pattern - tools are Lua functions with protocol adapters
 
 **Dependencies:**
-- Add `@neovim/node-client` to Node dependencies
-- Add `vitest` for integration testing
-- Python shim dependencies become optional if not using Python protocol
+- Add `@neovim/node-client` to Node dependencies (primary protocol)
+- Remove Python shim dependencies (uv, msgpack-rpc) - Python optional for script protocol only
+- Add `vitest` for integration testing with headless Neovim
 
 **Systems:**
-- Agents can choose protocol: WebSocket (streaming), Script (shell), RPC (native), or Shim (legacy)
-- Existing pi agent continues working but can migrate to direct RPC
-- Opens path for amp, claude-code, goose integration patterns
+- Default protocol is RPC (direct Neovim connection)
+- Script protocol optional for shell-based agents (Amp toolbox style)
+- WebSocket protocol deferred to future if streaming events are needed
+- Clean failure modes: protocol unavailable → clear error, suggest alternatives

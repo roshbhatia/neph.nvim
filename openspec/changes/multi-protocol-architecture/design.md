@@ -8,346 +8,351 @@
 - No event streaming capability (file changes, diagnostics must be polled)
 
 **Research Findings:**
-1. **amp.nvim** (Sourcegraph): Pure Lua WebSocket server using `vim.loop`, lockfile discovery at `~/.claude/ide/[port].lock`, event-driven architecture (file_changed, diagnostics_updated, selection_changed)
-2. **claudecode.nvim** (Coder): WebSocket + MCP protocol (JSON-RPC 2.0), reverse-engineered VS Code extension, 12 MCP tools (openFile, openDiff, etc.)
-3. **claude-code.nvim** (greggh): Simple terminal wrapper + file watching with plenary
-4. **Amp toolboxes**: Executables in `$AMP_TOOLBOX` directories, stdin/stdout protocol with `describe` and `execute` actions, environment variables for context
-5. **Claude Code hooks**: Shell commands at lifecycle events (SessionStart, PreToolUse, PostToolUse, etc.) with JSON input/output, permission decisions
+1. **amp.nvim** (Sourcegraph): Pure Lua WebSocket server using `vim.loop`, lockfile discovery, event-driven architecture
+2. **claudecode.nvim** (Coder): WebSocket + MCP protocol (JSON-RPC 2.0), 12 MCP tools
+3. **Amp toolboxes**: Executables in `$AMP_TOOLBOX` directories, stdin/stdout protocol with describe/execute actions
+4. **Claude Code hooks**: Shell commands at lifecycle events with JSON input/output
+
+**Key Insight:**
+No users exist yet (pre-1.0) - we can design the **right** architecture without migration complexity. Focus on:
+- **Testability**: Pure functions, clear boundaries, no hidden state
+- **Composability**: Protocols as adapters, tools as Lua functions with optional protocol layers
+- **Readability**: Obvious data flow, minimal indirection
+- **Graceful degradation**: Protocol unavailable? Clear error and fallback suggestions
 
 **Constraints:**
-- Must maintain backward compatibility with existing public API (`lua/neph/api.lua`)
-- Cannot break existing pi agent workflow during migration
-- Must work with Neovim ≥ 0.10, no external runtime dependencies beyond Node/Python for specific protocols
-- snacks.nvim remains the only mandatory Lua dependency
+- Neovim ≥ 0.10 required
+- Dependencies chosen for quality, not minimalism - we control the stack
+- Can require Node, Python, or any runtime that makes the architecture better
+- Prioritize developer experience and code quality over dependency count
 
 ## Goals / Non-Goals
 
 **Goals:**
-- **Multiple protocol support**: WebSocket (streaming), Script (shell executables), RPC (direct), Shim (legacy Python)
-- **Pure Lua API layer**: All file operations (write, edit, delete, read) exposed as Lua functions, protocol-agnostic
-- **Maximum testability**: 70% unit tests (plenary), 25% integration (vitest + headless nvim), 5% e2e (real agents)
-- **Event-driven architecture**: Support streaming events (file changes, diagnostics, selections) via WebSocket
-- **Gradual migration**: Existing agents continue working while new protocols become available
-- **Protocol auto-detection**: Agents can advertise supported protocols, neph selects best available
+- **Clean architecture**: Pure Lua API → Protocol adapters → Language clients (3 clear layers)
+- **Primary protocol is RPC**: Direct Neovim connection via @neovim/node-client (Node is a dependency - that's fine)
+- **Quality tests, not coverage**: Unit tests for fast feedback, integration tests for real behavior, minimal e2e
+- **Best tools for the job**: Use whatever language/library makes code clearest and most testable
+- **Composability**: Tools are Lua functions, protocol adapters are interchangeable, hooks extend at boundaries
+- **Readable**: Obvious data flow, minimal magic, clear error messages
 
 **Non-Goals:**
-- Implementing all MCP tools from claudecode.nvim (start with file operations only)
-- Full WebSocket server with HTTP upgrade handshake (lockfile + raw socket sufficient for editor integration)
-- Replacing all existing agents immediately (migration is opt-in)
-- Supporting protocols beyond WebSocket, Script, RPC, Shim in initial implementation
-- Building a generic MCP server (focus on neph-specific protocol needs)
+- Minimizing dependencies (quality > dependency count)
+- Supporting environments without Node/Python/modern tooling
+- Backward compatibility (pre-1.0, no users - clean break enabled)
+- Supporting 4+ protocols initially (start with RPC, add Script if needed)
+- Generic MCP server (focus on neph-specific needs)
+- Migration complexity (no migration - fresh start)
+- Achieving specific coverage percentages (focus on test quality over quantity)
 
 ## Decisions
 
-### 1. Protocol Layering Architecture
+### 1. Clean Three-Layer Architecture
 
-**Decision:** Three-layer architecture:
+**Decision:** Strict layering with clear boundaries:
 ```
 ┌─────────────────────────────────────────────────────────┐
-│  Layer 3: Language Clients (Node, Python, Scripts)     │
+│  Layer 3: Language Clients                              │
 │  - @neph/client (TypeScript + @neovim/node-client)     │
-│  - shim.py (Python msgpack-rpc, legacy)                 │
-│  - Executable scripts (stdin/stdout protocol)           │
+│  - Shell scripts (optional, for Amp toolbox pattern)   │
 └─────────────────────────────────────────────────────────┘
-                          ↓ RPC / WebSocket / Stdio
+                          ↓ RPC / Stdio
 ┌─────────────────────────────────────────────────────────┐
 │  Layer 2: Protocol Adapters (Lua)                      │
-│  - lua/neph/protocols/rpc.lua (direct nvim RPC)        │
-│  - lua/neph/protocols/websocket.lua (vim.loop server)  │
-│  - lua/neph/protocols/script.lua (vim.fn.system)       │
-│  - lua/neph/protocols/shim.lua (existing subprocess)   │
+│  - lua/neph/protocols/rpc.lua (primary)                │
+│  - lua/neph/protocols/script.lua (optional)            │
 └─────────────────────────────────────────────────────────┘
                           ↓
 ┌─────────────────────────────────────────────────────────┐
-│  Layer 1: Pure Lua API (Protocol-Agnostic)             │
+│  Layer 1: Pure Lua API (Single Source of Truth)        │
 │  - lua/neph/api/write.lua                               │
 │  - lua/neph/api/edit.lua                                │
 │  - lua/neph/api/delete.lua                              │
 │  - lua/neph/api/read.lua                                │
-│  - lua/neph/api/events.lua (file changes, diagnostics) │
 └─────────────────────────────────────────────────────────┘
 ```
 
 **Rationale:**
-- **Pure Lua API** enables comprehensive unit testing without external dependencies
-- **Protocol adapters** isolate transport concerns, each testable independently
-- **Language clients** can be thin wrappers around transport, minimal logic
-- Follows amp.nvim pattern (Lua server) while supporting multiple transports
+- **Layer 1 (Lua API)** is pure, testable without external deps, single source of truth
+- **Layer 2 (Protocol Adapters)** translates protocol-specific input to Lua API calls
+- **Layer 3 (Language Clients)** handles transport, thin wrappers over protocol
+- No cross-layer leakage: protocols don't know about language clients, API doesn't know about protocols
 
 **Alternatives considered:**
-- ❌ **Single protocol (WebSocket only)**: Would force all agents to WebSocket, breaks existing Python/Node workflows
-- ❌ **Keep shim as sole integration**: Limits architecture exploration, no path to event streaming
-- ❌ **Protocol logic in language clients**: Makes testing harder, duplicates validation across clients
+- ❌ **Monolithic design**: All logic in one layer → hard to test, change, understand
+- ❌ **Protocol logic in clients**: Would duplicate validation/error handling across clients
+- ❌ **No adapter layer**: Direct calls from clients to API → tight coupling, can't swap protocols
 
-### 2. WebSocket Implementation Strategy
+### 2. RPC as Primary Protocol
 
-**Decision:** Pure Lua WebSocket server using `vim.loop.new_tcp()`, lockfile at `~/.neph/sockets/[pid].lock` with port number.
+**Decision:** RPC via `@neovim/node-client` is the default and recommended protocol. No Python subprocess.
 
 **Rationale:**
-- `vim.loop` provides non-blocking socket API built into Neovim
-- Lockfile discovery pattern proven by amp.nvim (Sourcegraph uses this in production)
-- No HTTP upgrade complexity needed for editor-agent communication
-- JSON-RPC 2.0 format compatible with MCP tools if we expand scope later
+- Direct Neovim connection → no subprocess overhead, no serialization complexity
+- `@neovim/node-client` is mature, battle-tested, well-documented
+- TypeScript client enables type-safe agent development
+- Synchronous RPC calls for file operations are appropriate (they're I/O bound anyway)
+- Can subscribe to Neovim events natively (autocmds, diagnostics) if needed later
 
-**Implementation sketch:**
-```lua
--- lua/neph/protocols/websocket.lua
-local uv = vim.loop
-local server = uv.new_tcp()
-server:bind("127.0.0.1", 0) -- random port
-local port = server:getsockname().port
-
--- Write lockfile
-local lockfile = vim.fn.stdpath("data") .. "/neph/sockets/" .. vim.fn.getpid() .. ".lock"
-vim.fn.writefile({ tostring(port) }, lockfile)
-
-server:listen(128, function(err)
-  local client = uv.new_tcp()
-  server:accept(client)
-  client:read_start(function(err, chunk)
-    -- JSON-RPC 2.0 message handling
-  end)
-end)
-```
-
-**Alternatives considered:**
-- ❌ **HTTP WebSocket with upgrade**: Overhead not needed for local socket communication
-- ❌ **Unix domain socket**: Not cross-platform (Windows), lockfile + TCP port more portable
-- ❌ **Named pipes**: Platform-specific, TCP sockets simpler
-
-### 3. Script Protocol Design
-
-**Decision:** Amp toolbox-style protocol with `NEPH_ACTION` environment variable and stdin/stdout JSON.
-
-**Actions:**
-- `describe`: Script outputs tool schema (JSON with `name`, `description`, `inputSchema`)
-- `execute`: Script receives tool input via stdin, returns result via stdout
-
-**Environment variables:**
-- `NEPH_ACTION`: "describe" or "execute"
-- `NEPH_SESSION_ID`: Current session identifier
-- `NVIM_SOCKET`: Path to Neovim socket (for reverse RPC if needed)
-
-**Protocol format:**
-```bash
-#!/usr/bin/env bash
-# ~/.neph/tools/custom_tool
-
-case "${NEPH_ACTION}" in
-  describe)
-    jq -n '{
-      name: "custom_tool",
-      description: "My custom tool",
-      inputSchema: {
-        type: "object",
-        properties: {
-          path: { type: "string", description: "File path" }
-        },
-        required: ["path"]
-      }
-    }'
-    ;;
-  execute)
-    # Read JSON input from stdin
-    INPUT=$(cat)
-    PATH=$(echo "$INPUT" | jq -r '.path')
-    # Do work
-    echo "{\"result\": \"success\"}"
-    ;;
-esac
-```
-
-**Rationale:**
-- Proven by Amp (Sourcegraph) in production
-- Language-agnostic: any executable (Bash, Python, Node, Go, etc.)
-- Simple debugging: run script with `NEPH_ACTION=describe` manually
-- Stdin/stdout easier to test than complex RPC mocking
-
-**Alternatives considered:**
-- ❌ **Claude Code hooks format**: Too specific to lifecycle events, we need general tool protocol
-- ❌ **MCP server protocol**: Too heavyweight, requires JSON-RPC server per script
-- ❌ **Command-line arguments**: Limits input size, stdin cleaner for JSON
-
-### 4. Testing Strategy
-
-**Decision:** Three-tier testing pyramid:
-
-**Unit tests (70%)** - Pure Lua, plenary.nvim:
-```lua
--- tests/unit/api/write_spec.lua
-describe("api.write", function()
-  it("validates path is string", function()
-    local write = require("neph.api.write")
-    assert.has_error(function() write.file(nil, "content") end)
-  end)
-end)
-```
-
-**Integration tests (25%)** - Vitest + headless Neovim:
+**Implementation:**
 ```typescript
-// tests/integration/node-client.test.ts
+// tools/client/src/index.ts
 import { attach } from "@neovim/node-client";
-import { NephClient } from "@neph/client";
 
-test("write file via RPC", async () => {
-  const nvim = await attach({ socket: process.env.NVIM_SOCKET });
+export class NephClient {
+  async writeFile(path: string, content: string): Promise<void> {
+    await this.nvim.lua(`require("neph.api.write").file(${path}, ${content})`);
+  }
+}
+```
+
+**Alternatives considered:**
+- ❌ **WebSocket primary**: Adds complexity (server, lockfile, JSON-RPC), only needed if streaming events
+- ❌ **Python shim**: Subprocess overhead, serialization overhead, harder to debug
+- ❌ **HTTP server**: Even more overhead than WebSocket, not needed for local editor
+
+### 3. Script Protocol as Optional
+
+**Decision:** Support Amp toolbox-style scripts (`NEPH_ACTION=describe/execute`, stdin/stdout) as optional protocol for shell-based agents.
+
+**Rationale:**
+- Proven pattern (Amp uses in production)
+- Language-agnostic: bash, python, node, go, rust - anything executable
+- Simple debugging: run script manually with `NEPH_ACTION=describe`
+- Some agents (like goose) might prefer shell scripts over Node RPC
+
+**When to use:**
+- Agent is primarily shell-based (bash/zsh workflows)
+- Agent already has executable scripts
+- Team prefers shell scripts over TypeScript/Node
+
+**When NOT to use:**
+- Agent is already in Node/TypeScript → use RPC directly
+- Need fast iteration → RPC has less overhead than spawning subprocess
+
+**Alternatives considered:**
+- ❌ **No script support**: Would force all agents to Node, limits flexibility
+- ❌ **Script as primary**: Subprocess overhead for every tool call, slower than RPC
+
+### 4. Quality-Focused Testing Strategy
+
+**Decision:** Write tests that give **confidence**, not just coverage.
+
+**Unit Tests (Lua with plenary):**
+- Test pure Lua API functions
+- Fast (< 100ms for full unit suite)
+- No external dependencies (no Node, Python, network)
+- Focus: **Does the API do what it claims?**
+
+Example:
+```lua
+describe("api.write", function()
+  it("writes content to file", function()
+    local tmpfile = vim.fn.tempname()
+    require("neph.api.write").file(tmpfile, "hello")
+    assert.equals("hello", vim.fn.readfile(tmpfile)[1])
+  end)
+end)
+```
+
+**Integration Tests (TypeScript with vitest):**
+- Test protocol adapters with real Neovim instance
+- Spawn headless Neovim, connect via RPC, verify operations
+- Focus: **Does the protocol adapter translate correctly?**
+
+Example:
+```typescript
+test("RPC protocol writes file", async () => {
+  const nvim = await spawnHeadlessNvim();
   const client = new NephClient(nvim);
   await client.writeFile("/tmp/test.txt", "hello");
-  // Assert file exists via nvim API
+  const content = await fs.readFile("/tmp/test.txt", "utf-8");
+  expect(content).toBe("hello");
 });
 ```
 
-**E2E tests (5%)** - Real agents:
+**E2E Tests (Shell scripts with real agents):**
+- Test complete user workflows
+- Run real agent (pi, goose) with test prompts
+- Focus: **Does it work end-to-end for users?**
+- Keep minimal (slow, brittle, hard to debug)
+
+Example:
 ```bash
-# tests/e2e/pi-integration.sh
-pi "Write a hello world to test.py"
-# Assert test.py exists and contains expected code
+# tests/e2e/pi-write-file.sh
+pi "Write 'hello world' to test.py"
+grep "hello world" test.py || exit 1
 ```
 
 **Rationale:**
-- Pure Lua unit tests are fast, no external deps, cover 70% of logic
-- Integration tests validate protocol adapters work with real Neovim
-- E2E tests catch integration issues but are slow, keep to 5%
+- Coverage percentage is a **proxy** for confidence, not the goal itself
+- 10 meaningful tests > 100 tests hitting every line but missing real bugs
+- Fast unit tests → rapid feedback during development
+- Integration tests catch protocol issues (serialization, RPC errors, etc.)
+- E2E tests catch UX issues but are expensive - keep minimal
 
 **Alternatives considered:**
-- ❌ **Only e2e tests**: Too slow, hard to debug failures
-- ❌ **No integration tests**: Would miss protocol serialization bugs
-- ❌ **Manual testing only**: Not sustainable, no CI confidence
+- ❌ **Coverage targets**: Incentivizes gaming the metric (useless tests to hit %)
+- ❌ **Only e2e tests**: Too slow, too brittle, hard to debug failures
+- ❌ **Only unit tests**: Miss protocol integration bugs, serialization issues
 
-### 5. Migration Strategy
+### 5. No Migration, Clean Break
 
-**Decision:** Phased rollout with feature flags per agent:
-
-**Phase 1**: Pure Lua API layer (no breaking changes)
-- Create `lua/neph/api/` with existing tool logic extracted
-- Existing `tools.lua` calls new API internally
-- No user-visible changes, 100% backward compatible
-
-**Phase 2**: Protocol adapters + Node client
-- Add `lua/neph/protocols/rpc.lua` and `@neph/client` package
-- Pi agent can opt-in to new protocol via config: `{ protocol = "rpc" }`
-- Python shim remains default for backward compatibility
-
-**Phase 3**: WebSocket + Script protocols
-- Add `lua/neph/protocols/websocket.lua` and `script.lua`
-- Document protocol selection in agent config
-- Provide migration guide for custom agents
-
-**Phase 4**: Deprecate shim (future)
-- Once all built-in agents migrated, mark shim as legacy
-- Keep for backward compatibility but document alternatives
+**Decision:** This is v1.0 of neph.nvim. No backward compatibility. No migration guide. Fresh start.
 
 **Rationale:**
-- No big-bang rewrite, each phase is deployable
-- Users can test new protocols without breaking existing workflows
-- Rollback is simple: revert to previous phase
+- Pre-1.0, no users exist yet
+- Migration complexity is **technical debt** we don't need to carry
+- Clean break enables clean design
+- Can make breaking changes during v1.x alphas/betas until API stabilizes
+
+**What this enables:**
+- Rename/remove/redesign anything without guilt
+- Remove Python shim completely (no gradual deprecation)
+- Remove pi.ts extension override pattern (replace with RPC registry)
+- Simplify config schema (no legacy `shim_timeout`, `shim_path` fields)
+
+**Alternatives considered:**
+- ❌ **Backward compat**: Carrying migration code forever, complicates every decision
+- ❌ **Gradual deprecation**: Wastes time building migration layers nobody needs
+
+### 6. Graceful Degradation
+
+**Decision:** When protocol is unavailable, fail with **clear error** and suggest alternatives. No silent failures.
+
+**Example scenarios:**
+
+**RPC protocol unavailable (no Node):**
+```lua
+-- Error message
+"neph: RPC protocol requires Node.js and @neph/client package.
+Install: npm install -g @neph/client
+Or use script protocol: { protocol = 'script' }"
+```
+
+**Script not executable:**
+```lua
+"neph: Script '/Users/you/.neph/tools/custom_tool' is not executable.
+Fix: chmod +x /Users/you/.neph/tools/custom_tool"
+```
+
+**Socket not found:**
+```lua
+"neph: Could not find Neovim socket. Is neph.nvim loaded?
+Check: :lua vim.print(vim.v.servername)"
+```
+
+**Rationale:**
+- Debugging time is **expensive** - good errors save hours
+- "It doesn't work" → 30 minutes of debugging
+- Clear error → 30 seconds to fix
+- Suggest actionable fix in every error message
+
+**Alternatives considered:**
+- ❌ **Silent fallback**: User doesn't know what happened, can't fix it
+- ❌ **Generic errors**: "RPC failed" → user doesn't know how to fix
+
+### 7. Hooks for Extensibility
+
+**Decision:** Provide lifecycle hooks at **boundaries** (session start/end, pre/post tool). No hooks in the middle of API functions.
+
+**Hook points:**
+- `session_start`: When agent session begins
+- `session_end`: When agent session ends
+- `pre_tool`: Before tool execution (can modify input or cancel)
+- `post_tool`: After tool execution (can inspect result)
+
+**What hooks CANNOT do:**
+- Modify API internals
+- Hook into middle of file write operation
+- Override protocol adapter behavior
+
+**Rationale:**
+- Hooks at boundaries → predictable extension points
+- Hooks in the middle → fragile, breaks refactoring, hard to reason about
+- Claude Code hooks pattern: proven, simple, extensible
+
+**Example use case:**
+```lua
+-- ~/.neph/hooks/log_writes.lua
+return function(event, context)
+  if event == "post_tool" and context.tool == "write_file" then
+    log.info("Wrote file: " .. context.args.path)
+  end
+end
+```
+
+**Alternatives considered:**
+- ❌ **No hooks**: Hard to extend, users resort to monkey-patching
+- ❌ **Hooks everywhere**: Fragile, hard to maintain, breaks refactoring
+
+### 8. Embrace Quality Dependencies
+
+**Decision:** Choose dependencies that make code **better** - clearer, more testable, more maintainable.
+
+**Good dependencies to embrace:**
+- `@neovim/node-client`: Battle-tested RPC library
+- `zod`: Runtime validation for protocol messages (type-safe parsing)
+- `vitest`: Modern, fast test runner with great DX
+- `plenary.nvim`: Standard Lua test/async library for Neovim
+- Whatever else makes sense for quality
+
+**Bad dependencies to avoid:**
+- Abandoned packages
+- Packages with unclear purpose ("utils", "helpers")
+- Dependencies that hide complexity rather than manage it
+
+**Rationale:**
+- You're the user - if Node/Python/etc. make dev experience better, use them
+- Fewer dependencies ≠ better code (sometimes it means reinventing wheels poorly)
+- Well-maintained dependencies are **assets**, not liabilities
+- Ship `flake.nix` with all dev dependencies - reproducible environment
+
+**Example:**
+```typescript
+// Use zod for protocol validation - clear, type-safe, runtime errors
+import { z } from "zod";
+
+const WriteFileRequest = z.object({
+  path: z.string(),
+  content: z.string(),
+});
+
+// Parse and validate in one line, get TypeScript types automatically
+const req = WriteFileRequest.parse(rawInput);
+```
+
+**Alternatives considered:**
+- ❌ **Minimize dependencies**: Leads to NIH syndrome, reinventing validation, testing, etc.
+- ❌ **No validation**: Runtime errors are cryptic, hard to debug
 
 ## Risks / Trade-offs
 
-### Risk: Protocol proliferation complexity
-**Mitigation:** 
-- Limit to 4 protocols (WebSocket, Script, RPC, Shim) initially
-- Shared Lua API layer means adding protocols doesn't multiply implementation effort
-- Protocol selection is agent config, not user-facing complexity
+### Risk: Breaking everything with clean slate
+**Mitigation:** Pre-1.0, no users - this is the **right time** for clean break. After 1.0, commit to stability.
 
-### Risk: WebSocket server resource usage
-**Mitigation:**
-- Server only runs when WebSocket protocol active
-- Lockfile cleanup on Neovim exit (VimLeavePre autocmd)
-- Connection limit (default 5 concurrent clients) to prevent resource exhaustion
+### Risk: RPC requires Node runtime
+**Not a risk:** You're the user, Node is fine. Ship with `flake.nix` devshell that includes Node. Users who can install Neovim plugins can install Node.
 
-### Risk: Script protocol security (arbitrary executables)
-**Mitigation:**
-- Only executables in `~/.neph/tools/` or `$NEPH_TOOLBOX` are discoverable
-- Permission model (ask user before first execution of new script)
-- Scripts run in same security context as user's terminal (no escalation)
+### Risk: Less protocol diversity than original design
+**Decision:** Start with 2 protocols (RPC, Script), add WebSocket later if streaming events needed. **YAGNI** - don't build features we don't need yet.
 
-### Risk: Testing complexity with multiple protocols
-**Mitigation:**
-- Pure Lua API layer means protocols share test coverage
-- Protocol adapters have focused test scope (just transport logic)
-- Integration tests use real Neovim socket, not protocol-specific mocking
+### Trade-off: No Python shim option
+**Decision:** If agent needs Python, use script protocol with Python script. No special subprocess model for Python.
 
-### Risk: Breaking existing pi agent workflow
-**Mitigation:**
-- Shim remains default protocol until migration complete
-- Pi agent can specify protocol: `{ protocol = "shim" }` to force old behavior
-- Automated tests for backward compatibility on every PR
-
-### Trade-off: Performance vs simplicity
-**Decision:** Favor simplicity initially
-- WebSocket server is single-threaded (no connection pooling)
-- Script protocol spawns subprocess per call (no persistent process pool)
-- Can optimize later if profiling shows bottlenecks
-
-**Rationale:** Neovim plugins are I/O bound (file operations), not CPU bound. Simpler code is more maintainable and easier to test.
-
-### Trade-off: Feature parity across protocols
-**Decision:** Not all protocols support all features
-- WebSocket: Event streaming (file changes, diagnostics)
-- Script: Tool execution only (no events)
-- RPC: Both tools and events
-- Shim: Tools only (legacy)
-
-**Rationale:** Each protocol optimized for its use case. Document capabilities per protocol in user guide.
-
-## Migration Plan
-
-### Deployment Steps
-
-**Step 1: Pure Lua API layer**
-1. Create `lua/neph/api/init.lua` with public exports
-2. Extract write/edit/delete/read logic from existing code
-3. Update `tools.lua` to call new API
-4. Run full test suite, ensure no regressions
-5. Tag release: `v1.0.0-api-layer`
-
-**Step 2: Node client + RPC protocol**
-1. Create `tools/client/` package with `@neph/client`
-2. Implement `lua/neph/protocols/rpc.lua`
-3. Add protocol selection to agent config
-4. Update pi.ts to use `@neph/client` (opt-in via config)
-5. Add integration tests for RPC protocol
-6. Tag release: `v1.1.0-rpc-protocol`
-
-**Step 3: WebSocket + Script protocols**
-1. Implement `lua/neph/protocols/websocket.lua` with lockfile
-2. Implement `lua/neph/protocols/script.lua` with toolbox discovery
-3. Add lifecycle hooks (`lua/neph/hooks/`)
-4. Document protocol selection in README
-5. Add integration tests for new protocols
-6. Tag release: `v1.2.0-multi-protocol`
-
-**Step 4: Documentation + migration guide**
-1. Update README with protocol comparison table
-2. Create migration guide for custom agents
-3. Add examples for each protocol in `examples/`
-4. Publish blog post on architecture redesign
-5. Tag release: `v2.0.0` (stable multi-protocol)
-
-### Rollback Strategy
-
-Each phase is independently revertable:
-- **Phase 1 rollback**: Pure Lua API is internal refactor, no config changes needed
-- **Phase 2 rollback**: Remove `protocol = "rpc"` from agent config, falls back to shim
-- **Phase 3 rollback**: Remove WebSocket/Script protocol config, existing RPC/Shim work
-
-Critical data (session history, agent config) stored in `vim.fn.stdpath("data")`, survives rollbacks.
+### Trade-off: Fewer tests initially
+**Decision:** Focus on quality over quantity. 20 meaningful tests > 100 meaningless tests for coverage.
 
 ## Open Questions
 
-1. **WebSocket message format**: Use JSON-RPC 2.0 strictly, or custom JSON format?
-   - **Leaning toward**: JSON-RPC 2.0 for future MCP compatibility
-   
-2. **Script toolbox directory**: Single directory (`~/.neph/tools/`) or multiple (`$NEPH_TOOLBOX` like Amp)?
-   - **Leaning toward**: Multiple directories (project-local + user-global) for flexibility
+1. **WebSocket protocol timing**: Add in v1.0 or defer to v1.1+ if no agent needs streaming events?
+   - **Leaning toward**: Defer - YAGNI, can add later if needed
 
-3. **Protocol negotiation**: Should agents advertise multiple protocols and neph select best, or require explicit config?
-   - **Leaning toward**: Explicit config initially, add auto-negotiation in future version
+2. **Hook configuration**: File-based discovery (`~/.neph/hooks/`) or config-based only?
+   - **Leaning toward**: File-based discovery (convention over configuration)
 
-4. **Lifecycle hooks**: Which events to support in initial implementation?
-   - **Proposed**: session_start, session_end, pre_tool, post_tool (minimal set)
-   - **Future**: Add more events (file_changed, diagnostics_updated) as needed
+3. **Tool registry**: Global or per-protocol?
+   - **Leaning toward**: Per-protocol with shared interface
 
-5. **Backward compatibility timeline**: How long to maintain Python shim as default?
-   - **Proposed**: Keep as default for 2 major versions (v1.x, v2.x), deprecate in v3.0
+4. **Error types**: Custom error classes in Lua or just strings?
+   - **Leaning toward**: Strings with consistent format (Lua doesn't have great error class support)
