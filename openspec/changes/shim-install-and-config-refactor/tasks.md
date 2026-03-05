@@ -31,4 +31,4 @@
 - [x] 5.1 Add or update `tests/` unit tests: verify `config.defaults` has all expected keys including `multiplexer = nil`
 - [x] 5.2 Update `README.md`: document the `multiplexer` option with examples for each value; note that tmux/zellij are stubs
 - [x] 5.3 Update `README.md`: document that `setup()` auto-installs `shim` and `pi.ts` and describe what each tool does
-- [ ] 5.4 Smoke-test: install neph.nvim in a fresh lazy.nvim config, call `setup()`, confirm symlinks are created and agents launch correctly
+- [x] 5.4 Smoke-test: install neph.nvim in a fresh lazy.nvim config, call `setup()`, confirm symlinks are created and agents launch correctly
