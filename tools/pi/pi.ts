@@ -3,6 +3,8 @@ import { createWriteTool } from "@mariozechner/pi-coding-agent";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { spawn } from "node:child_process";
+import process from "node:process";
+import { Buffer } from "node:buffer";
 
 // Neovim integration for pi.
 //

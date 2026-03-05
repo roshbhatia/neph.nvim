@@ -21,7 +21,7 @@ describe("neph.placeholders", function()
       local fake_ctx = {
         ctx = { buf = 0, win = 0, row = 1, col = 1, cwd = "/", range = nil },
         cache = {},
-        get = function(self, name)
+        get = function(_self, name) -- luacheck: ignore _self
           if name == "word" then
             return "myword"
           end

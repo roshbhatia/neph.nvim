@@ -42,15 +42,15 @@ function source:_init(opts)
   return self
 end
 
-function source:enabled()
+function source:enabled() -- luacheck: ignore self
   return vim.bo.filetype == "ai_terminals_input"
 end
 
-function source:get_trigger_characters()
+function source:get_trigger_characters() -- luacheck: ignore self
   return { "+" }
 end
 
-function source:get_completions(_, callback)
+function source:get_completions(_, callback) -- luacheck: ignore self
   local items = {}
   local ok, types = pcall(require, "blink.cmp.types")
   if not ok then
@@ -75,7 +75,7 @@ function source:get_completions(_, callback)
   return function() end
 end
 
-function source:resolve(item, callback)
+function source:resolve(item, callback) -- luacheck: ignore self
   callback(item)
 end
 

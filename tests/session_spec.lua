@@ -35,7 +35,7 @@ describe("neph.session", function()
 
     -- Stub the backend detection to always use our fake backend
     -- by monkey-patching the require inside setup
-    local stub = make_stub_backend(true)
+    local _stub = make_stub_backend(true) -- luacheck: ignore _stub
     -- Directly inject backend after setup
     session.setup({ env = {} })
     -- Override internal backend through a backdoor: call setup again with env

@@ -36,7 +36,7 @@ import msgpack
 SOCKET_PATH = os.environ.get("NVIM_SOCKET_PATH", "")
 
 
-# ── RPC client ────────────────────────────────────────────────────────────────
+# ── RPC client ───────────────────────────────────────────────────────────
 
 
 class NvimRPC:
@@ -71,7 +71,7 @@ class NvimRPC:
         self._sock.close()
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+# ── Helpers ───────────────────────────────────────────────────────────────
 
 
 def die(msg: str) -> NoReturn:
@@ -90,7 +90,7 @@ def connect() -> NvimRPC:
         die(f"cannot connect to nvim: {e}")
 
 
-# ── Lua ───────────────────────────────────────────────────────────────────────
+# ── Lua ──────────────────────────────────────────────────────────────────
 
 LUA_OPEN = r"""
 local raw_path = ...
@@ -129,9 +129,11 @@ vim.cmd('edit! ' .. vim.fn.fnameescape(raw_path))
 """
 
 # Vimdiff review with fully blocking hunk-by-hunk confirm / input.
-# Args passed via nvim_exec_lua varargs: raw_path (string), proposed_content (string)
+# Args passed via nvim_exec_lua varargs:
+#   raw_path (string), proposed_content (string)
 # Returns a Lua table decoded by msgpack into a Python dict:
-#   {decision="accept", content="...", reason="..."}   -- partial or full accept
+#   {decision="accept", content="...", reason="..."}
+#                                           -- partial or full accept
 #   {decision="reject", reason="..."}
 LUA_PREVIEW = r"""
 local raw_path, proposed_content = ...
@@ -313,7 +315,7 @@ return result
 """
 
 
-# ── Commands ──────────────────────────────────────────────────────────────────
+# ── Commands ─────────────────────────────────────────────────────────────
 
 
 def cmd_status() -> None:
@@ -372,7 +374,7 @@ def cmd_unset(name: str) -> None:
     nvim.close()
 
 
-# ── Dispatch ──────────────────────────────────────────────────────────────────
+# ── Dispatch ─────────────────────────────────────────────────────────────
 
 USAGE = """\
 usage: shim <command> [args]
