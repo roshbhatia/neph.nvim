@@ -65,10 +65,13 @@ local basename = vim.fn.fnamemodify(orig_path, ":t")
 vim.cmd("tabnew")
 local diff_tab = vim.api.nvim_get_current_tabpage()
 
+-- Make buffer names unique with timestamp to avoid E95 on repeated reviews
+local timestamp = vim.fn.strftime("%H%M%S")
+
 -- Left: current (editable — user applies hunks here via diffget)
 local left_buf = vim.api.nvim_get_current_buf()
 vim.api.nvim_buf_set_lines(left_buf, 0, -1, false, read_lines(orig_path))
-vim.api.nvim_buf_set_name(left_buf, "[CURRENT] " .. basename)
+vim.api.nvim_buf_set_name(left_buf, string.format("[CURRENT %s] %s", timestamp, basename))
 vim.bo[left_buf].buftype   = "nofile"
 vim.bo[left_buf].bufhidden = "wipe"
 vim.bo[left_buf].swapfile  = false
@@ -84,7 +87,7 @@ vim.cmd("rightbelow vsplit")
 local right_buf = vim.api.nvim_create_buf(false, true)
 vim.api.nvim_win_set_buf(0, right_buf)
 vim.api.nvim_buf_set_lines(right_buf, 0, -1, false, read_lines(prop_path))
-vim.api.nvim_buf_set_name(right_buf, "[PROPOSED] " .. basename)
+vim.api.nvim_buf_set_name(right_buf, string.format("[PROPOSED %s] %s", timestamp, basename))
 vim.bo[right_buf].buftype    = "nofile"
 vim.bo[right_buf].bufhidden  = "wipe"
 vim.bo[right_buf].swapfile   = false
