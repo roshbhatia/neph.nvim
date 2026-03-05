@@ -11,5 +11,6 @@ pkgs.mkShell {
     pkgs.stylua
     pkgs.luacheck
     pkgs.python311Packages.flake8
+    pkgs.go-task
   ];
 }

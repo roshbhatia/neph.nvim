@@ -11,15 +11,9 @@ connect(async (client: Client) => {
     .withWorkdir("/app")
     .withExec(["nix-shell", "shell.nix", "--run", "npm install"], { workdir: "/app/tools/pi" });
 
-  const lint = container
-    .withExec(["nix-shell", "shell.nix", "--run", "stylua --check lua/ tests/"])
-    .withExec(["nix-shell", "shell.nix", "--run", "luacheck lua/ tests/ --globals vim Snacks describe it before_each after_each assert"])
-    .withExec(["nix-shell", "shell.nix", "--run", "deno lint tools/pi/pi.ts"])
-    .withExec(["nix-shell", "shell.nix", "--run", "flake8 tools/core/shim.py"]);
-  
-  const tests = lint.withExec(["nix-shell", "shell.nix", "--run", "nvim --headless --cmd 'set rtp+=.' --cmd 'set rtp+=~/.local/share/nvim/lazy/plenary.nvim' -c 'PlenaryBustedDirectory tests/ {minimal_init=\\'tests/minimal_init.lua\\'}' -c 'qa!'"]);
+  const ci = container.withExec(["nix-shell", "shell.nix", "--run", "task ci"]);
 
-  const result = await tests.stdout();
+  const result = await ci.stdout();
 
   console.log(result);
 });

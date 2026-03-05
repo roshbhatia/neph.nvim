@@ -1,0 +1,18 @@
+version: "3"
+
+tasks:
+  lint:
+    cmds:
+      - stylua --check lua/ tests/
+      - luacheck lua/ tests/ --globals vim Snacks describe it before_each after_each assert
+      - deno lint tools/pi/pi.ts
+      - flake8 tools/core/shim.py
+
+  test:
+    cmds:
+      - nvim --headless --cmd 'set rtp+=.' --cmd 'set rtp+=~/.local/share/nvim/lazy/plenary.nvim' -c 'PlenaryBustedDirectory tests/ {minimal_init=\'tests/minimal_init.lua\'}' -c 'qa!'
+
+  ci:
+    cmds:
+      - task: lint
+      - task: test
