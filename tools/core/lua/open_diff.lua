@@ -7,22 +7,6 @@
 
 local orig_path, prop_path, result_path, channel_id = ...
 
--- ── Debug logging ─────────────────────────────────────────────────────────────
-
-local debug_log = io.open("/tmp/neph_review_debug.log", "w")
-local function log(msg)
-  if debug_log then
-    debug_log:write(os.date("%H:%M:%S") .. " " .. msg .. "\n")
-    debug_log:flush()
-  end
-end
-
-log("=== Review session started ===")
-log(string.format("orig_path: %s", orig_path))
-log(string.format("prop_path: %s", prop_path))
-log(string.format("result_path: %s", result_path))
-log(string.format("channel_id: %s", tostring(channel_id)))
-
 local function read_lines(path)
   local lines = {}
   local f = io.open(path, "r")
@@ -30,7 +14,6 @@ local function read_lines(path)
     for line in f:lines() do table.insert(lines, line) end
     f:close()
   end
-  log(string.format("read_lines(%s): %d lines", path, #lines))
   return lines
 end
 
@@ -44,13 +27,9 @@ end
 -- ── Hunk range parsing ────────────────────────────────────────────────────────
 
 local function parse_hunk_ranges(left_lines, right_lines)
-  log(string.format("parse_hunk_ranges: left=%d lines, right=%d lines", #left_lines, #right_lines))
-  
   -- vim.diff() expects strings, not tables - join lines with newlines
   local left_str = table.concat(left_lines, "\n")
   local right_str = table.concat(right_lines, "\n")
-  
-  log(string.format("Converted to strings: left=%d chars, right=%d chars", #left_str, #right_str))
   
   -- Use vim.diff() to get actual diff hunks
   local ok, diff_result = pcall(vim.diff, left_str, right_str, {
@@ -58,16 +37,11 @@ local function parse_hunk_ranges(left_lines, right_lines)
   })
   
   if not ok or not diff_result then
-    log(string.format("vim.diff failed: ok=%s, result=%s", tostring(ok), tostring(diff_result)))
     return {}
   end
   
-  log(string.format("vim.diff returned %d hunks", #diff_result))
-  
   local ranges = {}
-  for i, hunk in ipairs(diff_result) do
-    log(string.format("  hunk[%d]: start_a=%d, count_a=%d, start_b=%d, count_b=%d", 
-                      i, hunk[1], hunk[2], hunk[3], hunk[4]))
+  for _, hunk in ipairs(diff_result) do
     -- hunk format: {start_a, count_a, start_b, count_b}
     -- We want hunks in the left buffer (the "a" side)
     local start_line = hunk[1]
@@ -77,11 +51,9 @@ local function parse_hunk_ranges(left_lines, right_lines)
         start_line = start_line, 
         end_line = start_line + count - 1 
       })
-      log(string.format("  -> range: start_line=%d, end_line=%d", start_line, start_line + count - 1))
     end
   end
   
-  log(string.format("parse_hunk_ranges: returning %d ranges", #ranges))
   return ranges
 end
 
@@ -90,10 +62,8 @@ local basename = vim.fn.fnamemodify(orig_path, ":t")
 
 -- ── Open diff tab ─────────────────────────────────────────────────────────────
 
-log("Opening new tab for diff")
 vim.cmd("tabnew")
 local diff_tab = vim.api.nvim_get_current_tabpage()
-log(string.format("diff_tab: %d", diff_tab))
 
 -- Left: current (editable — user applies hunks here via diffget)
 local left_buf = vim.api.nvim_get_current_buf()
@@ -134,14 +104,11 @@ vim.cmd("wincmd h") -- focus left (current) window
 local left_lines = vim.api.nvim_buf_get_lines(left_buf, 0, -1, false)
 local right_lines = vim.api.nvim_buf_get_lines(right_buf, 0, -1, false)
 
-log(string.format("About to parse hunks: left_buf=%d, right_buf=%d", left_buf, right_buf))
 local hunk_ranges = parse_hunk_ranges(left_lines, right_lines)
 local total_hunks = #hunk_ranges
-log(string.format("total_hunks: %d", total_hunks))
 
 -- ── Sign configuration and setup ──────────────────────────────────────────────
 
-log("Setting up sign configuration")
 local config = vim.g.neph_config or {}
 local signs = vim.tbl_extend("force", {
   accept = "✓",     -- single checkmark instead of ✅
@@ -150,10 +117,8 @@ local signs = vim.tbl_extend("force", {
   commented = "💬", -- just speech bubble, no X
 }, config.review_signs or {})
 
-log(string.format("Sign icons: accept=%s, reject=%s, current=%s, commented=%s",
                   signs.accept, signs.reject, signs.current, signs.commented))
 
-log("Defining signs")
 local ok, err = pcall(function()
   vim.fn.sign_define("neph_current",   { text = signs.current,   texthl = "DiagnosticInfo" })
   vim.fn.sign_define("neph_accept",    { text = signs.accept,    texthl = "DiagnosticOk" })
@@ -161,14 +126,10 @@ local ok, err = pcall(function()
   vim.fn.sign_define("neph_commented", { text = signs.commented, texthl = "DiagnosticWarn" })
 end)
 if not ok then
-  log(string.format("ERROR defining signs: %s", tostring(err)))
-  log("Sign text lengths may be too long - signs limited to 2 display cells")
 else
-  log("Signs defined successfully")
 end
 
 local function place_sign(sign_name, line)
-  log(string.format("place_sign(%s, %d) on buf=%d", sign_name, line, left_buf))
   vim.fn.sign_place(0, "neph_review", sign_name, left_buf, { lnum = line, priority = 10 })
 end
 
@@ -186,28 +147,19 @@ local function clear_hints()
 end
 
 local function show_hints(hunk_range, idx)
-  log(string.format("show_hints(hunk_range=%s, idx=%d)", 
-                    hunk_range and string.format("{%d-%d}", hunk_range.start_line, hunk_range.end_line) or "nil",
-                    idx))
   clear_hints()
   
-  if not hunk_range then 
-    log("show_hints: no hunk_range, returning")
-    return 
-  end
+  if not hunk_range then return end
   
   local counter_line = hunk_range.start_line - 1 -- 0-indexed
-  local hint_line = math.min(counter_line + 1, hunk_range.end_line - 1)
+  -- Place hints on the next line, not on the same line
+  local hint_line = counter_line + 1
   
-  log(string.format("show_hints: counter_line=%d, hint_line=%d, right_buf=%d", 
-                    counter_line, hint_line, right_buf))
-  
-  -- Hunk counter at end of first line
+  -- Hunk counter at end of hunk start line
   vim.api.nvim_buf_set_extmark(right_buf, hints_ns, counter_line, 0, {
-    virt_text = {{ string.format("← hunk %d/%d", idx, total_hunks), "DiagnosticInfo" }},
+    virt_text = {{ string.format(" ← hunk %d/%d", idx, total_hunks), "DiagnosticInfo" }},
     virt_text_pos = "eol",
   })
-  log("show_hints: placed counter extmark")
   
   -- Keybinding hints on next line
   local hint_text = show_help
@@ -215,10 +167,9 @@ local function show_hints(hunk_range, idx)
     or  "[y]es [n]o [a]ll [d]eny [e]dit [?]help"
   
   vim.api.nvim_buf_set_extmark(right_buf, hints_ns, hint_line, 0, {
-    virt_text = {{ hint_text, "DiagnosticInfo" }},
+    virt_text = {{ hint_text, "Comment" }},
     virt_text_pos = "eol",
   })
-  log("show_hints: placed hint extmark")
 end
 
 -- ── State ─────────────────────────────────────────────────────────────────────
@@ -295,12 +246,9 @@ end
 
 -- ── Jump to first hunk ────────────────────────────────────────────────────────
 
-log("=== Jump to first hunk section ===")
-log(string.format("total_hunks = %d", total_hunks))
 
 -- Check if there are any hunks to review
 if total_hunks == 0 then
-  log("No hunks detected, auto-accepting")
   -- No diffs — files are identical; accept immediately
   local lines = vim.api.nvim_buf_get_lines(left_buf, 0, -1, false)
   cleanup()
@@ -314,7 +262,6 @@ if total_hunks == 0 then
   return
 end
 
-log("Hunks detected, setting up review UI")
 
 -- Jump to first hunk using ]c motion
 vim.api.nvim_set_current_win(left_win)
@@ -324,12 +271,10 @@ pcall(vim.cmd, "normal! ]c")  -- Jump to first diff
 
 hunk_idx = 1
 current_hunk_line = hunk_ranges[1].start_line
-log(string.format("Setting up first hunk: idx=%d, line=%d", hunk_idx, current_hunk_line))
 
 place_sign("neph_current", current_hunk_line)
 show_hints(hunk_ranges[1], 1)
 
-log("=== Initial setup complete ===")
 if debug_log then debug_log:close() end
 
 -- ── Keymaps ───────────────────────────────────────────────────────────────────
