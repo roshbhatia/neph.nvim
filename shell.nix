@@ -9,7 +9,7 @@ pkgs.mkShell {
     pkgs.deno
     pkgs.uv
     pkgs.stylua
-    pkgs.luacheck
+    pkgs.luajitPackages.luacheck
     pkgs.python311Packages.flake8
     pkgs.go-task
   ];
