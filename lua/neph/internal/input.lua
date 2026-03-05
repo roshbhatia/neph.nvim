@@ -7,8 +7,8 @@
 
 local M = {}
 
-local history = require("neph.history")
-local placeholders = require("neph.placeholders")
+local history = require("neph.internal.history")
+local placeholders = require("neph.internal.placeholders")
 
 -- ---------------------------------------------------------------------------
 -- Internal helpers
@@ -198,7 +198,7 @@ function M.create_input(termname, agent_icon, opts)
   opts = opts or {}
   local title = string.format("%s  %s", agent_icon or "", opts.action or "Ask")
 
-  local initial_state = require("neph.context").new()
+  local initial_state = require("neph.internal.context").new()
   local hist = history.load(termname)
   local cur_idx = history.get_current_history_index()
   history.set_current_history_index(termname, #hist + 1)

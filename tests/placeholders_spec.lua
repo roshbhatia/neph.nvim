@@ -1,5 +1,5 @@
 ---@diagnostic disable: undefined-global
-local placeholders = require("neph.placeholders")
+local placeholders = require("neph.internal.placeholders")
 
 describe("neph.placeholders", function()
   describe("apply()", function()

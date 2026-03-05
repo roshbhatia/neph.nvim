@@ -1,5 +1,5 @@
 ---@diagnostic disable: undefined-global
-local history = require("neph.history")
+local history = require("neph.internal.history")
 local os = os
 
 describe("neph.history", function()

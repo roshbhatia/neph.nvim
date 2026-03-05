@@ -7,8 +7,8 @@ local M = {}
 
 --- Toggle the active session, or open a Snacks picker to choose an agent.
 function M.pick_agent()
-  local agents = require("neph.agents")
-  local session = require("neph.session")
+  local agents = require("neph.internal.agents")
+  local session = require("neph.internal.session")
   local active = session.get_active()
 
   -- Toggle existing visible session
@@ -54,7 +54,7 @@ end
 
 --- Kill the active session and open the picker to select a new one.
 function M.kill_and_pick()
-  local session = require("neph.session")
+  local session = require("neph.internal.session")
   local active = session.get_active()
   if active then
     session.kill_session(active)
@@ -64,7 +64,7 @@ end
 
 --- Kill the active session.
 function M.kill_active()
-  local session = require("neph.session")
+  local session = require("neph.internal.session")
   local active = session.get_active()
   if active then
     session.kill_session(active)

@@ -79,7 +79,7 @@ function M.pick(termname)
   if termname then
     load_for(termname)
   else
-    for _, agent in ipairs(require("neph.agents").get_all()) do
+    for _, agent in ipairs(require("neph.internal.agents").get_all()) do
       load_for(agent.name)
     end
     table.sort(data, function(a, b)

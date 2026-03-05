@@ -16,11 +16,24 @@
 {
   "roshbhatia/neph.nvim",
   dependencies = {
-    "folke/snacks.nvim"
+    "folke/snacks.nvim",
     -- "nvim-treesitter/nvim-treesitter",
     -- "Saghen/blink.cmp",
   },
   opts = {},
+  keys = function()
+    local api = require("neph.api")
+    return {
+      { "<leader>jj", api.toggle,       desc = "Neph: toggle / pick agent" },
+      { "<leader>jJ", api.kill_and_pick, desc = "Neph: kill session & pick new" },
+      { "<leader>jx", api.kill,          desc = "Neph: kill active session" },
+      { "<leader>ja", api.ask,           mode = { "n", "v" }, desc = "Neph: ask active" },
+      { "<leader>jf", api.fix,           desc = "Neph: fix diagnostics" },
+      { "<leader>jc", api.comment,       mode = { "n", "v" }, desc = "Neph: comment" },
+      { "<leader>jv", api.resend,        desc = "Neph: resend previous prompt" },
+      { "<leader>jh", api.history,       desc = "Neph: browse prompt history" },
+    }
+  end,
 }
 ```
 
@@ -28,9 +41,6 @@
 
 ```lua
 require("neph").setup({
-  -- Register default keymaps (default: true)
-  keymaps = true,
-
   -- Extra environment variables forwarded to every agent
   env = {},
 
@@ -47,18 +57,20 @@ require("neph").setup({
 })
 ```
 
-## Default Keymaps
+## API
 
-| Key | Action |
-|-----|--------|
-| `<leader>jj` | Toggle / pick agent |
-| `<leader>jJ` | Kill session & pick new |
-| `<leader>jx` | Kill active session |
-| `<leader>ja` | Ask active agent (n/v) |
-| `<leader>jf` | Fix diagnostics |
-| `<leader>jc` | Comment (n/v) |
-| `<leader>jv` | Resend previous prompt |
-| `<leader>jh` | Browse prompt history |
+All user-facing actions live in `require("neph.api")`:
+
+| Function | Description |
+|----------|-------------|
+| `toggle()` | Toggle active session or open agent picker |
+| `kill_and_pick()` | Kill active session & open picker |
+| `kill()` | Kill active session |
+| `ask()` | Ask prompt (visual mode → `+selection`, normal → `+cursor`) |
+| `fix()` | Fix diagnostics prompt |
+| `comment()` | Comment prompt (visual mode → `+selection`, normal → `+cursor`) |
+| `resend()` | Resend previous prompt |
+| `history()` | Browse prompt history |
 
 ## Context Placeholders
 

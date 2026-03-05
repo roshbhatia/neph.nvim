@@ -1,5 +1,5 @@
 ---@diagnostic disable: undefined-global
-local context = require("neph.context")
+local context = require("neph.internal.context")
 
 describe("neph.context", function()
   describe("is_file()", function()

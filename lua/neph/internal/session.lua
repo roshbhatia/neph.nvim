@@ -48,9 +48,9 @@ function M.setup(opts)
 
   local btype = detect_backend()
   if btype == "wezterm" then
-    backend = require("neph.backends.wezterm")
+    backend = require("neph.internal.backends.wezterm")
   else
-    backend = require("neph.backends.native")
+    backend = require("neph.internal.backends.native")
   end
   backend.setup(config)
 
@@ -90,7 +90,7 @@ end
 -- ---------------------------------------------------------------------------
 
 function M.open(termname)
-  local agent = require("neph.agents").get_by_name(termname)
+  local agent = require("neph.internal.agents").get_by_name(termname)
   if not agent then
     vim.notify("Neph: unknown agent – " .. termname, vim.log.levels.ERROR)
     return

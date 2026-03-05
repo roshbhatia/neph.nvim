@@ -257,7 +257,7 @@ function Context:get(name)
   local names = vim.split(name, "|", { plain = true })
   for _, n in ipairs(names) do
     if self.cache[n] == nil then
-      local providers = require("neph.placeholders").providers
+      local providers = require("neph.internal.placeholders").providers
       local fn = providers[n]
       local result = fn and fn(self.ctx) or false
       self.cache[n] = (result and result ~= "") and result or false

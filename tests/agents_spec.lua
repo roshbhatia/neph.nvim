@@ -1,5 +1,5 @@
 ---@diagnostic disable: undefined-global
-local agents = require("neph.agents")
+local agents = require("neph.internal.agents")
 
 describe("neph.agents", function()
   describe("get_all()", function()

@@ -58,7 +58,7 @@ function source:get_completions(_, callback) -- luacheck: ignore self
     return function() end
   end
 
-  for _, p in ipairs(require("neph.placeholders").descriptions) do
+  for _, p in ipairs(require("neph.internal.placeholders").descriptions) do
     table.insert(items, {
       label = p.token,
       kind = types.CompletionItemKind.Variable,

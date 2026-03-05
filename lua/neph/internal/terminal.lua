@@ -16,7 +16,7 @@ local last_prompts = {}
 function M.ensure_and_send(termname, text)
   last_prompts[termname] = text
 
-  local session = require("neph.session")
+  local session = require("neph.internal.session")
 
   if not session.is_visible(termname) then
     session.open(termname)

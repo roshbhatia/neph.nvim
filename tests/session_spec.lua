@@ -31,7 +31,7 @@ describe("neph.session", function()
   before_each(function()
     -- Reload session fresh for each test
     package.loaded["neph.session"] = nil
-    session = require("neph.session")
+    session = require("neph.internal.session")
 
     -- Stub the backend detection to always use our fake backend
     -- by monkey-patching the require inside setup

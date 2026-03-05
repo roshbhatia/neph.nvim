@@ -13,7 +13,7 @@ local M = {}
 ---@type table<string, fun(ctx: neph.EditorState): string|nil>
 M.providers = {}
 
-local context = require("neph.context")
+local context = require("neph.internal.context")
 
 -- ---------------------------------------------------------------------------
 -- Position / location
@@ -324,7 +324,7 @@ function M.apply(input, state)
   if state and state.ctx and state.cache then
     ctx = state
   else
-    ctx = require("neph.context").new()
+    ctx = require("neph.internal.context").new()
     if state and type(state) == "table" then
       for k, v in pairs(state) do
         ctx.ctx[k] = v
