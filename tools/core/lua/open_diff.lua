@@ -141,6 +141,7 @@ log(string.format("total_hunks: %d", total_hunks))
 
 -- ── Sign configuration and setup ──────────────────────────────────────────────
 
+log("Setting up sign configuration")
 local config = vim.g.neph_config or {}
 local signs = vim.tbl_extend("force", {
   accept = "✅",
@@ -149,10 +150,15 @@ local signs = vim.tbl_extend("force", {
   commented = "💬❌",
 }, config.review_signs or {})
 
+log(string.format("Sign icons: accept=%s, reject=%s, current=%s, commented=%s",
+                  signs.accept, signs.reject, signs.current, signs.commented))
+
+log("Defining signs")
 vim.fn.sign_define("neph_current",   { text = signs.current,   texthl = "DiagnosticInfo" })
 vim.fn.sign_define("neph_accept",    { text = signs.accept,    texthl = "DiagnosticOk" })
 vim.fn.sign_define("neph_reject",    { text = signs.reject,    texthl = "DiagnosticError" })
 vim.fn.sign_define("neph_commented", { text = signs.commented, texthl = "DiagnosticWarn" })
+log("Signs defined successfully")
 
 local function place_sign(sign_name, line)
   log(string.format("place_sign(%s, %d) on buf=%d", sign_name, line, left_buf))
