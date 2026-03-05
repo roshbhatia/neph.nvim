@@ -9,6 +9,15 @@
 - [nvim-treesitter/nvim-treesitter](https://github.com/nvim-treesitter/nvim-treesitter) *(optional – for `+function` / `+class`)*
 - [Saghen/blink.cmp](https://github.com/Saghen/blink.cmp) *(optional – for `+token` completion)*
 
+### Companion tool requirements
+
+These are only needed if you use `shim` or the pi extension:
+
+| Tool | Requirement | Notes |
+|------|------------|-------|
+| `shim` | [uv](https://docs.astral.sh/uv/) ≥ 0.4, Python ≥ 3.11 | `uv` runs the script and manages the `msgpack` dep inline — no venv needed |
+| `pi.ts` | [pi coding agent](https://github.com/mariozechner/pi-coding-agent) | Extension is auto-symlinked to `~/.pi/agent/extensions/nvim.ts` on `setup()` |
+
 ## Installation
 
 ```lua
