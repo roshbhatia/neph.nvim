@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["msgpack>=1.0", "click>=8.0"]
+# dependencies = ["pynvim>=0.5", "click>=8.0"]
 # ///
 """
 shim - Neovim msgpack-rpc integration for LLM agents.
@@ -9,7 +9,7 @@ shim - Neovim msgpack-rpc integration for LLM agents.
 One-shot: connect to the nvim instance at NVIM_SOCKET_PATH, run a command,
 print any result as JSON to stdout, and exit.
 
-All Lua runs via nvim_exec_lua which is a blocking RPC call — nvim processes
+All Lua runs via nvim.exec_lua which is a blocking RPC call — nvim processes
 the request, including any blocking vim.fn.confirm / vim.fn.input calls, and
 only sends the response when the Lua returns. No polling, no temp files.
 
@@ -33,52 +33,10 @@ from pathlib import Path
 from typing import NoReturn
 
 import click
-import msgpack
+import pynvim
 
+# Socket path injected by neph.nvim's native backend into agent terminals.
 SOCKET_PATH = os.environ.get("NVIM_SOCKET_PATH", "")
-
-
-# ── RPC client ───────────────────────────────────────────────────────────
-
-
-class NvimRPC:
-    """Minimal msgpack-rpc client for a Neovim Unix socket.
-
-    Args:
-        path: Path to the Neovim Unix socket.
-        timeout: Socket read/write timeout in seconds. Pass None for no
-                 timeout (interactive commands like preview). Default: 30.0.
-    """
-
-    def __init__(self, path: str, timeout: float | None = 30.0) -> None:
-        self._sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        self._sock.connect(path)
-        if timeout is not None:
-            self._sock.settimeout(timeout)
-        self._msgid = 0
-        self._buf = msgpack.Unpacker(raw=False, strict_map_key=False)
-
-    def request(self, method: str, *params) -> object:
-        msgid = self._msgid
-        self._msgid += 1
-        self._sock.sendall(msgpack.packb([0, msgid, method, list(params)]))
-        while True:
-            chunk = self._sock.recv(65536)
-            if not chunk:
-                raise RuntimeError("nvim socket closed unexpectedly")
-            self._buf.feed(chunk)
-            for msg in self._buf:
-                if msg[0] == 1 and msg[1] == msgid:  # our response
-                    if msg[2]:
-                        raise RuntimeError(f"nvim: {msg[2]}")
-                    return msg[3]
-                # msg[0] == 2 is a notification; skip and keep reading
-
-    def exec_lua(self, code: str, args: list | None = None) -> object:
-        return self.request("nvim_exec_lua", code, args or [])
-
-    def close(self) -> None:
-        self._sock.close()
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────
@@ -89,15 +47,30 @@ def die(msg: str) -> NoReturn:
     sys.exit(1)
 
 
-def connect(timeout: float | None = 30.0) -> NvimRPC:
+def get_nvim(timeout: float | None = 30.0) -> pynvim.Nvim:
+    """Attach to the Neovim instance at SOCKET_PATH and return a pynvim.Nvim.
+
+    Args:
+        timeout: Socket timeout in seconds passed via socket.setdefaulttimeout
+                 before attaching. Pass None for no timeout (e.g. interactive
+                 preview that blocks on user input). Default: 30.0.
+
+    Raises:
+        SystemExit(1): If SOCKET_PATH is unset, the file does not exist, or
+                       pynvim cannot connect.
+    """
     if not SOCKET_PATH:
         die("NVIM_SOCKET_PATH is not set")
     if not os.path.exists(SOCKET_PATH):
         die(f"socket not found: {SOCKET_PATH}")
+    socket.setdefaulttimeout(timeout)
     try:
-        return NvimRPC(SOCKET_PATH, timeout=timeout)
+        nvim = pynvim.attach("socket", path=SOCKET_PATH)
     except OSError as e:
         die(f"cannot connect to nvim: {e}")
+    finally:
+        socket.setdefaulttimeout(None)
+    return nvim
 
 
 # ── Lua ──────────────────────────────────────────────────────────────────
@@ -113,59 +86,51 @@ LUA_PREVIEW = (_LUA_DIR / "preview.lua").read_text()
 
 
 def cmd_status() -> None:
-    nvim = connect()
+    get_nvim()
     click.echo(f"connected: {SOCKET_PATH}")
-    nvim.close()
 
 
 def cmd_open(file_path: str) -> None:
-    nvim = connect()
-    nvim.exec_lua(LUA_OPEN, [file_path])
-    nvim.close()
+    nvim = get_nvim()
+    nvim.exec_lua(LUA_OPEN, file_path)
 
 
 def cmd_preview(file_path: str) -> None:
     proposed_content = sys.stdin.read()
     # No timeout: this is interactive and blocks on user input.
-    nvim = connect(timeout=None)
-    result = nvim.exec_lua(LUA_PREVIEW, [file_path, proposed_content])
+    nvim = get_nvim(timeout=None)
+    result = nvim.exec_lua(LUA_PREVIEW, file_path, proposed_content)
     click.echo(json.dumps(result))
-    nvim.close()
 
 
 def cmd_revert(file_path: str) -> None:
-    nvim = connect()
-    nvim.exec_lua(LUA_REVERT, [file_path])
-    nvim.close()
+    nvim = get_nvim()
+    nvim.exec_lua(LUA_REVERT, file_path)
 
 
 def cmd_close_tab() -> None:
-    nvim = connect()
-    nvim.exec_lua(r"""
+    nvim = get_nvim()
+    nvim.exec_lua("""
 if vim.g.agent_tab then
   pcall(vim.cmd, 'tabclose ' .. vim.g.agent_tab)
   vim.g.agent_tab = nil
 end
 """)
-    nvim.close()
 
 
 def cmd_checktime() -> None:
-    nvim = connect()
+    nvim = get_nvim()
     nvim.exec_lua("vim.cmd('checktime')")
-    nvim.close()
 
 
 def cmd_set(name: str, lua_value: str) -> None:
-    nvim = connect()
-    nvim.exec_lua(f"vim.g[...] = {lua_value}", [name])
-    nvim.close()
+    nvim = get_nvim()
+    nvim.exec_lua(f"vim.g[...] = {lua_value}", name)
 
 
 def cmd_unset(name: str) -> None:
-    nvim = connect()
-    nvim.exec_lua("vim.g[...] = nil", [name])
-    nvim.close()
+    nvim = get_nvim()
+    nvim.exec_lua("vim.g[...] = nil", name)
 
 
 # ── Click CLI ─────────────────────────────────────────────────────────────
