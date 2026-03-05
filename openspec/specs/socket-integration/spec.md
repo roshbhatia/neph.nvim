@@ -1,4 +1,4 @@
-## ADDED Requirements
+## MODIFIED Requirements
 
 ### Requirement: NVIM_SOCKET_PATH forwarded to agent terminals
 neph.nvim's native (snacks) backend SHALL inject `NVIM_SOCKET_PATH` from `vim.env.NVIM_SOCKET_PATH` into the environment of every agent terminal it opens, so that tooling running inside those terminals can reach the parent Neovim instance via msgpack-rpc.
@@ -12,15 +12,19 @@ neph.nvim's native (snacks) backend SHALL inject `NVIM_SOCKET_PATH` from `vim.en
 - **THEN** agent terminals open normally without a `NVIM_SOCKET_PATH` entry in their environment
 
 ### Requirement: neph.nvim does not create the socket
-neph.nvim SHALL NOT call `vim.fn.serverstart()` or set `--listen` on behalf of the user. The socket must be provided externally (e.g. via `nvim --listen /tmp/nvim.sock` or the user's Neovim init configuration).
+neph.nvim SHALL NOT call `vim.fn.serverstart()` or set `--listen` on behalf of the user. The socket must be provided externally.
 
 #### Scenario: Setup with no socket is a no-op for socket features
 - **WHEN** `require("neph").setup({})` is called and `vim.env.NVIM_SOCKET_PATH` is absent
 - **THEN** setup completes without error and without attempting to create a socket
 
-### Requirement: README documents socket integration
-The README SHALL contain a section explaining `NVIM_SOCKET_PATH`, how to enable a persistent socket (`:listen` / `--listen`), and what functionality it unlocks (shim RPC, vimdiff hunk review in pi.ts).
+### Requirement: README documents socket integration and Lua script location
+The README SHALL contain a section explaining `NVIM_SOCKET_PATH` and what it enables. The companion tools table SHALL note that `shim.py` loads its Lua scripts from `tools/core/lua/`.
 
 #### Scenario: Socket section present
 - **WHEN** the README is read
-- **THEN** it contains a section titled "Socket Integration" or similar with instructions for enabling the socket and a description of what it enables
+- **THEN** it contains a "Socket Integration" section with instructions for enabling the socket
+
+#### Scenario: Lua script location documented
+- **WHEN** the README companion tools table is read
+- **THEN** the `shim.py` row mentions that Lua scripts live in `tools/core/lua/`
