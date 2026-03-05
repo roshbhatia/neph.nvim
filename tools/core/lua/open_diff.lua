@@ -133,7 +133,6 @@ end
 -- ── Virtual text hints ────────────────────────────────────────────────────────
 
 local hints_ns = vim.api.nvim_create_namespace("neph_review_hints")
-local show_help = false
 
 local function clear_hints()
   vim.api.nvim_buf_clear_namespace(right_buf, hints_ns, 0, -1)
@@ -145,22 +144,10 @@ local function show_hints(hunk_range, idx)
   if not hunk_range then return end
   
   local counter_line = hunk_range.start_line - 1 -- 0-indexed
-  -- Place hints on the next line, not on the same line
-  local hint_line = counter_line + 1
   
   -- Hunk counter at end of hunk start line
   vim.api.nvim_buf_set_extmark(right_buf, hints_ns, counter_line, 0, {
     virt_text = {{ string.format(" ← hunk %d/%d", idx, total_hunks), "DiagnosticInfo" }},
-    virt_text_pos = "eol",
-  })
-  
-  -- Keybinding hints on next line
-  local hint_text = show_help
-    and "y=accept | n=reject+reason | a=accept-all | d=reject-all | e=manual | [?] hide"
-    or  "[y]es [n]o [a]ll [d]eny [e]dit [?]help"
-  
-  vim.api.nvim_buf_set_extmark(right_buf, hints_ns, hint_line, 0, {
-    virt_text = {{ hint_text, "Comment" }},
     virt_text_pos = "eol",
   })
 end
@@ -268,122 +255,126 @@ current_hunk_line = hunk_ranges[1].start_line
 place_sign("neph_current", current_hunk_line)
 show_hints(hunk_ranges[1], 1)
 
-if debug_log then debug_log:close() end
+-- ── Interactive review loop using vim.ui.select ──────────────────────────────
 
--- ── Keymaps ───────────────────────────────────────────────────────────────────
-
-local map_opts = { nowait = true, noremap = true, silent = true }
-
--- y — accept current hunk
-vim.keymap.set("n", "y", function()
-  vim.api.nvim_set_current_win(left_win)
-  if current_hunk_line then
-    unplace_sign(current_hunk_line)
-    place_sign("neph_accept", current_hunk_line)
-  end
-  pcall(vim.cmd, "diffget")
-  vim.cmd("diffupdate")
-  table.insert(hunks, { index = hunk_idx, decision = "accept", reason = vim.NIL })
-  
-  local next_range = next_hunk()
-  if next_range then
-    current_hunk_line = next_range.start_line
-    place_sign("neph_current", current_hunk_line)
-    show_hints(next_range, hunk_idx)
-  else
-    finalize()
-  end
-end, vim.tbl_extend("force", map_opts, { buffer = left_buf, desc = "Accept hunk" }))
-
--- n — reject current hunk (prompts for reason)
-vim.keymap.set("n", "n", function()
-  vim.api.nvim_set_current_win(left_win)
-  vim.ui.input({ prompt = "Reject reason (optional): " }, function(reason)
-    if current_hunk_line then
-      unplace_sign(current_hunk_line)
-      if reason and reason ~= "" then
-        place_sign("neph_commented", current_hunk_line)
-      else
-        place_sign("neph_reject", current_hunk_line)
+local function prompt_hunk_action()
+  vim.ui.select(
+    { "Accept", "Reject", "Accept all", "Reject all", "Manual edit" },
+    {
+      prompt = string.format("Hunk %d/%d: ", hunk_idx, total_hunks),
+      format_item = function(item) return item end,
+    },
+    function(choice)
+      if not choice then
+        -- User cancelled (Esc)
+        vim.ui.input({ prompt = "Reject reason: " }, function(reason)
+          table.insert(hunks, { index = hunk_idx, decision = "reject", reason = reason or vim.NIL })
+          while next_hunk() do
+            hunk_idx = hunk_idx + 1
+            table.insert(hunks, { index = hunk_idx, decision = "reject", reason = vim.NIL })
+          end
+          finalize()
+        end)
+        return
+      end
+      
+      if choice == "Accept" then
+        vim.api.nvim_set_current_win(left_win)
+        if current_hunk_line then
+          unplace_sign(current_hunk_line)
+          place_sign("neph_accept", current_hunk_line)
+        end
+        pcall(vim.cmd, "diffget")
+        vim.cmd("diffupdate")
+        table.insert(hunks, { index = hunk_idx, decision = "accept", reason = vim.NIL })
+        
+        local next_range = next_hunk()
+        if next_range then
+          current_hunk_line = next_range.start_line
+          place_sign("neph_current", current_hunk_line)
+          show_hints(next_range, hunk_idx)
+          prompt_hunk_action()
+        else
+          finalize()
+        end
+        
+      elseif choice == "Reject" then
+        vim.ui.input({ prompt = "Reject reason (optional): " }, function(reason)
+          if current_hunk_line then
+            unplace_sign(current_hunk_line)
+            if reason and reason ~= "" then
+              place_sign("neph_commented", current_hunk_line)
+            else
+              place_sign("neph_reject", current_hunk_line)
+            end
+          end
+          
+          table.insert(hunks, { index = hunk_idx, decision = "reject", reason = reason or vim.NIL })
+          
+          local next_range = next_hunk()
+          if next_range then
+            current_hunk_line = next_range.start_line
+            place_sign("neph_current", current_hunk_line)
+            show_hints(next_range, hunk_idx)
+            prompt_hunk_action()
+          else
+            finalize()
+          end
+        end)
+        
+      elseif choice == "Accept all" then
+        vim.api.nvim_set_current_win(left_win)
+        if current_hunk_line then
+          unplace_sign(current_hunk_line)
+          place_sign("neph_accept", current_hunk_line)
+        end
+        pcall(vim.cmd, "diffget")
+        vim.cmd("diffupdate")
+        table.insert(hunks, { index = hunk_idx, decision = "accept", reason = vim.NIL })
+        
+        while true do
+          local next_range = next_hunk()
+          if not next_range then break end
+          current_hunk_line = next_range.start_line
+          place_sign("neph_accept", current_hunk_line)
+          pcall(vim.cmd, "diffget")
+          vim.cmd("diffupdate")
+          table.insert(hunks, { index = hunk_idx, decision = "accept", reason = vim.NIL })
+        end
+        finalize()
+        
+      elseif choice == "Reject all" then
+        vim.ui.input({ prompt = "Reject reason: " }, function(reason)
+          if current_hunk_line then
+            unplace_sign(current_hunk_line)
+            place_sign("neph_reject", current_hunk_line)
+          end
+          table.insert(hunks, { index = hunk_idx, decision = "reject", reason = reason or vim.NIL })
+          
+          while true do
+            local next_range = next_hunk()
+            if not next_range then break end
+            current_hunk_line = next_range.start_line
+            place_sign("neph_reject", current_hunk_line)
+            table.insert(hunks, { index = hunk_idx, decision = "reject", reason = vim.NIL })
+          end
+          finalize()
+        end)
+        
+      elseif choice == "Manual edit" then
+        table.insert(hunks, { index = hunk_idx, decision = "reject", reason = "Manual resolution" })
+        cleanup()
+        write_result({
+          schema   = "review/v1",
+          decision = "reject",
+          content  = "",
+          hunks    = hunks,
+          reason   = "Manual resolution",
+        })
       end
     end
-    
-    table.insert(hunks, { index = hunk_idx, decision = "reject", reason = reason or vim.NIL })
-    
-    local next_range = next_hunk()
-    if next_range then
-      current_hunk_line = next_range.start_line
-      place_sign("neph_current", current_hunk_line)
-      show_hints(next_range, hunk_idx)
-    else
-      finalize()
-    end
-  end)
-end, vim.tbl_extend("force", map_opts, { buffer = left_buf, desc = "Reject hunk" }))
-
--- a — accept all remaining hunks
-vim.keymap.set("n", "a", function()
-  vim.api.nvim_set_current_win(left_win)
-  if current_hunk_line then
-    unplace_sign(current_hunk_line)
-    place_sign("neph_accept", current_hunk_line)
-  end
-  pcall(vim.cmd, "diffget")
-  vim.cmd("diffupdate")
-  table.insert(hunks, { index = hunk_idx, decision = "accept", reason = vim.NIL })
-  
-  while true do
-    local next_range = next_hunk()
-    if not next_range then break end
-    current_hunk_line = next_range.start_line
-    place_sign("neph_accept", current_hunk_line)
-    pcall(vim.cmd, "diffget")
-    vim.cmd("diffupdate")
-    table.insert(hunks, { index = hunk_idx, decision = "accept", reason = vim.NIL })
-  end
-  finalize()
-end, vim.tbl_extend("force", map_opts, { buffer = left_buf, desc = "Accept all hunks" }))
-
--- d / <Esc> — reject all remaining
-local function reject_all()
-  vim.ui.input({ prompt = "Reject reason: " }, function(reason)
-    if current_hunk_line then
-      unplace_sign(current_hunk_line)
-      place_sign("neph_reject", current_hunk_line)
-    end
-    table.insert(hunks, { index = hunk_idx, decision = "reject", reason = reason or vim.NIL })
-    
-    while true do
-      local next_range = next_hunk()
-      if not next_range then break end
-      current_hunk_line = next_range.start_line
-      place_sign("neph_reject", current_hunk_line)
-      table.insert(hunks, { index = hunk_idx, decision = "reject", reason = vim.NIL })
-    end
-    finalize()
-  end)
+  )
 end
 
-vim.keymap.set("n", "d", reject_all, vim.tbl_extend("force", map_opts, { buffer = left_buf, desc = "Reject all hunks" }))
-vim.keymap.set("n", "<Esc>", reject_all, vim.tbl_extend("force", map_opts, { buffer = left_buf, desc = "Reject all hunks" }))
-
--- e — hand off for manual edit
-vim.keymap.set("n", "e", function()
-  table.insert(hunks, { index = hunk_idx, decision = "reject", reason = "Manual resolution" })
-  cleanup()
-  write_result({
-    schema   = "review/v1",
-    decision = "reject",
-    content  = "",
-    hunks    = hunks,
-    reason   = "Manual resolution",
-  })
-end, vim.tbl_extend("force", map_opts, { buffer = left_buf, desc = "Hand off for manual edit" }))
-
--- ? — toggle help
-vim.keymap.set("n", "?", function()
-  show_help = not show_help
-  if hunk_ranges[hunk_idx] then
-    show_hints(hunk_ranges[hunk_idx], hunk_idx)
-  end
-end, vim.tbl_extend("force", map_opts, { buffer = left_buf, desc = "Toggle help" }))
+-- Start the review loop
+prompt_hunk_action()
