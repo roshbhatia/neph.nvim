@@ -1,74 +1,36 @@
 ## ADDED Requirements
 
-### Requirement: Pure Lua file operations API
+### Requirement: Pure Lua API modules
 
-The system SHALL provide a pure Lua API for all file operations (write, edit, delete, read) that is independent of any transport protocol.
+The system SHALL provide pure Lua API modules for status and buffer operations, callable from `rpc.lua` dispatch.
 
-#### Scenario: Write file via Lua API
-- **WHEN** a protocol adapter calls `require("neph.api.write").file(path, content)`
-- **THEN** the file SHALL be created or overwritten with the specified content
-- **AND** the function SHALL return success status
+#### Scenario: Set vim.g global
+- **WHEN** `require("neph.api.status").set({ name = "pi_active", value = "true" })` is called
+- **THEN** `vim.g[name]` SHALL be set to the value
+- **AND** function SHALL return `{ set = true }`
 
-#### Scenario: Edit file via Lua API
-- **WHEN** a protocol adapter calls `require("neph.api.edit").file(path, old_text, new_text)`
-- **THEN** the system SHALL find exact match of old_text in the file
-- **AND** replace it with new_text
-- **AND** return success status with updated content
+#### Scenario: Unset vim.g global
+- **WHEN** `require("neph.api.status").unset({ name = "pi_active" })` is called
+- **THEN** `vim.g[name]` SHALL be set to nil
 
-#### Scenario: Delete file via Lua API
-- **WHEN** a protocol adapter calls `require("neph.api.delete").file(path)`
-- **THEN** the file SHALL be removed from the filesystem
-- **AND** the function SHALL return success status
+#### Scenario: Checktime
+- **WHEN** `require("neph.api.buffers").checktime()` is called
+- **THEN** `vim.cmd("checktime")` SHALL be executed to reload buffers from disk
 
-#### Scenario: Read file via Lua API
-- **WHEN** a protocol adapter calls `require("neph.api.read").file(path)`
-- **THEN** the function SHALL return the file contents as a string
-- **AND** handle binary files appropriately
-
-### Requirement: Path validation
-
-The API SHALL validate all file paths before performing operations.
-
-#### Scenario: Reject invalid path type
-- **WHEN** a path argument is not a string
-- **THEN** the function SHALL raise a Lua error with descriptive message
-
-#### Scenario: Reject relative paths outside workspace
-- **WHEN** a path contains `..` segments that escape the workspace
-- **THEN** the function SHALL reject the operation with security error
-
-#### Scenario: Normalize path separators
-- **WHEN** a path is provided with mixed separators (forward/backslash)
-- **THEN** the system SHALL normalize to platform-appropriate separator
-
-### Requirement: Error handling
-
-The API SHALL provide consistent error handling across all operations.
-
-#### Scenario: File not found for edit
-- **WHEN** edit operation is called on non-existent file
-- **THEN** the function SHALL return error with "file not found" message
-- **AND** SHALL NOT create the file
-
-#### Scenario: Permission denied
-- **WHEN** operation fails due to filesystem permissions
-- **THEN** the function SHALL return error with "permission denied" message
-- **AND** include the specific path in the error
-
-#### Scenario: Exact match not found for edit
-- **WHEN** old_text is not found in the file
-- **THEN** the function SHALL return error with "exact match not found" message
-- **AND** include context showing nearby content
+#### Scenario: Close agent tab
+- **WHEN** `require("neph.api.buffers").close_tab()` is called
+- **AND** `vim.g.agent_tab` is set
+- **THEN** the tab SHALL be closed
+- **AND** `vim.g.agent_tab` SHALL be set to nil
 
 ### Requirement: Protocol independence
 
-The API SHALL NOT depend on any specific transport protocol or external runtime.
+The API modules SHALL NOT depend on any transport mechanism.
 
-#### Scenario: Callable from pure Lua unit tests
-- **WHEN** API functions are called from plenary test suite
+#### Scenario: Callable from plenary tests
+- **WHEN** API functions are called from busted test suite in nvim --headless
 - **THEN** they SHALL execute without requiring Node, Python, or network services
 
-#### Scenario: No protocol-specific types in signatures
-- **WHEN** examining API function signatures
-- **THEN** they SHALL only use Lua primitive types (string, table, boolean, number)
-- **AND** SHALL NOT reference protocol-specific types (WebSocket, RPC channel, etc.)
+#### Scenario: Serializable types only
+- **WHEN** examining API function signatures and return values
+- **THEN** they SHALL only use msgpack-safe types (string, number, boolean, table)

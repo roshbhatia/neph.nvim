@@ -1,639 +1,367 @@
 ## Context
 
 **Current State:**
-- Python subprocess (shim.py) sends text to terminal via WezTerm/multiplexer
-- No native integration with agent RPC APIs (pi, opencode support this)
-- Diff review flow works but is fragile (subprocess, msgpack serialization)
-- Testing requires complex mocking of subprocess communication
+- Python subprocess (shim.py) bridges pi extension ↔ Neovim via pynvim msgpack-rpc
+- Pi's ExtensionAPI has NO built-in Neovim connection (no ctx.nvim) — shim IS the bridge
+- Inline Lua strings passed through Python exec_lua — leaky, untestable
+- Diff review works but is fragile: temp files, sleep-polling, no request correlation
+- Terminal agents (claude, goose) just send text via multiplexer — simple and correct
+- Dagger CI uses `nix-shell shell.nix` — should be flake-first with `nix develop`
 
 **Research Findings:**
-1. **pi coding-agent**: RPC extension API with `ctx.ui.select()`, `ctx.ui.input()`, `ctx.ui.editor()`, `ctx.ui.setStatus()`
-2. **opencode**: Also supports RPC interface for native integration
-3. **Amp toolboxes**: Shell executables for one-shot tools (no persistent connection needed)
-4. **Our UX**: Diff review flow is the pattern we want - just needs to be stable and work reliably
+1. **pi-coding-agent**: ExtensionAPI is Neovim-agnostic. Provides `pi.on()`, `pi.registerTool()`, `ctx.ui.setStatus()`, `pi.exec()`. No Neovim bridge.
+2. **opencode**: Also supports extensions, similar pattern — no built-in Neovim bridge
+3. **claude code / amp**: Discover tools via PATH, call as executables with stdin/stdout
+4. **codediff.nvim**: Read-only diff viewer — cannot replace our per-hunk accept/reject flow
+5. **Neovim plugin ecosystem**: No plugins use Dagger; all use `rhysd/action-setup-vim` or AppImage. `mini.doc` is the idiomatic vimdoc generator. `lazy.minit` is the modern test bootstrap pattern.
 
 **Key Insight:**
-We have **two integration patterns**:
-1. **Agents with RPC APIs** (pi, opencode) → Use their native API, not terminal text
-2. **CLI-only agents** (goose, claude, etc.) → Terminal text via multiplexer
-
-**Goal:**
-Make integration layers stable, obvious, and easy to configure. KISS principle.
+A shim process is the **universal adapter**. It serves both RPC agents (pi, opencode) that spawn it as a subprocess AND PATH agents (claude code, amp) that discover it as an executable tool.
 
 **Constraints:**
 - Neovim ≥ 0.10 required
-- Quality over minimalism - use whatever dependencies make sense
-- Must support both RPC-capable agents AND terminal-only agents
-- Diff review UX is the pattern - make it bulletproof
+- Node.js on PATH (already required for pi ecosystem)
+- Must handle async interactive review without deadlocking in :terminal
+- Unix philosophy: do one thing well, composable, text streams as interfaces
+- Tests must pass in Dagger locally before pushing
 
 ## Goals / Non-Goals
 
 **Goals:**
-- **Two integration modes**: RPC (for pi, opencode) + Terminal (for CLI agents)
-- **Stable diff review**: Works reliably, no subprocess fragility
-- **Easy configuration**: Agent declares its integration mode, rest is automatic
-- **Extensible**: New agents are easy to add, integration pattern is obvious
-- **Native when possible**: Use agent's RPC API if available (better than terminal text)
+- **Universal bridge**: One CLI (`neph`) serves both RPC agents and PATH tools
+- **Clean RPC boundary**: Lua dispatch facade — external code never writes inline Lua
+- **Testable review**: Engine logic tested headless, UI tested manually
+- **Robust async protocol**: Request IDs, atomic writes, notification-driven completion
+- **Contract sync**: `protocol.json` validated by both Lua and TS tests
+- **Flake-first CI**: `nix develop` provides all deps deterministically
+- **Idiomatic docs**: `mini.doc` for vimdoc, `docs/*.md` for architecture
 
 **Non-Goals:**
-- Generic protocol system (just need RPC + Terminal, that's it)
-- WebSocket server (don't need editor-as-server pattern)
-- Script protocol as separate thing (it's just "no persistent connection" terminal mode)
-- Migration from old code (clean break, no users)
+- Generic protocol framework (WebSocket, Script Protocol, Protocol Negotiation)
+- Lifecycle hooks system (agents have their own event systems)
+- Tool registry (we don't need to re-discover tools at runtime)
+- Node client package as library (the CLI IS the interface)
+- codediff.nvim integration (it can't do per-hunk accept/reject)
+- Cross-language type codegen (contract tests are sufficient)
+- Backward compatibility with shim.py (pre-1.0, clean break)
 
 ## Decisions
 
-### 1. Two Integration Modes (KISS)
+### 1. Universal CLI Called `neph`
 
-**Decision:** Support exactly two modes:
+**Decision:** Build a single Node/TS CLI that serves all external consumers:
 
-**Mode 1: RPC Integration** (for pi, opencode, future agents with APIs)
-```typescript
-// tools/pi-client/src/index.ts
-import { PiClient } from "@mariozechner/pi-coding-agent/client";
+```
+CONSUMER A: RPC Agents (pi, opencode extensions)
+  pi.ts:  spawn("neph", ["review", path], { stdin: content })
+          → stdout JSON → ReviewEnvelope
 
-const pi = await PiClient.connect();
-
-// Native API calls, no terminal text needed
-await pi.ui.select("Review change?", ["Accept", "Reject"]);
-await pi.ui.input("Enter commit message");
-await pi.ui.editor("Edit prompt", initialText);
+CONSUMER B: PATH Tools (claude code, amp --ide)
+  $ echo "proposed content" | neph review foo.ts
+  → stdout: ReviewEnvelope JSON
 ```
 
-**Mode 2: Terminal Integration** (for goose, claude, other CLI agents)
-```lua
--- lua/neph/integrations/terminal.lua
-local terminal = require("neph.terminal")
-
--- Send text to agent's terminal via multiplexer
-terminal.send(agent, "Please write hello.py\n")
+**CLI Commands:**
 ```
+neph review <path>    stdin=content, stdout=ReviewEnvelope JSON (interactive)
+neph set <key> <val>  fire-and-forget (set vim.g global)
+neph unset <key>      fire-and-forget
+neph checktime        fire-and-forget (reload buffers)
+neph close-tab        fire-and-forget
+neph status           stdout=JSON connection info
+neph spec             stdout=tool schema JSON (for PATH agent discovery)
+```
+
+**Contract:**
+- stdout: machine-readable JSON only
+- stderr: human-readable logs/errors
+- stdin: content payloads (for review)
+- Exit 0: success, non-zero: failure
+- `NVIM_SOCKET_PATH` env var for Neovim connection (inherited or auto-discovered)
+
+**Implementation:**
+- TypeScript, bundled with esbuild to single file
+- `@neovim/node-client` for msgpack-rpc to Neovim
+- Transport layer injected as interface — unit tests use fake transport
+- `#!/usr/bin/env node` shebang, symlinked to `~/.local/bin/neph`
 
 **Rationale:**
-- RPC is better when available (native UI, structured data, no parsing)
-- Terminal is fallback for CLI-only agents
-- No need for 4 protocols - just these two patterns
+- One bridge, two consumer types — unix philosophy
+- Same ecosystem as pi extensions (TypeScript)
+- esbuild bundle = single file, fast startup
+- Injected transport = testable without spawning Neovim
 
 **Alternatives considered:**
-- ❌ **WebSocket**: Overkill, RPC does everything we need
-- ❌ **Universal protocol**: Agents have different APIs, embrace it
-- ❌ **Only terminal**: Wastes RPC capabilities of pi/opencode
+- ❌ **Direct Node RPC client inside pi**: Doesn't help PATH tools
+- ❌ **Keep Python shim**: Unnecessary Python dependency
+- ❌ **Go/Rust binary**: Bigger rewrite, revisit only if "no Node" becomes required
 
-### 2. Agent Configuration Declares Integration Mode
+### 2. Lua RPC Dispatch Facade
 
-**Decision:** Agent config explicitly declares how to integrate:
+**Decision:** One Lua module routes all external RPC calls. External code never writes inline Lua.
 
 ```lua
--- lua/neph/internal/agents.lua
-agents = {
-  pi = {
-    integration = "rpc",
-    rpc = {
-      client = "tools/pi-client/dist/index.js",
-      socket = "~/.pi/socket",  -- or auto-discover
-    },
-  },
-  
-  goose = {
-    integration = "terminal",
-    terminal = {
-      command = "goose session start",
-      multiplexer = "wezterm",  -- or native, tmux
-    },
-  },
+-- lua/neph/rpc.lua
+local dispatch = {
+  ["review.open"]   = function(p) return require("neph.api.review").open(p) end,
+  ["status.set"]    = function(p) return require("neph.api.status").set(p) end,
+  ["status.unset"]  = function(p) return require("neph.api.status").unset(p) end,
+  ["buffers.check"] = function(p) return require("neph.api.buffers").checktime(p) end,
+  ["tab.close"]     = function(p) return require("neph.api.buffers").close_tab(p) end,
 }
-```
 
-**Rationale:**
-- Configuration is explicit - no magic auto-detection
-- Easy to add new agents - just copy pattern
-- Clear which integration mode is used
-
-**Alternatives considered:**
-- ❌ **Auto-detect**: Hidden complexity, hard to debug when wrong
-- ❌ **Implicit defaults**: User doesn't know what's happening
-
-### 3. Pure Lua API as Single Source of Truth
-
-**Decision:** All file operations go through pure Lua API, regardless of integration mode:
-
-```
-RPC Integration:              Terminal Integration:
-  pi client                     terminal send
-      ↓                              ↓
-  lua/neph/api/write.lua ← lua/neph/api/write.lua
-      ↓                              ↓
-  filesystem                    filesystem
-```
-
-**What this means:**
-- RPC client calls Lua API via Neovim RPC
-- Terminal integration also calls Lua API (on behalf of agent)
-- Tests only need to mock Lua API layer
-- All validation, error handling in one place
-
-**Example - pi diff review:**
-```typescript
-// pi extension calls Neovim RPC
-const choice = await nvim.lua(`
-  return require("neph.api.review").show_diff(${path}, ${original}, ${modified})
-`);
-
-// Lua API handles the diff display, returns choice
-// No subprocess, no msgpack serialization
-```
-
-**Rationale:**
-- Single code path for file operations
-- Testable in isolation
-- No duplication between integration modes
-
-**Alternatives considered:**
-- ❌ **Different APIs per mode**: Duplication, drift, bugs
-- ❌ **No API layer**: Logic scattered across integrations
-
-### 4. Diff Review as Lua Function
-
-**Decision:** Diff review is a pure Lua function that returns a decision:
-
-```lua
--- lua/neph/api/review.lua
-function M.show_diff(path, original, modified)
-  -- Open diff in splits
-  local left_buf = create_buffer(original)
-  local right_buf = create_buffer(modified)
-  
-  -- Show picker (Snacks.picker.select)
-  local choice = vim.ui.select({"Accept", "Reject", "Edit"})
-  
-  -- Return structured result
-  return {
-    decision = choice,
-    content = get_final_content(),
-  }
+function M.request(method, params)
+  local handler = dispatch[method]
+  if not handler then
+    return { ok = false, error = { code = "METHOD_NOT_FOUND", message = method } }
+  end
+  local ok, result = pcall(handler, params or {})
+  if not ok then
+    return { ok = false, error = { code = "INTERNAL", message = result } }
+  end
+  return { ok = true, result = result }
 end
 ```
 
-**Called from pi extension:**
+**The neph CLI uses ONE constant Lua string:**
 ```typescript
-// tools/pi/extensions/neph.ts
-pi.on("tool_call", async (event, ctx) => {
-  if (event.toolName !== "write_file") return;
-  
-  const result = await ctx.nvim.lua(`
-    return require("neph.api.review").show_diff(
-      ${event.input.path},
-      ${original},
-      ${event.input.content}
-    )
-  `);
-  
-  if (result.decision === "Accept") {
-    // Continue with write
-  } else {
-    return { block: true };
-  }
-});
+const RPC_CALL = `return require("neph.rpc").request(...)`;
+// Every command: nvim.executeLua(RPC_CALL, [method, params])
 ```
 
 **Rationale:**
-- Pure Lua function - testable with plenary
-- No subprocess, no temp files, no notification polling
-- Works from RPC or terminal integration
+- Single RPC boundary — clean, auditable, versioned
+- External code has zero Lua knowledge
+- Dispatch table is the protocol definition
+- Error normalization in one place
 
 **Alternatives considered:**
-- ❌ **Keep subprocess model**: Fragile, hard to test
-- ❌ **Temp files + polling**: Current model, unnecessary complexity
+- ❌ **Inline Lua per command**: Leaky, untypeable, breaks silently
+- ❌ **Separate exec_lua calls per API function**: Same problem, scattered
 
-### 5. Pi Integration via Extension (Hook, Don't Replace)
+### 3. Review Engine / UI Split
 
-**Decision:** Hook into pi's tool execution flow, don't replace tools:
+**Decision:** Separate pure review logic from Neovim UI:
+
+```
+REVIEW ENGINE  (lua/neph/api/review/engine.lua)
+  Pure logic, testable with nvim --headless, no UI
+
+  • compute_hunks(old_lines, new_lines) → hunk[]
+  • apply_decisions(old_lines, new_lines, decisions) → final_content
+  • build_envelope(decisions) → ReviewEnvelope
+  • State machine: next, accept, reject, accept_all
+
+REVIEW UI  (lua/neph/api/review/ui.lua)
+  Thin Neovim adapter, tested manually
+
+  • open_diff_tab(orig, proposed) → tab handles
+  • Signs, virtual text, winbars
+  • Snacks.picker.select loop for hunk decisions
+  • Calls engine for state transitions + envelope
+  • Writes result + rpcnotify on completion
+```
+
+**Rationale:**
+- Engine testable with plenary in headless nvim — no UI mocking
+- UI layer is thin — only wires Neovim primitives to engine calls
+- Current review UX (vimdiff + Snacks picker + per-hunk signs) preserved
+- codediff.nvim evaluated and rejected (no per-hunk decision callback)
+
+### 4. Hardened Async Review Protocol
+
+**Decision:** Request IDs + atomic writes + notification-driven completion:
+
+```
+  neph CLI                          Neovim (rpc.lua → review)
+
+  1. Generate request_id (uuid)
+  2. Create result_path
+
+     exec_lua(RPC_CALL, {
+       method: "review.open",
+       request_id: "abc-123",
+       result_path: "/tmp/neph-...",
+       channel_id: N,
+       path, content
+     })
+     ─────────────────────────────▶
+                                     opens diff tab (non-blocking)
+     returns immediately
+
+     ... user reviews hunks ...
+
+                                     engine builds envelope
+                                     write result_path.tmp
+                                     rename → result_path (atomic)
+     ◀─── rpcnotify(channel,
+          "neph:review_done",
+          { request_id: "abc-123" })
+
+  3. Read result_path
+  4. Print envelope JSON to stdout
+  5. Cleanup + exit 0
+```
+
+**Three improvements over current shim.py:**
+1. **Request ID**: Prevents cross-talk between concurrent reviews
+2. **Atomic write**: `rename()` instead of hoping file is fully written
+3. **Notification-driven**: `onNotification` callback, no `time.sleep(0.1)` polling
+
+### 5. Transport Interface Injection (Testability)
+
+**Decision:** The neph CLI's Neovim transport is an injected interface:
 
 ```typescript
-// tools/pi/extensions/neph.ts
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-
-export default function (pi: ExtensionAPI) {
-  
-  // Hook BEFORE tool executes (intercept)
-  pi.on("tool_call", async (event, ctx) => {
-    if (!["write_file", "edit_file"].includes(event.toolName)) return;
-    
-    // Let tool execute first, get the result
-    const original = event.toolName === "edit_file" 
-      ? await readFile(event.input.path)
-      : null;
-    
-    // Tool will execute, then we review
-    return undefined; // don't block yet
-  });
-  
-  // Hook AFTER tool executes (review)
-  pi.on("tool_result", async (event, ctx) => {
-    if (!["write_file", "edit_file"].includes(event.toolName)) return;
-    
-    // Show diff of what tool just did
-    const result = await ctx.nvim.lua(`
-      return require("neph.api.review").show_diff(
-        "${event.input.path}",
-        "${original || ''}",
-        "${event.result.content}"
-      )
-    `);
-    
-    if (result.decision === "Reject") {
-      // Revert the change
-      await writeFile(event.input.path, original);
-      return { modify: { error: "User rejected change" } };
-    }
-    
-    if (result.decision === "Edit") {
-      // Update with user's edited version
-      await writeFile(event.input.path, result.content);
-      return { modify: { content: result.content } };
-    }
-    
-    // Accept - let original result stand
-  });
+interface NvimTransport {
+  executeLua(code: string, args: unknown[]): Promise<unknown>;
+  onNotification(event: string, handler: (args: unknown[]) => void): void;
+  close(): Promise<void>;
 }
 ```
 
-**Benefits:**
-- Uses pi's existing write_file/edit_file tools (tested, maintained by pi team)
-- We just wrap with review UX
-- Can accept/reject/edit after seeing what tool did
-- No need to reimplement tool logic
+- **Production**: `SocketTransport` wraps `@neovim/node-client` over Unix socket
+- **Tests**: `FakeTransport` records calls and returns scripted responses
 
 **Rationale:**
-- Pi's tools already handle edge cases (file permissions, encoding, etc.)
-- OpenCode, Claude, Gemini, Amp also have their own tools
-- Our job: add review UX, not replace tools
+- Unit tests run in vitest without spawning Neovim — fast, deterministic
+- Integration tests (few) use real headless Neovim over socket
+- Matches how pi.test.ts already works (mocking spawn, not Neovim)
 
-**Alternatives considered:**
-- ❌ **Replace tools entirely**: Reimplementing tool logic, maintenance burden
-- ❌ **Override tool definitions**: Bypasses agent's tool system, fragile
+### 6. Contract Sync via `protocol.json`
 
-### 6. Integration Patterns Per Agent
+**Decision:** Keep Lua ↔ TS RPC contract in sync without codegen:
 
-**Decision:** Support all 10 agents with appropriate integration for each:
-
-#### RPC Integration (Native API Support)
-
-**Pi**
-```typescript
-// Hook tool_result to review after execution
-pi.on("tool_result", async (event, ctx) => {
-  if (["write_file", "edit_file"].includes(event.toolName)) {
-    const result = await ctx.nvim.lua(`review.show_diff(...)`);
-    // Accept/Reject/Edit based on user choice
+```json
+{
+  "version": "neph-rpc/v1",
+  "methods": {
+    "review.open": {
+      "params": ["request_id", "result_path", "channel_id", "path", "content"],
+      "async": true
+    },
+    "status.set": { "params": ["name", "value"] },
+    "status.unset": { "params": ["name"] },
+    "buffers.check": { "params": [] },
+    "tab.close": { "params": [] }
   }
-});
-```
-
-**OpenCode**
-```typescript
-// OpenCode also supports extensions, same pattern as pi
-opencode.on("tool_result", async (event, ctx) => {
-  // Same review flow as pi
-});
-```
-
-**Cursor**
-```typescript
-// cursor-agent likely supports similar extension model
-// Check cursor-agent docs for hook points
-cursor.on("tool_result", async (event, ctx) => {
-  // Review flow if cursor supports extensions
-});
-```
-
-#### Terminal Integration (CLI-Only)
-
-**Claude**
-```lua
--- Anthropic Claude CLI
-terminal.send("claude", context.expand(prompt))
-```
-
-**Gemini**
-```lua
--- Google Gemini CLI
-terminal.send("gemini", context.expand(prompt))
-```
-
-**Goose**
-```lua
--- Block/Square Hole Goose
-terminal.send("goose", context.expand(prompt))
-```
-
-**Copilot**
-```lua
--- GitHub Copilot CLI
-terminal.send("copilot", context.expand(prompt))
-```
-
-#### Hybrid / TBD (Check Capabilities)
-
-**Amp**
-```lua
--- Sourcegraph Amp with --ide flag
--- May support RPC/extensions, currently using terminal
--- Watch: https://github.com/sourcegraph/amp
-if amp.supports_extensions then
-  -- Use RPC integration
-else
-  terminal.send("amp", context.expand(prompt))
-end
-```
-
-**Crush**
-```lua
--- Unknown agent - needs research
--- Default to terminal integration
-terminal.send("crush", context.expand(prompt))
-```
-
-**Codex**
-```lua
--- Unknown agent - needs research  
--- Default to terminal integration
-terminal.send("codex", context.expand(prompt))
-```
-
-**Agent Classification:**
-- **RPC-capable**: pi, opencode, cursor (likely)
-- **Terminal-only**: claude, gemini, goose, copilot
-- **Needs research**: amp (has --ide flag), crush, codex
-
-**Rationale:**
-- Use RPC when agent exposes extension API
-- Terminal for CLI-only agents
-- Easy to upgrade when agents add RPC support
-- Configuration declares integration mode explicitly
-
-**Key insight:**
-We're not building one universal protocol - we're building **integration patterns** that match each agent's capabilities.
-
-**Alternatives considered:**
-- ❌ **Force all agents to one protocol**: Limits what we can do
-- ❌ **Build MCP server**: Wrong abstraction, we're integrating with agents, not serving them
-- ❌ **Only support RPC agents**: Excludes useful CLI tools
-
-### 7. Terminal Integration (Simple Text Sending)
-
-**Decision:** For CLI agents (claude, gemini), just send text reliably:
-
-```lua
--- lua/neph/integrations/terminal.lua
-function M.send_prompt(agent_name, prompt)
-  local agent = agents[agent_name]
-  local backend = session.get_backend(agent)
-  
-  -- Expand context placeholders (+file, +selection, etc.)
-  local expanded = context.expand(prompt)
-  
-  -- Send to terminal
-  backend.send(expanded .. "\n")
-end
-```
-
-**Key point:**
-- Terminal integration doesn't intercept agent's UX
-- No diff review (CLI agents handle their own prompting)
-- Just reliable text sending + context expansion
-
-**Rationale:**
-- Claude, Gemini already have their own review flows
-- Trying to intercept CLI output is fragile
-- Keep it simple: send input, let agent control UX
-
-**Alternatives considered:**
-- ❌ **Parse CLI output**: Breaks with agent updates
-- ❌ **Build wrapper per agent**: Maintenance nightmare
-
-**Decision:** Test the actual integration, not mocked approximations:
-
-**Unit tests (Lua with plenary):**
-```lua
-describe("api.review", function()
-  it("shows diff and returns decision", function()
-    local result = review.show_diff(path, "old", "new")
-    assert.equals("Accept", result.decision)
-  end)
-end)
-```
-
-**Integration tests (TypeScript with real Neovim):**
-```typescript
-test("pi extension calls review API", async () => {
-  const nvim = await spawnHeadlessNvim();
-  loadPiExtension(nvim);
-  
-  // Trigger tool call
-  await pi.tools.write_file("/tmp/test.txt", "content");
-  
-  // Verify Lua API was called
-  const calls = await nvim.lua("return review_calls");
-  expect(calls).toHaveLength(1);
-});
-```
-
-**E2E tests (Real agents, minimal):**
-```bash
-# Start pi with neph extension
-pi --extension tools/pi/extensions/neph.ts
-
-# Send prompt that triggers file write
-echo "Write hello.py" | pi
-
-# Verify diff review was shown
-# (manual verification or screenshot testing)
-```
-
-**Rationale:**
-- Integration tests verify RPC connection works
-- Unit tests verify Lua API logic
-- E2E tests verify user experience
-- Focus on "does it work" not "did we hit 70% coverage"
-
-**Alternatives considered:**
-- ❌ **Mock everything**: Tests pass but real integration breaks
-- ❌ **Only e2e tests**: Too slow for development loop
-
-### 8. Testing Strategy - Real Behavior
-
-**Decision:** Agent configuration is Lua code, not config files:
-
-```lua
--- lua/neph/internal/agents.lua (shipped with plugin)
-return {
-  -- RPC Integration (agents with extension APIs)
-  pi = {
-    integration = "rpc",
-    command = "pi --continue",
-    rpc = {
-      extension = "tools/pi/extensions/neph.ts",
-      socket = "~/.pi/socket",
-    },
-  },
-  
-  opencode = {
-    integration = "rpc",
-    command = "opencode --continue",
-    rpc = {
-      extension = "tools/opencode/extensions/neph.ts",
-      socket = "~/.opencode/socket",
-    },
-  },
-  
-  cursor = {
-    integration = "rpc",  -- if cursor-agent supports extensions
-    command = "cursor-agent",
-    rpc = {
-      extension = "tools/cursor/extensions/neph.ts",
-      socket = "~/.cursor/socket",
-    },
-  },
-  
-  -- Terminal Integration (CLI-only agents)
-  claude = {
-    integration = "terminal",
-    command = "claude --permission-mode plan",
-    terminal = { multiplexer = "wezterm" },
-  },
-  
-  gemini = {
-    integration = "terminal",
-    command = "gemini",
-    terminal = { multiplexer = "wezterm" },
-  },
-  
-  goose = {
-    integration = "terminal",
-    command = "goose",
-    terminal = { multiplexer = "wezterm" },
-  },
-  
-  copilot = {
-    integration = "terminal",
-    command = "copilot --allow-all-paths",
-    terminal = { multiplexer = "wezterm" },
-  },
-  
-  -- Hybrid / TBD (needs research)
-  amp = {
-    integration = "terminal",  -- may support RPC in future
-    command = "amp --ide",
-    terminal = { multiplexer = "wezterm" },
-  },
-  
-  crush = {
-    integration = "terminal",  -- unknown agent, default to terminal
-    command = "crush",
-    terminal = { multiplexer = "wezterm" },
-  },
-  
-  codex = {
-    integration = "terminal",  -- unknown agent, default to terminal
-    command = "codex",
-    terminal = { multiplexer = "wezterm" },
-  },
 }
 ```
 
-**User overrides in setup():**
-```lua
-require("neph").setup({
-  agents = {
-    pi = {
-      rpc = {
-        socket = "~/custom/pi.sock",  -- override socket path
-      },
-    },
-    claude = {
-      command = "claude --model sonnet-4",  -- override command
-    },
-  },
-})
+- Lua contract test: asserts every method in dispatch table exists in `protocol.json`
+- TS contract test: asserts every client method references a known method in `protocol.json`
+- Human-readable docs in `docs/rpc-protocol.md`
+
+**Rationale:**
+- No codegen pipeline to maintain
+- Both sides validated independently
+- Contract drift caught before merge
+- Revisit codegen only if method count exceeds ~20
+
+**Alternatives considered:**
+- ❌ **Cross-language type generation**: Heavy machinery for 5 methods
+- ❌ **No contract validation**: Silent drift between Lua and TS
+
+### 7. Flake-First Dagger CI
+
+**Decision:** Migrate Dagger pipeline from `nix-shell shell.nix` to `nix develop`:
+
+```typescript
+const base = client
+  .container()
+  .from("nixos/nix")
+  .withEnvVariable("NIX_CONFIG", "experimental-features = nix-command flakes")
+  .withDirectory("/app", src, { exclude: [".git", "node_modules", ".fluentci"] })
+  .withWorkdir("/app");
+
+const lint = base.withExec(["nix", "develop", "--no-write-lock-file", "-c", "task", "lint"]);
+const test = base.withExec(["nix", "develop", "--no-write-lock-file", "-c", "task", "test"]);
 ```
 
 **Rationale:**
-- Configuration is versioned with plugin
-- LSP provides completion for config
-- Easy to document (it's just Lua)
-- User overrides merge with defaults
-- Clear which agents use RPC vs Terminal
-- Unknown agents default to terminal (safe fallback)
+- `flake.lock` pins everything — no channel drift
+- `--no-write-lock-file` prevents accidental lock updates in CI
+- Single source of truth for dev environment
+- `nix develop -c` is the idiomatic pattern
 
 **Alternatives considered:**
-- ❌ **JSON/YAML files**: No validation, no completion
-- ❌ **Env vars**: Hard to document, no structure
-- ❌ **Auto-detection**: Hidden complexity, hard to debug
+- ❌ **nix-shell with channels**: Non-deterministic, legacy pattern
+- ❌ **No Nix in CI (AppImage + clone deps)**: Ecosystem norm but loses our flake's determinism
 
-### 9. Configuration is Code (Not Files)
+### 8. Documentation Strategy
 
-### Risk: pi extension needs pi to already be running
-**Decision:** That's fine. User starts pi, loads extension. If pi isn't running, show clear error.
+**Decision:** Two layers of docs:
 
-### Risk: Different integration modes for different agents
-**Decision:** That's reality. Some agents have RPC, some don't. Configuration makes it explicit.
+**Generated vimdoc (mini.doc):**
+- `doc/neph.txt` — generated from EmmyLua annotations in `lua/neph/`
+- API reference for `:help neph`
+- Generated in CI, committed to repo (mini.nvim pattern)
 
-### Trade-off: Requires pi extension installation
-**Decision:** Ship extension with plugin. User runs: `pi --extension ~/.local/share/nvim/site/pack/.../neph.nvim/tools/pi/extensions/neph.ts`
+**Architecture docs (Markdown, alongside code):**
+- `docs/architecture.md` — module boundaries, data flow, integration patterns
+- `docs/rpc-protocol.md` — method catalog, payload shapes, versioning
+- `docs/testing.md` — how tests are structured, how to run locally/CI
+- High-impact, maintained by humans, no generation
 
-### Trade-off: Terminal integration is "dumber" than RPC
-**Decision:** Correct. CLI agents control their own UX. We just send text. That's fine.
+**Rationale:**
+- `mini.doc` is the idiomatic Neovim vimdoc generator
+- Markdown docs live in `docs/`, render on GitHub, high-impact
+- No over-engineering: two clear layers with distinct purposes
+
+### 9. Testing Philosophy
+
+**Decision:** Idiomatic tests, no ceremony:
+
+- Tests read like behavior descriptions
+- No comments explaining obvious assertions
+- No bespoke test DSLs or deep helper abstractions
+- Table-driven tests only when they genuinely reduce repetition
+- Mock at boundaries (transport, filesystem), not internal modules
+- `---@diagnostic disable` not needed — configure luacheck globals properly
+
+**Test layers:**
+
+| Layer | Runner | What | How |
+|-------|--------|------|-----|
+| Lua unit | plenary/busted, nvim --headless | Review engine, RPC dispatch, API modules | Pure function calls, no UI |
+| CLI unit | vitest | neph commands, transport protocol | Fake transport, no Neovim |
+| Contract | both | protocol.json matches dispatch + client | JSON schema validation |
+| CLI integration | vitest | End-to-end RPC over socket | Real headless Neovim, few tests |
+| Pi adapter | vitest | pi.ts event handling | Mock neph spawn (existing pattern) |
+| UI | manual | Review flow, signs, picker | Human verification |
 
 ## Implementation Plan
 
-### Phase 1: Pure Lua API
-1. Extract file operations to `lua/neph/api/`
-2. Implement diff review as pure Lua function
-3. Unit test with plenary (no external deps)
-4. Test with manual Lua API calls
+### Phase 1: Lua API Layer + Review Engine Split
+1. Create `lua/neph/api/review/engine.lua` — extract pure logic from `open_diff.lua`
+2. Create `lua/neph/api/review/ui.lua` — thin adapter using engine
+3. Create `lua/neph/api/status.lua`, `lua/neph/api/buffers.lua`
+4. Create `lua/neph/rpc.lua` — dispatch facade
+5. Unit tests for engine and rpc dispatch (plenary/busted)
 
-### Phase 2: RPC Integration (Pi, OpenCode, Cursor)
-1. Create pi extension using `ExtensionAPI`
-2. Hook `tool_result` event to call Lua review API
-3. Use `ctx.nvim.lua()` for RPC calls
-4. Integration test with headless Neovim
-5. Create opencode extension (same pattern)
-6. Research cursor-agent extension API, implement if available
+### Phase 2: neph CLI
+1. Create `tools/neph-cli/` — TypeScript CLI with transport interface
+2. Implement commands: review, set, unset, checktime, close-tab, status, spec
+3. Hardened review protocol: request_id, atomic write, notification-driven
+4. Unit tests with fake transport (vitest)
+5. Integration tests with headless Neovim (vitest, few)
 
-### Phase 3: Terminal Integration (All CLI Agents)
-1. Simplify terminal sending code
-2. Keep context expansion (+file, +selection)
-3. Test with claude, gemini, goose, copilot
-4. Default configuration for amp, crush, codex
+### Phase 3: Pi Adapter + Migration
+1. Refactor `tools/pi/pi.ts` — replace shim spawn with neph spawn
+2. Update `tools.lua` — symlink neph instead of shim
+3. Delete `tools/core/shim.py`, `tools/core/lua/`, Python test infra
+4. Update pi.test.ts for new CLI contract
 
-### Phase 4: Research & Upgrade TBD Agents
-1. Research amp --ide mode for RPC capabilities
-2. Research crush and codex agents
-3. Upgrade to RPC integration if available
-4. Document findings in agent registry
-
-### Phase 5: Documentation
-1. Agent configuration guide (all 10 agents)
-2. Adding new agents guide
-3. Extension installation guide (RPC agents)
-4. Testing guide (unit/integration/e2e)
-
-**Agent Priority:**
-- **Phase 2**: pi (primary), opencode (known RPC)
-- **Phase 3**: claude, gemini, goose, copilot (CLI)
-- **Phase 4**: cursor (likely RPC), amp (research), crush (research), codex (research)
+### Phase 4: Contract + CI + Docs
+1. Create `protocol.json` + contract tests (both Lua and TS)
+2. Migrate `.fluentci/ci.ts` to `nix develop`
+3. Update `flake.nix` — add mini.doc, remove Python/flake8
+4. Generate `doc/neph.txt` with mini.doc
+5. Write `docs/architecture.md`, `docs/rpc-protocol.md`, `docs/testing.md`
+6. Update Taskfile.yml — new test/lint targets
 
 ## Open Questions
 
-1. **Should we auto-start pi if not running?**
-   - Leaning toward: No, user controls agent lifecycle
-
-2. **How to handle pi socket discovery?**
-   - Leaning toward: Check `$PI_SOCKET`, then `~/.pi/socket`, then error
-
-3. **Should terminal integration support diff review?**
-   - Leaning toward: No, CLI agents control their own UX
-
-4. **What about agents that support both modes?**
-   - Leaning toward: Config declares one mode, no auto-switching
+1. **Socket auto-discovery**: Keep the glob-based discovery from shim.py or simplify to `$NVIM_SOCKET_PATH` only?
+2. **Dry-run mode**: Keep `NEPH_DRY_RUN=1` for offline auto-accept? (Useful for CI testing of agents)
+3. **neph CLI startup time**: Is esbuild-bundled Node fast enough? Measure before optimizing.

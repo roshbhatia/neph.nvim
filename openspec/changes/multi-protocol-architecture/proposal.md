@@ -1,82 +1,70 @@
 ## Why
 
-Current architecture sends text to agents via terminal/multiplexer, even for agents that support native RPC APIs (pi, opencode). Diff review flow uses fragile subprocess + msgpack serialization. We need stable, native integration that uses agent RPC APIs when available, with clear fallback to terminal for CLI-only agents.
+Current architecture sends text to agents via terminal/multiplexer, and uses a Python subprocess (shim.py + pynvim) as the Neovim RPC bridge for agents like pi. The shim works but adds a Python dependency, uses inline Lua strings for RPC calls, and has a fragile review protocol (temp files, sleep-polling). We need a clean, universal bridge between external programs and Neovim that serves both RPC-capable agents and PATH-discovered tools.
 
 ## What Changes
 
-- **BREAKING**: Complete redesign - two integration modes (RPC + Terminal) replace subprocess shim
-- **New**: Pure Lua API for file operations and diff review - single source of truth
-- **New**: RPC integration for pi/opencode using their native extension APIs
-- **New**: Pi extension using `ExtensionAPI` - calls Lua via `ctx.nvim` (built-in RPC connection)
-- **New**: Simplified terminal integration for CLI agents (goose, claude)
+- **BREAKING**: Python shim (`tools/core/shim.py`) replaced by Node/TS CLI (`neph`)
+- **New**: `lua/neph/rpc.lua` — single dispatch facade for all external RPC calls
+- **New**: Review engine/UI split — testable pure logic separated from Neovim UI
+- **New**: Hardened async review protocol — request IDs, atomic writes, notification-driven
+- **New**: `neph spec` command — self-describing tool schema for PATH agent discovery
+- **New**: `protocol.json` — canonical RPC contract, validated by both Lua and TS tests
+- **Simplified**: `tools/pi/pi.ts` — thin adapter calling `neph` CLI, no inline Lua
 - **Removed**: Python shim subprocess model
-- **Removed**: pi.ts tool override pattern - replaced by pi extension using native hooks
-- **Removed**: Complex protocol negotiation - config explicitly declares integration mode
+- **Removed**: Inline Lua strings in TypeScript
 
 ## Capabilities
 
 ### New Capabilities
 
-- `lua-api-layer`: Pure Lua API for file ops + diff review - testable, single source of truth
-- `rpc-integration`: Native integration with pi/opencode using their RPC APIs (ctx.nvim)
-- `terminal-integration`: Simplified text sending for CLI agents with context expansion
-- `agent-configuration`: Explicit integration mode declaration per agent
+- `neph-cli`: Universal Node/TS bridge CLI — serves both RPC agent extensions (pi, opencode) and PATH-discovered tools (claude code, amp)
+- `rpc-dispatch`: Single Lua dispatch facade (`lua/neph/rpc.lua`) routing method+params to API modules
+- `review-engine`: Pure Lua review logic (hunks, decisions, envelope construction) — testable headless
+- `testing-infrastructure`: Transport injection for CLI tests, contract tests for RPC sync, flake-first Dagger CI
 
 ### Modified Capabilities
 
-None - clean-slate redesign.
+- `review-ui`: Existing vimdiff + Snacks picker flow preserved, refactored into thin adapter over engine
 
 ## Impact
 
 **Code Changes:**
-- New: `lua/neph/api/` - Pure Lua API (write, edit, delete, read, review)
-- New: `tools/pi/extensions/neph.ts` - Pi extension using `ExtensionAPI`
-- New: `lua/neph/integrations/rpc.lua` - RPC mode handler
-- Simplified: `lua/neph/integrations/terminal.lua` - Terminal mode handler
-- Remove: `tools/core/shim.py` - No longer needed
-- Update: `lua/neph/internal/agents.lua` - Config declares integration mode
+- New: `tools/neph-cli/` — Node/TS CLI, esbuild-bundled, `@neovim/node-client` for msgpack-rpc
+- New: `lua/neph/rpc.lua` — dispatch table routing methods to `lua/neph/api/` modules
+- New: `lua/neph/api/review/engine.lua` — pure logic: hunks, decisions, envelope construction
+- New: `lua/neph/api/review/ui.lua` — thin Neovim UI adapter (signs, picker, vimdiff)
+- New: `lua/neph/api/status.lua` — set/unset vim.g globals
+- New: `lua/neph/api/buffers.lua` — checktime, tab management
+- New: `protocol.json` — canonical RPC method catalog, validated by contract tests
+- New: `docs/rpc-protocol.md` — human-readable protocol documentation
+- New: `docs/architecture.md` — module boundaries, data flow
+- Updated: `.fluentci/ci.ts` — `nix develop` instead of `nix-shell`
+- Updated: `flake.nix` — add mini.doc for vimdoc generation
+- Simplified: `tools/pi/pi.ts` — calls `neph` CLI, no shimRun/shimQueue, no inline Lua
+- Remove: `tools/core/shim.py`, `tools/core/lua/`, Python test infrastructure
 
-**Integration Modes:**
+**Integration Patterns:**
 
-**RPC Mode (pi, opencode):**
+**RPC Agents (pi, opencode) — spawn neph as subprocess:**
 ```typescript
-// pi extension hooks tool_call
-pi.on("tool_call", async (event, ctx) => {
-  const result = await ctx.nvim.lua(`
-    return require("neph.api.review").show_diff(...)
-  `);
-  if (result.decision === "Reject") {
-    return { block: true };
-  }
-});
+const result = await neph(["review", filePath], content);
+// result is ReviewEnvelope JSON — no Lua anywhere in pi.ts
 ```
 
-**Terminal Mode (goose, claude):**
+**PATH Agents (claude code, amp) — discover neph on PATH:**
+```bash
+$ echo "proposed content" | neph review path/to/file.ts
+# stdout: {"schema":"review/v1","decision":"accept","content":"..."}
+```
+
+**Terminal Agents (goose, gemini) — no neph involvement:**
 ```lua
--- Send text to terminal via multiplexer
-terminal.send(agent, context.expand(prompt))
+session.send(agent, context.expand(prompt))
 ```
-
-**Configuration:**
-```lua
-agents = {
-  pi = { integration = "rpc", rpc = { extension = "..." } },
-  goose = { integration = "terminal", command = "goose session start" },
-}
-```
-
-**APIs:**
-- **BREAKING**: No public API compatibility (pre-1.0, clean break)
-- New: `require("neph.api.review").show_diff(path, old, new)` - diff review as Lua function
-- New: Agent config schema with explicit `integration` mode
 
 **Dependencies:**
-- pi extension requires pi coding-agent (users already have this)
-- Terminal integration requires no new deps
-- Testing: plenary (Lua), vitest (TypeScript integration tests)
-
-**Systems:**
-- RPC integration: Uses agent's native RPC API, no subprocess
-- Terminal integration: Direct text sending, no subprocess
-- Diff review: Pure Lua function, works from both modes
-- Configuration: Explicit mode declaration, no auto-detection
+- Add: `@neovim/node-client`, `esbuild`
+- Add: `mini.doc` (vimdoc generation, in flake.nix devShell)
+- Keep: Node.js (already required for pi ecosystem)
+- Remove: Python, pynvim, click, uv, pytest, flake8
