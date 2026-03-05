@@ -122,12 +122,24 @@ vim.fn.sign_define("neph_accept",    { text = signs.accept,    texthl = "Diagnos
 vim.fn.sign_define("neph_reject",    { text = signs.reject,    texthl = "DiagnosticError" })
 vim.fn.sign_define("neph_commented", { text = signs.commented, texthl = "DiagnosticWarn" })
 
+-- Track sign IDs by line number
+local sign_ids = {}
+
 local function place_sign(sign_name, line)
-  vim.fn.sign_place(0, "neph_review", sign_name, left_buf, { lnum = line, priority = 10 })
+  -- Remove any existing sign on this line first
+  if sign_ids[line] then
+    vim.fn.sign_unplace("neph_review", { buffer = left_buf, id = sign_ids[line] })
+  end
+  -- Place new sign and store its ID
+  local id = vim.fn.sign_place(0, "neph_review", sign_name, left_buf, { lnum = line, priority = 10 })
+  sign_ids[line] = id
 end
 
 local function unplace_sign(line)
-  vim.fn.sign_unplace("neph_review", { buffer = left_buf, id = line })
+  if sign_ids[line] then
+    vim.fn.sign_unplace("neph_review", { buffer = left_buf, id = sign_ids[line] })
+    sign_ids[line] = nil
+  end
 end
 
 -- ── Virtual text hints ────────────────────────────────────────────────────────
