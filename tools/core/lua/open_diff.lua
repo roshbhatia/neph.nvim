@@ -21,7 +21,8 @@ local function write_result(envelope)
   local f = assert(io.open(result_path, "w"))
   f:write(vim.json.encode(envelope))
   f:close()
-  vim.rpcnotify(channel_id, "neph_review_done")
+  -- Try to notify, but don't fail if channel is closed
+  pcall(vim.rpcnotify, channel_id, "neph_review_done")
 end
 
 -- ── Hunk range parsing ────────────────────────────────────────────────────────

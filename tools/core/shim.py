@@ -231,11 +231,32 @@ def cmd_review(file_path: str, dry_run: bool = False) -> None:
             file_path, prop_path, result_path, channel_id,
         )
 
-        # Block until the keymap fires vim.rpcnotify
+        # Block until the keymap fires vim.rpcnotify or result file exists
+        import time
+        timeout_sec = 300  # 5 minutes should be enough for any review
+        start = time.time()
+        
         while True:
-            msg = nvim.next_message()
-            if msg is not None and msg[1] == "neph_review_done":
+            # Check if result file exists (notification might have failed)
+            if os.path.exists(result_path):
+                time.sleep(0.05)  # Brief pause to ensure write is complete
                 break
+                
+            # Check for timeout
+            if time.time() - start > timeout_sec:
+                raise TimeoutError(f"Review timed out after {timeout_sec}s")
+            
+            # Try to read message (blocks briefly)
+            time.sleep(0.1)
+            # Skip message reading if in dry-run or no nvim
+            if nvim:
+                try:
+                    msg = nvim.next_message()
+                    if msg and len(msg) > 1 and msg[1] == "neph_review_done":
+                        break
+                except Exception:
+                    # Channel might be closed, check file
+                    continue
 
         with open(result_path) as f:
             envelope = json.load(f)
