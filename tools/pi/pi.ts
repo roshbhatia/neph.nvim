@@ -236,7 +236,7 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("session_start", (_event, ctx) => {
     if (!process.env.NVIM_SOCKET_PATH) return;
-    ctx.ui.setStatus("nvim", "nvim");
+    ctx.ui.setStatus("nvim", " nvim-connected");
     shim("set", "pi_active", "true");
     registerTools();
   });
