@@ -26,18 +26,22 @@ end
 
 -- ── Hunk range parsing ────────────────────────────────────────────────────────
 
-local function parse_hunk_ranges(buf)
+local function parse_hunk_ranges(buf, win)
   local ok, result = pcall(function()
     local ranges = {}
     local line_count = vim.api.nvim_buf_line_count(buf)
-    local i = 1
     
+    -- Switch to the window to make diff_hlID() work
+    local saved_win = vim.api.nvim_get_current_win()
+    vim.api.nvim_set_current_win(win)
+    
+    local i = 1
     while i <= line_count do
-      local hl_id = vim.fn.diff_hlID(buf, i)
+      local hl_id = vim.fn.diff_hlID(i, 1)
       if hl_id > 0 then
         local start_line = i
         -- Scan forward to find end of this hunk
-        while i <= line_count and vim.fn.diff_hlID(buf, i) > 0 do
+        while i <= line_count and vim.fn.diff_hlID(i, 1) > 0 do
           i = i + 1
         end
         table.insert(ranges, { start_line = start_line, end_line = i - 1 })
@@ -45,6 +49,9 @@ local function parse_hunk_ranges(buf)
         i = i + 1
       end
     end
+    
+    -- Restore window
+    vim.api.nvim_set_current_win(saved_win)
     
     return ranges
   end)
@@ -102,7 +109,7 @@ vim.cmd("wincmd h") -- focus left (current) window
 
 -- ── Parse hunk ranges after diff is set up ───────────────────────────────────
 
-local hunk_ranges = parse_hunk_ranges(left_buf)
+local hunk_ranges = parse_hunk_ranges(left_buf, left_win)
 local total_hunks = #hunk_ranges
 
 -- ── Sign configuration and setup ──────────────────────────────────────────────
