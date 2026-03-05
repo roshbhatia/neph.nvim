@@ -17,6 +17,36 @@ local M = {}
 ---@type neph.AgentDef[]
 local agents = {
   {
+    name = "crush",
+    label = "Crush",
+    icon = "  ",
+    cmd = "crush",
+    args = {},
+  },
+  {
+    name = "opencode",
+    label = "OpenCode",
+    icon = "  ",
+    cmd = "opencode",
+    args = {
+      "--continue",
+    },
+  },
+  {
+    name = "goose",
+    label = "Goose",
+    icon = "  ",
+    cmd = "goose",
+    args = {},
+  },
+  {
+    name = "claude",
+    label = "Claude",
+    icon = "  ",
+    cmd = "claude",
+    args = { "--permission-mode", "plan" },
+  },
+  {
     name = "amp",
     label = "Amp",
     icon = " 󰫤 ",
@@ -24,39 +54,18 @@ local agents = {
     args = { "--ide" },
   },
   {
-    name = "claude",
-    label = "Claude",
-    icon = "  ",
-    cmd = "claude",
-    args = { "--permission-mode", "plan" },
-  },
-  {
-    name = "codex",
-    label = "Codex",
-    icon = " 󱗿 ",
-    cmd = "codex",
+    name = "cursor",
+    label = "Cursor",
+    icon = "  ",
+    cmd = "cursor-agent",
     args = {},
   },
   {
     name = "copilot",
     label = "Copilot",
-    icon = "  ",
+    icon = "  ",
     cmd = "copilot",
     args = { "--allow-all-paths" },
-  },
-  {
-    name = "crush",
-    label = "Crush",
-    icon = "  ",
-    cmd = "crush",
-    args = {},
-  },
-  {
-    name = "cursor",
-    label = "Cursor",
-    icon = "  ",
-    cmd = "cursor-agent",
-    args = {},
   },
   {
     name = "gemini",
@@ -66,25 +75,18 @@ local agents = {
     args = {},
   },
   {
-    name = "goose",
-    label = "Goose",
-    icon = "  ",
-    cmd = "goose",
+    name = "codex",
+    label = "Codex",
+    icon = " 󱗿 ",
+    cmd = "codex",
     args = {},
-  },
-  {
-    name = "opencode",
-    label = "OpenCode",
-    icon = "  ",
-    cmd = "opencode",
-    args = { "--continue" },
   },
   {
     name = "pi",
     label = "Pi",
-    icon = "  ",
+    icon = "  ",
     cmd = "pi",
-    args = {},
+    args = { "--continue" },
   },
 }
 
