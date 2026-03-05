@@ -282,14 +282,20 @@ current_hunk_line = hunk_ranges[1].start_line
 place_sign("neph_current", current_hunk_line)
 show_hints(hunk_ranges[1], 1)
 
--- ── Interactive review loop using vim.ui.select ──────────────────────────────
+-- ── Interactive review loop using Snacks.picker.select ──────────────────────
 
 local function prompt_hunk_action()
-  vim.ui.select(
+  Snacks.picker.select(
     { "Accept", "Reject", "Accept all", "Reject all", "Manual edit" },
     {
-      prompt = string.format("Hunk %d/%d: ", hunk_idx, total_hunks),
+      prompt = string.format("Hunk %d/%d", hunk_idx, total_hunks),
       format_item = function(item) return item end,
+      snacks = {
+        layout = {
+          preset = "ivy",
+          backdrop = false,
+        },
+      },
     },
     function(choice)
       if not choice then
