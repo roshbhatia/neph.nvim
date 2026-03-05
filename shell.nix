@@ -1,0 +1,15 @@
+{
+  pkgs ? import <nixpkgs> { },
+}:
+
+pkgs.mkShell {
+  buildInputs = [
+    pkgs.nodejs_20
+    pkgs.python311
+    pkgs.deno
+    pkgs.uv
+    pkgs.stylua
+    pkgs.luacheck
+    pkgs.python311Packages.flake8
+  ];
+}

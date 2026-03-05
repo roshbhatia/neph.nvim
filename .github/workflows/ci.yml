@@ -1,66 +1,16 @@
 name: CI
-
 on:
   push:
     branches: [main]
   pull_request:
 
 jobs:
-  lint:
-    name: Lint (stylua + luacheck)
+  ci:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: stylua
-        uses: JohnnyMorganz/stylua-action@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          version: latest
-          args: --check lua/ tests/
-
-      - name: luacheck
-        uses: lunarmodules/luacheck@v1
-        with:
-          args: lua/ tests/ --globals vim Snacks describe it before_each after_each assert
-
-  test:
-    name: Tests (plenary)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Neovim
-        uses: rhysd/action-setup-vim@v1
-        with:
-          neovim: true
-          version: stable
-
-      - name: Install plenary.nvim
-        run: |
-          git clone --depth 1 https://github.com/nvim-lua/plenary.nvim \
-            ~/.local/share/nvim/lazy/plenary.nvim
-
-      - name: Run tests
-        run: |
-          nvim --headless \
-            --cmd "set rtp+=~/.local/share/nvim/lazy/plenary.nvim" \
-            --cmd "set rtp+=." \
-            -c "PlenaryBustedDirectory tests/ {minimal_init='tests/minimal_init.lua'}" \
-            -c "qa!"
-  test-tools:
-    name: Tests (tools)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
       - uses: denoland/setup-deno@v1
         with:
           deno-version: v1.x
-      - run: npm install
-      - run: pip install uv
-      - run: uv pip install -r requirements.txt
-      - run: deno lint tools/pi.ts
-      - run: flake8 tools/shim.py
+      - name: Dagger
+        run: deno run -A .fluentci/ci.ts
