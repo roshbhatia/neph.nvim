@@ -17,7 +17,7 @@ end
 ---@return table|nil
 function M.open(termname, agent_config, cwd)
   local env = vim.tbl_extend("force", config.env or {}, {
-    NVIM_SOCKET_PATH = vim.env.NVIM_SOCKET_PATH,
+    NVIM_SOCKET_PATH = vim.v.servername,
   })
 
   local term = Snacks.terminal.open(agent_config.cmd, {
