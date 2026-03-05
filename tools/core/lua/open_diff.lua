@@ -26,6 +26,36 @@ end
 
 -- ── Hunk range parsing ────────────────────────────────────────────────────────
 
+local function parse_hunk_ranges_via_diff(left_lines, right_lines)
+  -- Use vim.diff() to get actual diff hunks
+  local ok, diff_result = pcall(vim.diff, left_lines, right_lines, {
+    result_type = "indices",
+  })
+  
+  if not ok or not diff_result then
+    vim.api.nvim_echo({{
+      "open_diff: vim.diff() failed: " .. tostring(diff_result), "ErrorMsg"
+    }}, true, {})
+    return {}
+  end
+  
+  local ranges = {}
+  for _, hunk in ipairs(diff_result) do
+    -- hunk format: {start_a, count_a, start_b, count_b}
+    -- We want hunks in the left buffer (the "a" side)
+    local start_line = hunk[1]
+    local count = hunk[2]
+    if count > 0 then
+      table.insert(ranges, { 
+        start_line = start_line, 
+        end_line = start_line + count - 1 
+      })
+    end
+  end
+  
+  return ranges
+end
+
 local function parse_hunk_ranges(buf, win)
   local ok, result = pcall(function()
     local ranges = {}
@@ -138,8 +168,26 @@ if not left_diff or not right_diff then
   }}, true, {})
 end
 
-local hunk_ranges = parse_hunk_ranges(left_buf, left_win)
+-- Debug: show buffer contents to verify they're different
+local left_lines = vim.api.nvim_buf_get_lines(left_buf, 0, -1, false)
+local right_lines = vim.api.nvim_buf_get_lines(right_buf, 0, -1, false)
+vim.api.nvim_echo({{
+  string.format("open_diff: left_buf has %d lines, right_buf has %d lines", 
+                #left_lines, #right_lines), "DiagnosticInfo"
+}}, true, {})
+
+-- Try using vim.diff() first (more reliable than diff_hlID)
+local hunk_ranges = parse_hunk_ranges_via_diff(left_lines, right_lines)
 local total_hunks = #hunk_ranges
+
+-- If vim.diff() didn't work, fall back to diff_hlID() method
+if total_hunks == 0 then
+  vim.api.nvim_echo({{
+    "open_diff: vim.diff() found 0 hunks, trying diff_hlID() fallback", "WarningMsg"
+  }}, true, {})
+  hunk_ranges = parse_hunk_ranges(left_buf, left_win)
+  total_hunks = #hunk_ranges
+end
 
 -- Debug: print hunk info
 if total_hunks == 0 then
