@@ -1,7 +1,8 @@
 import Client, { connect } from "npm:@dagger.io/dagger";
+import process from "node:process";
 
 connect(async (client: Client) => {
-  const container = client
+  const base = client
     .container()
     .from("nixos/nix")
     .withExec([
@@ -19,9 +20,28 @@ connect(async (client: Client) => {
     .withExec(["nix-shell", "/app/shell.nix", "--run", "npm install"])
     .withWorkdir("/app");
 
-  const ci = container.withExec(["nix-shell", "shell.nix", "--run", "task ci"]);
+  const lint = base.withExec([
+    "nix-shell",
+    "shell.nix",
+    "--run",
+    "task lint",
+  ]);
 
-  const result = await ci.stdout();
+  const test = base.withExec([
+    "nix-shell",
+    "shell.nix",
+    "--run",
+    "task test",
+  ]);
 
-  console.log(result);
+  const lintResult = await lint.stdout();
+  console.log("=== LINT ===");
+  console.log(lintResult);
+
+  const testResult = await test.stdout();
+  console.log("=== TEST ===");
+  console.log(testResult);
+
+  // Force exit to avoid Dagger SDK session teardown crash on Deno v2
+  process.exit(0);
 });
