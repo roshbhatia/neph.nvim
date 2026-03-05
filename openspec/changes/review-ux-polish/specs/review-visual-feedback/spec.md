@@ -19,7 +19,7 @@ The diff review UI SHALL display signs in the left buffer's sign column to indic
 #### Scenario: Current hunk shows indicator
 
 - **WHEN** diff review opens and cursor is on first hunk
-- **THEN** sign `❓` (or configured `current` icon) is placed at the hunk's start line
+- **THEN** sign `👉` (or configured `current` icon) is placed at the hunk's start line
 
 #### Scenario: Accepted hunk shows indicator
 
@@ -34,12 +34,12 @@ The diff review UI SHALL display signs in the left buffer's sign column to indic
 #### Scenario: Rejected hunk with reason shows indicator
 
 - **WHEN** user presses `n` and provides a reject reason
-- **THEN** sign `📝` (or configured `commented` icon) replaces the current hunk indicator
+- **THEN** sign `💬❌` (or configured `commented` icon) replaces the current hunk indicator
 
 #### Scenario: Sign moves to next hunk on navigation
 
 - **WHEN** user navigates to next hunk via `]c` or accepts/rejects current hunk
-- **THEN** current hunk indicator (`❓`) is removed from previous hunk and placed at new hunk's start line
+- **THEN** current hunk indicator (`👉`) is removed from previous hunk and placed at new hunk's start line
 
 ### Requirement: Virtual text hints at current hunk
 
@@ -72,7 +72,7 @@ The diff review UI SHALL allow users to override sign icons via plugin configura
 #### Scenario: Default emoji signs used when no config
 
 - **WHEN** user has not set `review_signs` in `neph.setup()`
-- **THEN** signs use emoji defaults: `✅` accept, `❌` reject, `❓` current, `📝` commented
+- **THEN** signs use emoji defaults: `✅` accept, `❌` reject, `👉` current, `💬❌` commented
 
 #### Scenario: Custom ASCII signs used from config
 

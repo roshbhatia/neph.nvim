@@ -27,10 +27,10 @@ The UI needs minimal polish to make the review process discoverable and transpar
 - Floating windows: heavyweight, requires window management
 
 **Implementation:** Define a sign group `neph_review` with four signs:
-- `neph_current` (❓) — placed at the start line of the hunk under review
+- `neph_current` (👉) — placed at the start line of the hunk under review
 - `neph_accept` (✅) — replaces `neph_current` after `y` keypress
 - `neph_reject` (❌) — replaces `neph_current` after `n` keypress (no reason)
-- `neph_commented` (📝) — replaces `neph_current` after `n` keypress (with reason)
+- `neph_commented` (💬❌) — replaces `neph_current` after `n` keypress (with reason)
 
 Signs are placed via `vim.fn.sign_place()` and unplaced via `vim.fn.sign_unplace()` when the hunk index changes.
 
@@ -67,8 +67,8 @@ require("neph").setup({
   review_signs = {
     accept = "✅",
     reject = "❌",
-    current = "❓",
-    commented = "📝",
+    current = "👉",
+    commented = "💬❌",
   }
 })
 ```

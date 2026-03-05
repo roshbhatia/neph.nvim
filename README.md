@@ -69,6 +69,16 @@ require("neph").setup({
   -- "tmux":    tmux pane (stub — falls back to snacks with a warning)
   -- "zellij":  zellij pane (stub — falls back to snacks with a warning)
   multiplexer = "snacks",
+  
+  -- Diff review sign icons (customize for ASCII-only terminals)
+  review_signs = {
+    accept = "✅",      -- shown on accepted hunks
+    reject = "❌",      -- shown on rejected hunks (no comment)
+    current = "👉",     -- shown on current hunk under review
+    commented = "💬❌", -- shown on rejected hunks with comment
+  },
+  -- ASCII fallback example:
+  -- review_signs = { accept = "+", reject = "-", current = ">", commented = "*" },
 })
 ```
 

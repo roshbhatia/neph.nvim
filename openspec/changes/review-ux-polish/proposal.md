@@ -4,7 +4,7 @@ The current diff review UI (`open_diff.lua`) lacks visual feedback and discovera
 
 ## What Changes
 
-- Add sign column indicators (✅ accepted, ❌ rejected, ❓ current, 📝 has comment) to visually track hunk decisions
+- Add sign column indicators (✅ accepted, ❌ rejected, 👉 current, 💬❌ has comment) to visually track hunk decisions
 - Display terse virtual text hints at current hunk showing available keybindings (`[y]es [n]o [a]ll [d]eny [e]dit [?]help`)
 - Show "hunk X/Y" counter as virtual text to indicate position in review
 - Add `?` keymap to toggle expanded help text
@@ -28,4 +28,4 @@ The current diff review UI (`open_diff.lua`) lacks visual feedback and discovera
 
 **User-facing:**
 - Non-breaking: existing keymaps unchanged, visual feedback is additive
-- Config: optional `neph.setup({ review_signs = { accept = "✅", reject = "❌", current = "❓", commented = "📝" } })`
+- Config: optional `neph.setup({ review_signs = { accept = "✅", reject = "❌", current = "👉", commented = "💬❌" } })`

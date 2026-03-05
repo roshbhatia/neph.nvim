@@ -24,6 +24,41 @@ local function write_result(envelope)
   vim.rpcnotify(channel_id, "neph_review_done")
 end
 
+-- ── Hunk range parsing ────────────────────────────────────────────────────────
+
+local function parse_hunk_ranges(buf)
+  local ok, result = pcall(function()
+    local ranges = {}
+    local line_count = vim.api.nvim_buf_line_count(buf)
+    local i = 1
+    
+    while i <= line_count do
+      local hl_id = vim.fn.diff_hlID(buf, i)
+      if hl_id > 0 then
+        local start_line = i
+        -- Scan forward to find end of this hunk
+        while i <= line_count and vim.fn.diff_hlID(buf, i) > 0 do
+          i = i + 1
+        end
+        table.insert(ranges, { start_line = start_line, end_line = i - 1 })
+      else
+        i = i + 1
+      end
+    end
+    
+    return ranges
+  end)
+  
+  if not ok then
+    vim.api.nvim_echo({{
+      "open_diff: failed to parse hunk ranges, visual feedback disabled", "WarningMsg"
+    }}, true, {})
+    return {}
+  end
+  
+  return result
+end
+
 local ft = vim.filetype.match({ filename = orig_path }) or ""
 local basename = vim.fn.fnamemodify(orig_path, ":t")
 
@@ -65,10 +100,73 @@ vim.cmd("diffthis")
 vim.cmd("wincmd =")
 vim.cmd("wincmd h") -- focus left (current) window
 
+-- ── Parse hunk ranges after diff is set up ───────────────────────────────────
+
+local hunk_ranges = parse_hunk_ranges(left_buf)
+local total_hunks = #hunk_ranges
+
+-- ── Sign configuration and setup ──────────────────────────────────────────────
+
+local config = vim.g.neph_config or {}
+local signs = vim.tbl_extend("force", {
+  accept = "✅",
+  reject = "❌",
+  current = "👉",
+  commented = "💬❌",
+}, config.review_signs or {})
+
+vim.fn.sign_define("neph_current",   { text = signs.current,   texthl = "DiagnosticInfo" })
+vim.fn.sign_define("neph_accept",    { text = signs.accept,    texthl = "DiagnosticOk" })
+vim.fn.sign_define("neph_reject",    { text = signs.reject,    texthl = "DiagnosticError" })
+vim.fn.sign_define("neph_commented", { text = signs.commented, texthl = "DiagnosticWarn" })
+
+local function place_sign(sign_name, line)
+  vim.fn.sign_place(0, "neph_review", sign_name, left_buf, { lnum = line, priority = 10 })
+end
+
+local function unplace_sign(line)
+  vim.fn.sign_unplace("neph_review", { buffer = left_buf, id = line })
+end
+
+-- ── Virtual text hints ────────────────────────────────────────────────────────
+
+local hints_ns = vim.api.nvim_create_namespace("neph_review_hints")
+local show_help = false
+
+local function clear_hints()
+  vim.api.nvim_buf_clear_namespace(right_buf, hints_ns, 0, -1)
+end
+
+local function show_hints(hunk_range, idx)
+  clear_hints()
+  
+  if not hunk_range then return end
+  
+  local counter_line = hunk_range.start_line - 1 -- 0-indexed
+  local hint_line = math.min(counter_line + 1, hunk_range.end_line - 1)
+  
+  -- Hunk counter at end of first line
+  vim.api.nvim_buf_set_extmark(right_buf, hints_ns, counter_line, 0, {
+    virt_text = {{ string.format("← hunk %d/%d", idx, total_hunks), "DiagnosticInfo" }},
+    virt_text_pos = "eol",
+  })
+  
+  -- Keybinding hints on next line
+  local hint_text = show_help
+    and "y=accept | n=reject+reason | a=accept-all | d=reject-all | e=manual | [?] hide"
+    or  "[y]es [n]o [a]ll [d]eny [e]dit [?]help"
+  
+  vim.api.nvim_buf_set_extmark(right_buf, hints_ns, hint_line, 0, {
+    virt_text = {{ hint_text, "DiagnosticInfo" }},
+    virt_text_pos = "eol",
+  })
+end
+
 -- ── State ─────────────────────────────────────────────────────────────────────
 
 local hunks    = {}   -- { index, decision, reason }
 local hunk_idx = 0
+local current_hunk_line = nil
 
 local function next_hunk()
   local saved = vim.o.wrapscan
@@ -77,10 +175,18 @@ local function next_hunk()
   pcall(vim.cmd, "normal! ]c")
   local after  = vim.api.nvim_win_get_cursor(left_win)
   vim.o.wrapscan = saved
-  return before[1] ~= after[1] or before[2] ~= after[2]
+  
+  local moved = before[1] ~= after[1] or before[2] ~= after[2]
+  if moved then
+    hunk_idx = hunk_idx + 1
+    return hunk_ranges[hunk_idx]
+  end
+  return nil
 end
 
 local function cleanup()
+  vim.fn.sign_unplace("neph_review", { buffer = left_buf })
+  clear_hints()
   pcall(vim.api.nvim_win_close, right_win, true)
   for _, w in ipairs(vim.api.nvim_tabpage_list_wins(diff_tab)) do
     if vim.api.nvim_win_is_valid(w) then
@@ -154,6 +260,11 @@ if _before[1] == _after[1] and _before[2] == _after[2] then
 end
 
 hunk_idx = 1
+if hunk_ranges[1] then
+  current_hunk_line = hunk_ranges[1].start_line
+  place_sign("neph_current", current_hunk_line)
+  show_hints(hunk_ranges[1], 1)
+end
 
 -- ── Keymaps ───────────────────────────────────────────────────────────────────
 
@@ -162,11 +273,19 @@ local map_opts = { nowait = true, noremap = true, silent = true }
 -- y — accept current hunk
 vim.keymap.set("n", "y", function()
   vim.api.nvim_set_current_win(left_win)
+  if current_hunk_line then
+    unplace_sign(current_hunk_line)
+    place_sign("neph_accept", current_hunk_line)
+  end
   pcall(vim.cmd, "diffget")
   vim.cmd("diffupdate")
   table.insert(hunks, { index = hunk_idx, decision = "accept", reason = vim.NIL })
-  if next_hunk() then
-    hunk_idx = hunk_idx + 1
+  
+  local next_range = next_hunk()
+  if next_range then
+    current_hunk_line = next_range.start_line
+    place_sign("neph_current", current_hunk_line)
+    show_hints(next_range, hunk_idx)
   else
     finalize()
   end
@@ -176,9 +295,22 @@ end, vim.tbl_extend("force", map_opts, { buffer = left_buf, desc = "Accept hunk"
 vim.keymap.set("n", "n", function()
   vim.api.nvim_set_current_win(left_win)
   vim.ui.input({ prompt = "Reject reason (optional): " }, function(reason)
+    if current_hunk_line then
+      unplace_sign(current_hunk_line)
+      if reason and reason ~= "" then
+        place_sign("neph_commented", current_hunk_line)
+      else
+        place_sign("neph_reject", current_hunk_line)
+      end
+    end
+    
     table.insert(hunks, { index = hunk_idx, decision = "reject", reason = reason or vim.NIL })
-    if next_hunk() then
-      hunk_idx = hunk_idx + 1
+    
+    local next_range = next_hunk()
+    if next_range then
+      current_hunk_line = next_range.start_line
+      place_sign("neph_current", current_hunk_line)
+      show_hints(next_range, hunk_idx)
     else
       finalize()
     end
@@ -188,11 +320,19 @@ end, vim.tbl_extend("force", map_opts, { buffer = left_buf, desc = "Reject hunk"
 -- a — accept all remaining hunks
 vim.keymap.set("n", "a", function()
   vim.api.nvim_set_current_win(left_win)
+  if current_hunk_line then
+    unplace_sign(current_hunk_line)
+    place_sign("neph_accept", current_hunk_line)
+  end
   pcall(vim.cmd, "diffget")
   vim.cmd("diffupdate")
   table.insert(hunks, { index = hunk_idx, decision = "accept", reason = vim.NIL })
-  while next_hunk() do
-    hunk_idx = hunk_idx + 1
+  
+  while true do
+    local next_range = next_hunk()
+    if not next_range then break end
+    current_hunk_line = next_range.start_line
+    place_sign("neph_accept", current_hunk_line)
     pcall(vim.cmd, "diffget")
     vim.cmd("diffupdate")
     table.insert(hunks, { index = hunk_idx, decision = "accept", reason = vim.NIL })
@@ -201,27 +341,27 @@ vim.keymap.set("n", "a", function()
 end, vim.tbl_extend("force", map_opts, { buffer = left_buf, desc = "Accept all hunks" }))
 
 -- d / <Esc> — reject all remaining
-vim.keymap.set("n", "d", function()
+local function reject_all()
   vim.ui.input({ prompt = "Reject reason: " }, function(reason)
+    if current_hunk_line then
+      unplace_sign(current_hunk_line)
+      place_sign("neph_reject", current_hunk_line)
+    end
     table.insert(hunks, { index = hunk_idx, decision = "reject", reason = reason or vim.NIL })
-    while next_hunk() do
-      hunk_idx = hunk_idx + 1
+    
+    while true do
+      local next_range = next_hunk()
+      if not next_range then break end
+      current_hunk_line = next_range.start_line
+      place_sign("neph_reject", current_hunk_line)
       table.insert(hunks, { index = hunk_idx, decision = "reject", reason = vim.NIL })
     end
     finalize()
   end)
-end, vim.tbl_extend("force", map_opts, { buffer = left_buf, desc = "Reject all hunks" }))
+end
 
-vim.keymap.set("n", "<Esc>", function()
-  vim.ui.input({ prompt = "Reject reason: " }, function(reason)
-    table.insert(hunks, { index = hunk_idx, decision = "reject", reason = reason or vim.NIL })
-    while next_hunk() do
-      hunk_idx = hunk_idx + 1
-      table.insert(hunks, { index = hunk_idx, decision = "reject", reason = vim.NIL })
-    end
-    finalize()
-  end)
-end, vim.tbl_extend("force", map_opts, { buffer = left_buf, desc = "Reject all hunks" }))
+vim.keymap.set("n", "d", reject_all, vim.tbl_extend("force", map_opts, { buffer = left_buf, desc = "Reject all hunks" }))
+vim.keymap.set("n", "<Esc>", reject_all, vim.tbl_extend("force", map_opts, { buffer = left_buf, desc = "Reject all hunks" }))
 
 -- e — hand off for manual edit
 vim.keymap.set("n", "e", function()
@@ -235,3 +375,11 @@ vim.keymap.set("n", "e", function()
     reason   = "Manual resolution",
   })
 end, vim.tbl_extend("force", map_opts, { buffer = left_buf, desc = "Hand off for manual edit" }))
+
+-- ? — toggle help
+vim.keymap.set("n", "?", function()
+  show_help = not show_help
+  if hunk_ranges[hunk_idx] then
+    show_hints(hunk_ranges[hunk_idx], hunk_idx)
+  end
+end, vim.tbl_extend("force", map_opts, { buffer = left_buf, desc = "Toggle help" }))
