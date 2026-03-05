@@ -22,3 +22,8 @@ tasks:
           -c 'qa!'
       - task tools:test
 
+  ci:
+    desc: Run the Dagger CI pipeline locally
+    cmds:
+      - deno run -A .fluentci/ci.ts
+
