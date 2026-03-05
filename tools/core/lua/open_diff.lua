@@ -46,8 +46,14 @@ end
 local function parse_hunk_ranges(left_lines, right_lines)
   log(string.format("parse_hunk_ranges: left=%d lines, right=%d lines", #left_lines, #right_lines))
   
+  -- vim.diff() expects strings, not tables - join lines with newlines
+  local left_str = table.concat(left_lines, "\n")
+  local right_str = table.concat(right_lines, "\n")
+  
+  log(string.format("Converted to strings: left=%d chars, right=%d chars", #left_str, #right_str))
+  
   -- Use vim.diff() to get actual diff hunks
-  local ok, diff_result = pcall(vim.diff, left_lines, right_lines, {
+  local ok, diff_result = pcall(vim.diff, left_str, right_str, {
     result_type = "indices",
   })
   
