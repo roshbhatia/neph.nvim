@@ -275,9 +275,11 @@ export default function (pi: ExtensionAPI) {
 
 ### 6. Integration Patterns Per Agent
 
-**Decision:** Focus on 5 agents with appropriate integration for each:
+**Decision:** Support all 10 agents with appropriate integration for each:
 
-#### Pi (RPC via Extension)
+#### RPC Integration (Native API Support)
+
+**Pi**
 ```typescript
 // Hook tool_result to review after execution
 pi.on("tool_result", async (event, ctx) => {
@@ -288,43 +290,87 @@ pi.on("tool_result", async (event, ctx) => {
 });
 ```
 
-#### OpenCode (RPC via Extension - similar to pi)
+**OpenCode**
 ```typescript
-// OpenCode also supports extensions, same pattern
+// OpenCode also supports extensions, same pattern as pi
 opencode.on("tool_result", async (event, ctx) => {
   // Same review flow as pi
 });
 ```
 
-#### Claude (Terminal Mode)
+**Cursor**
+```typescript
+// cursor-agent likely supports similar extension model
+// Check cursor-agent docs for hook points
+cursor.on("tool_result", async (event, ctx) => {
+  // Review flow if cursor supports extensions
+});
+```
+
+#### Terminal Integration (CLI-Only)
+
+**Claude**
 ```lua
--- Claude CLI doesn't expose RPC API
--- Send prompts to terminal, let Claude control UX
+-- Anthropic Claude CLI
 terminal.send("claude", context.expand(prompt))
 ```
 
-#### Gemini (Terminal Mode)
+**Gemini**
 ```lua
--- Gemini CLI - terminal integration
+-- Google Gemini CLI
 terminal.send("gemini", context.expand(prompt))
 ```
 
-#### Amp (Hybrid - Check Capabilities)
+**Goose**
 ```lua
--- Amp might support extensions in future
--- For now: terminal mode, but watch for RPC support
-if amp.supports_rpc then
+-- Block/Square Hole Goose
+terminal.send("goose", context.expand(prompt))
+```
+
+**Copilot**
+```lua
+-- GitHub Copilot CLI
+terminal.send("copilot", context.expand(prompt))
+```
+
+#### Hybrid / TBD (Check Capabilities)
+
+**Amp**
+```lua
+-- Sourcegraph Amp with --ide flag
+-- May support RPC/extensions, currently using terminal
+-- Watch: https://github.com/sourcegraph/amp
+if amp.supports_extensions then
   -- Use RPC integration
 else
-  -- Fall back to terminal
   terminal.send("amp", context.expand(prompt))
 end
 ```
 
+**Crush**
+```lua
+-- Unknown agent - needs research
+-- Default to terminal integration
+terminal.send("crush", context.expand(prompt))
+```
+
+**Codex**
+```lua
+-- Unknown agent - needs research  
+-- Default to terminal integration
+terminal.send("codex", context.expand(prompt))
+```
+
+**Agent Classification:**
+- **RPC-capable**: pi, opencode, cursor (likely)
+- **Terminal-only**: claude, gemini, goose, copilot
+- **Needs research**: amp (has --ide flag), crush, codex
+
 **Rationale:**
-- Use RPC when available (pi, opencode)
-- Terminal for CLI-only agents (claude, gemini)
-- Ready to upgrade when agents add RPC support (amp)
+- Use RPC when agent exposes extension API
+- Terminal for CLI-only agents
+- Easy to upgrade when agents add RPC support
+- Configuration declares integration mode explicitly
 
 **Key insight:**
 We're not building one universal protocol - we're building **integration patterns** that match each agent's capabilities.
@@ -332,6 +378,7 @@ We're not building one universal protocol - we're building **integration pattern
 **Alternatives considered:**
 - ❌ **Force all agents to one protocol**: Limits what we can do
 - ❌ **Build MCP server**: Wrong abstraction, we're integrating with agents, not serving them
+- ❌ **Only support RPC agents**: Excludes useful CLI tools
 
 ### 7. Terminal Integration (Simple Text Sending)
 
@@ -424,45 +471,73 @@ return {
   -- RPC Integration (agents with extension APIs)
   pi = {
     integration = "rpc",
-    command = "pi",
+    command = "pi --continue",
     rpc = {
       extension = "tools/pi/extensions/neph.ts",
-      socket = "~/.pi/socket",  -- or auto-discover
+      socket = "~/.pi/socket",
     },
   },
   
   opencode = {
     integration = "rpc",
-    command = "opencode",
+    command = "opencode --continue",
     rpc = {
       extension = "tools/opencode/extensions/neph.ts",
       socket = "~/.opencode/socket",
     },
   },
   
+  cursor = {
+    integration = "rpc",  -- if cursor-agent supports extensions
+    command = "cursor-agent",
+    rpc = {
+      extension = "tools/cursor/extensions/neph.ts",
+      socket = "~/.cursor/socket",
+    },
+  },
+  
   -- Terminal Integration (CLI-only agents)
   claude = {
     integration = "terminal",
-    command = "claude",
-    terminal = {
-      multiplexer = "wezterm",  -- or native, tmux
-    },
+    command = "claude --permission-mode plan",
+    terminal = { multiplexer = "wezterm" },
   },
   
   gemini = {
     integration = "terminal",
     command = "gemini",
-    terminal = {
-      multiplexer = "wezterm",
-    },
+    terminal = { multiplexer = "wezterm" },
   },
   
+  goose = {
+    integration = "terminal",
+    command = "goose",
+    terminal = { multiplexer = "wezterm" },
+  },
+  
+  copilot = {
+    integration = "terminal",
+    command = "copilot --allow-all-paths",
+    terminal = { multiplexer = "wezterm" },
+  },
+  
+  -- Hybrid / TBD (needs research)
   amp = {
-    integration = "terminal",  -- for now, may add RPC later
-    command = "amp",
-    terminal = {
-      multiplexer = "wezterm",
-    },
+    integration = "terminal",  -- may support RPC in future
+    command = "amp --ide",
+    terminal = { multiplexer = "wezterm" },
+  },
+  
+  crush = {
+    integration = "terminal",  -- unknown agent, default to terminal
+    command = "crush",
+    terminal = { multiplexer = "wezterm" },
+  },
+  
+  codex = {
+    integration = "terminal",  -- unknown agent, default to terminal
+    command = "codex",
+    terminal = { multiplexer = "wezterm" },
   },
 }
 ```
@@ -489,10 +564,12 @@ require("neph").setup({
 - Easy to document (it's just Lua)
 - User overrides merge with defaults
 - Clear which agents use RPC vs Terminal
+- Unknown agents default to terminal (safe fallback)
 
 **Alternatives considered:**
 - ❌ **JSON/YAML files**: No validation, no completion
 - ❌ **Env vars**: Hard to document, no structure
+- ❌ **Auto-detection**: Hidden complexity, hard to debug
 
 ### 9. Configuration is Code (Not Files)
 
@@ -514,22 +591,38 @@ require("neph").setup({
 1. Extract file operations to `lua/neph/api/`
 2. Implement diff review as pure Lua function
 3. Unit test with plenary (no external deps)
+4. Test with manual Lua API calls
 
-### Phase 2: Pi RPC Integration
+### Phase 2: RPC Integration (Pi, OpenCode, Cursor)
 1. Create pi extension using `ExtensionAPI`
-2. Hook `tool_call` event to call Lua review API
+2. Hook `tool_result` event to call Lua review API
 3. Use `ctx.nvim.lua()` for RPC calls
 4. Integration test with headless Neovim
+5. Create opencode extension (same pattern)
+6. Research cursor-agent extension API, implement if available
 
-### Phase 3: Terminal Integration
+### Phase 3: Terminal Integration (All CLI Agents)
 1. Simplify terminal sending code
 2. Keep context expansion (+file, +selection)
-3. Test with goose/claude CLI agents
+3. Test with claude, gemini, goose, copilot
+4. Default configuration for amp, crush, codex
 
-### Phase 4: Documentation
-1. Agent configuration guide
+### Phase 4: Research & Upgrade TBD Agents
+1. Research amp --ide mode for RPC capabilities
+2. Research crush and codex agents
+3. Upgrade to RPC integration if available
+4. Document findings in agent registry
+
+### Phase 5: Documentation
+1. Agent configuration guide (all 10 agents)
 2. Adding new agents guide
-3. Extension installation guide
+3. Extension installation guide (RPC agents)
+4. Testing guide (unit/integration/e2e)
+
+**Agent Priority:**
+- **Phase 2**: pi (primary), opencode (known RPC)
+- **Phase 3**: claude, gemini, goose, copilot (CLI)
+- **Phase 4**: cursor (likely RPC), amp (research), crush (research), codex (research)
 
 ## Open Questions
 
