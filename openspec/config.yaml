@@ -1,20 +1,63 @@
 schema: spec-driven
 
-# Project context (optional)
-# This is shown to AI when creating artifacts.
-# Add your tech stack, conventions, style guides, domain knowledge, etc.
-# Example:
-#   context: |
-#     Tech stack: TypeScript, React, Node.js
-#     We use conventional commits
-#     Domain: e-commerce platform
+context: |
+  ## Project: neph.nvim
+  A Neovim plugin (Lua) that consolidates AI agent terminal management.
+  Manages sessions for agents: goose, claude, opencode, amp, copilot, gemini, codex, pi, cursor, crush.
 
-# Per-artifact rules (optional)
-# Add custom rules for specific artifacts.
-# Example:
-#   rules:
-#     proposal:
-#       - Keep proposals under 500 words
-#       - Always include a "Non-goals" section
-#     tasks:
-#       - Break tasks into chunks of max 2 hours
+  ## Repo structure
+  lua/neph/
+    init.lua              — setup entry point; calls tools.install(), session.setup(), etc.
+    config.lua            — neph.Config defaults and type annotations (multiplexer, env, agents, file_refresh, keymaps)
+    api.lua               — public API (toggle, kill, ask, fix, comment, resend, history)
+    tools.lua             — auto-symlinks tools/core/shim.py and tools/pi/pi.ts on setup()
+    internal/
+      session.lua         — backend lifecycle; detect_backend() honours config.multiplexer
+      agents.lua          — built-in agent definitions; merge() for user overrides
+      backends/
+        native.lua        — snacks.nvim right-split backend
+        wezterm.lua       — WezTerm pane backend (requires WEZTERM_PANE env var)
+        tmux.lua          — stub (warns + falls back to native)
+        zellij.lua        — stub (warns + falls back to native)
+      terminal.lua        — send helpers with last-prompt tracking
+      picker.lua          — telescope/snacks picker for agent selection
+      input.lua           — vim.ui.input prompt wrapper
+      history.lua         — per-agent prompt history (ring buffer)
+      context.lua         — placeholder expansion (+file, +selection, +diagnostics, etc.)
+      placeholders.lua    — tokeniser for context placeholders
+      file_refresh.lua    — periodic :checktime via CursorHold autocmd
+      completion.lua      — blink.cmp source (no-op if blink absent)
+
+  tools/
+    core/
+      shim.py             — Python msgpack-rpc Neovim client (uv script); sole shim
+    pi/
+      pi.ts               — pi coding-agent TypeScript extension; overrides write/edit tools
+      package.json        — Node deps: @mariozechner/pi-coding-agent, typescript, @types/node
+    README.md
+
+  tests/                  — Lua plenary/busted specs (agents, config, context, history, placeholders, session)
+  Taskfile.yml            — lint (stylua, luacheck, deno lint, flake8) and test (plenary busted)
+  .fluentci/ci.ts         — Dagger/FluentCI pipeline; runs `task lint` and `task test` in a Nix container
+  shell.nix               — Nix dev shell
+
+  ## Tech stack & conventions
+  - Lua 5.1 (LuaJIT via Neovim); LuaDoc/EmmyLua annotations on all public functions
+  - Python 3.11+ with uv inline script metadata (shim.py); tested with pytest
+  - TypeScript (Node, ESM); tested with Vitest; linted with deno lint
+  - Taskfile (task runner); includes: pattern for sub-taskfiles
+  - FluentCI (Dagger) for CI; no GitHub Actions logic — ci.ts is the sole pipeline
+  - Neovim ≥ 0.10 required; snacks.nvim is the only mandatory runtime dep
+
+  ## Key design constraints
+  - Public API is require("neph.api") — never break function signatures
+  - neph.Config is backward-compatible; all new keys are optional with safe defaults
+  - Backends share a fixed interface: setup, open, focus, hide, show, is_visible, kill, cleanup_all
+  - tools.lua resolves plugin root via debug.getinfo; symlinks are force-created (ln -sf)
+  - Tests must not require a live Neovim instance (use fake socket servers / mocks)
+
+rules:
+  tasks:
+    - Keep each task small enough to complete in a single focused coding session
+    - Respect the existing module layout (internal/ for implementation, api.lua for public surface)
+    - Prefer pytest for Python, Vitest for TypeScript, plenary/busted for Lua
