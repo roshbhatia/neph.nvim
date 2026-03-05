@@ -34,42 +34,6 @@ interface NvimPreviewResult {
 }
 
 // Timeout for fire-and-forget shim calls (ms). Interactive preview has no timeout.
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { createWriteTool, createEditTool } from "@mariozechner/pi-coding-agent";
-import { readFileSync } from "node:fs";
-import { resolve, relative, basename } from "node:path";
-import { spawn } from "node:child_process";
-import process from "node:process";
-import { Buffer } from "node:buffer";
-
-// Neovim integration for pi.
-//
-// Requires `shim` in PATH (installed via home-manager as a uv Python script).
-// Only activates when NVIM_SOCKET_PATH is set — Neovim exports it on startup
-// and terminal panes spawned from within Neovim inherit it automatically.
-// When absent the extension is a complete no-op.
-//
-// write / edit tools are overridden to open a vimdiff review in Neovim before
-// any disk write. The shim speaks msgpack-rpc directly to nvim_exec_lua, which
-// is a blocking RPC call — the hunk review (vim.fn.confirm / vim.fn.input)
-// happens entirely inside that call, and the result comes back as JSON on
-// stdout. No polling, no temp files, no race conditions.
-//
-// Per-hunk choices: Accept / Reject (+ optional reason) / Accept all / Reject all
-// Partial acceptance is supported: only accepted hunks reach disk.
-//
-// vim.g globals for statusline integration:
-//   vim.g.pi_active   — set while a pi session is live
-//   vim.g.pi_running  — set while the agent is processing a turn
-//   vim.g.pi_reading  — path of file currently being read by the agent (nil otherwise)
-
-interface NvimPreviewResult {
-  decision: "accept" | "reject";
-  content?: string;
-  reason?: string;
-}
-
-// Timeout for fire-and-forget shim calls (ms). Interactive preview has no timeout.
 export const SHIM_TIMEOUT_MS = 5_000;
 
 export default function (pi: ExtensionAPI) {
@@ -118,9 +82,9 @@ export default function (pi: ExtensionAPI) {
   // Fire-and-forget: enqueue a shim command, swallow errors.
   // Commands are executed serially in dispatch order.
   function shim(...args: string[]): void {
-    _shimQueue = _shimQueue.then(() =>
-      shimRun(args, undefined, SHIM_TIMEOUT_MS).catch(() => { /* nvim may have closed */ })
-    );
+    _shimQueue = _shimQueue.then(() => {
+      shimRun(args, undefined, SHIM_TIMEOUT_MS).catch(() => { /* nvim may have closed */ });
+    });
   }
 
   // Blocking vimdiff review. Proposed content is sent via stdin.
@@ -159,7 +123,7 @@ export default function (pi: ExtensionAPI) {
           shim("revert", filePath);
           const reason = result.reason ? `: ${result.reason}` : "";
           return {
-            content: [{ type: "text", text: `Write rejected${reason}` }],
+            content: [{ type: "text" as const, text: `Write rejected${reason}` }],
             details: {},
           };
         }
@@ -176,8 +140,8 @@ export default function (pi: ExtensionAPI) {
         if (result.reason) {
           return {
             content: [
-              ...(writeResult as { content: { type: string; text: string }[] }).content,
-              { type: "text", text: `Note: some hunks were rejected — ${result.reason}` },
+              ...(writeResult as { content: { type: "text"; text: string }[] }).content,
+              { type: "text" as const, text: `Note: some hunks were rejected — ${result.reason}` },
             ],
             details: (writeResult as { details: unknown }).details,
           };
@@ -204,14 +168,14 @@ export default function (pi: ExtensionAPI) {
           currentContent = readFileSync(filePath, "utf-8");
         } catch {
           return {
-            content: [{ type: "text", text: `Cannot read ${params.path as string}` }],
+            content: [{ type: "text" as const, text: `Cannot read ${params.path as string}` }],
             details: {},
           };
         }
 
         if (!currentContent.includes(oldText)) {
           return {
-            content: [{ type: "text", text: `Edit failed: oldText not found in ${params.path as string}` }],
+            content: [{ type: "text" as const, text: `Edit failed: oldText not found in ${params.path as string}` }],
             details: {},
           };
         }
@@ -223,7 +187,7 @@ export default function (pi: ExtensionAPI) {
           shim("revert", filePath);
           const reason = result.reason ? `: ${result.reason}` : "";
           return {
-            content: [{ type: "text", text: `Edit rejected${reason}` }],
+            content: [{ type: "text" as const, text: `Edit rejected${reason}` }],
             details: {},
           };
         }
@@ -239,8 +203,8 @@ export default function (pi: ExtensionAPI) {
         if (result.reason) {
           return {
             content: [
-              ...(writeResult as { content: { type: string; text: string }[] }).content,
-              { type: "text", text: `Note: some hunks were rejected — ${result.reason}` },
+              ...(writeResult as { content: { type: "text"; text: string }[] }).content,
+              { type: "text" as const, text: `Note: some hunks were rejected — ${result.reason}` },
             ],
             details: (writeResult as { details: unknown }).details,
           };
