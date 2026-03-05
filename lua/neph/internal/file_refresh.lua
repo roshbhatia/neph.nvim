@@ -53,9 +53,7 @@ function M.setup(config)
     )
   end
 
-  if cfg.updatetime then
-    vim.o.updatetime = cfg.updatetime
-  end
+  vim.o.updatetime = cfg.updatetime or 750
 end
 
 return M

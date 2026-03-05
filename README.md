@@ -49,21 +49,49 @@ require("neph").setup({
     -- { name = "myagent", label = "My Agent", icon = " ", cmd = "myagent", args = {} },
   },
 
+  -- Periodically call :checktime to pick up file changes made by agents
   file_refresh = {
-    enable         = true,
-    timer_interval = 1000, -- ms
-    updatetime     = 750,  -- sets vim.o.updatetime
+    enable = true,
   },
 
-  -- Terminal multiplexer backend.
-  -- nil (default): auto-detect — WezTerm if WEZTERM_PANE is set, otherwise native.
-  -- "native":  snacks.nvim right-split (works everywhere)
+  -- Terminal multiplexer backend (default: "snacks")
+  -- "snacks":  snacks.nvim right-split — works everywhere, no extra setup
   -- "wezterm": WezTerm pane split (requires WEZTERM_PANE env var and wezterm CLI)
-  -- "tmux":    tmux pane (stub — falls back to native with a warning)
-  -- "zellij":  zellij pane (stub — falls back to native with a warning)
-  multiplexer = nil,
+  -- "tmux":    tmux pane (stub — falls back to snacks with a warning)
+  -- "zellij":  zellij pane (stub — falls back to snacks with a warning)
+  multiplexer = "snacks",
 })
 ```
+
+## Socket Integration
+
+When Neovim exposes a socket, `neph.nvim` forwards it to every agent terminal so
+that companion tools (`shim`, `pi.ts`) can call back into the editor for
+hunk-by-hunk diff review.
+
+**Enable the socket** in your Neovim config:
+
+```lua
+-- init.lua — listen on a fixed path
+vim.fn.serverstart(vim.fn.expand("~/.local/state/nvim/server.pipe"))
+```
+
+Or launch Neovim with `--listen`:
+
+```bash
+nvim --listen /tmp/nvim.sock
+```
+
+Once the socket is active, Neovim sets `$NVIM_SOCKET_PATH` in every terminal it
+opens. Agent tools that use `shim` can then:
+
+- Open files in the editor (`shim open <file>`)
+- Trigger a live vimdiff hunk review before any disk write (`shim preview <file>`)
+- Reload changed buffers (`shim checktime`)
+- Update statusline globals (`shim set pi_running true`)
+
+`neph.nvim` does **not** create the socket itself — it only forwards the path if
+it's already set.
 
 ## Companion Tools
 
@@ -74,9 +102,6 @@ it** during `setup()` by creating symlinks:
 |------|-------------|---------|
 | `tools/core/shim.py` | `~/.local/bin/shim` | Python msgpack-rpc Neovim client for LLM agents. Provides blocking hunk-by-hunk diff review via `nvim_exec_lua`. Requires `uv`. |
 | `tools/pi/pi.ts` | `~/.pi/agent/extensions/nvim.ts` | [pi coding agent](https://github.com/mariozechner/pi-coding-agent) extension. Intercepts `write`/`edit` tool calls and triggers a vimdiff review in Neovim before writing to disk. |
-
-`tools/core/nvim-shim` (bash alternative to `shim.py`) is bundled but **not**
-auto-symlinked — add it to your PATH manually if preferred.
 
 If a source file is missing (e.g., non-lazy plugin manager), a warning is
 emitted via `vim.notify` and that symlink is skipped.

@@ -7,12 +7,10 @@ local M = {}
 ---@field env?            table<string,string> Extra environment variables forwarded to every agent
 ---@field file_refresh?   neph.FileRefreshConfig
 ---@field agents?         neph.AgentDef[]      Override / extend the built-in agent list
----@field multiplexer?    "native"|"wezterm"|"tmux"|"zellij"|nil  Force a specific terminal backend (default: nil = auto-detect)
+---@field multiplexer?    "snacks"|"wezterm"|"tmux"|"zellij"  Terminal backend (default: "snacks")
 
 ---@class neph.FileRefreshConfig
 ---@field enable?         boolean  Periodically call :checktime (default: true)
----@field timer_interval? number   Milliseconds between checks (default: 1000)
----@field updatetime?     number   Override vim.o.updatetime (default: 750)
 
 ---@type neph.Config
 M.defaults = {
@@ -20,11 +18,9 @@ M.defaults = {
   env = {},
   file_refresh = {
     enable = true,
-    timer_interval = 1000,
-    updatetime = 750,
   },
   agents = nil,
-  multiplexer = nil,
+  multiplexer = "snacks",
 }
 
 ---@type neph.Config
