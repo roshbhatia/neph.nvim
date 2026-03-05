@@ -15,10 +15,9 @@ connect(async (client: Client) => {
     .withDirectory("/app", client.host().directory("."), {
       exclude: [".git", "node_modules", ".fluentci"],
     })
-    .withWorkdir("/app")
-    .withExec(["nix-shell", "shell.nix", "--run", "npm install"], {
-      workdir: "/app/tools/pi",
-    });
+    .withWorkdir("/app/tools/pi")
+    .withExec(["nix-shell", "/app/shell.nix", "--run", "npm install"])
+    .withWorkdir("/app");
 
   const ci = container.withExec(["nix-shell", "shell.nix", "--run", "task ci"]);
 
