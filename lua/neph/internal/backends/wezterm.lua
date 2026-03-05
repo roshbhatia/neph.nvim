@@ -104,8 +104,7 @@ function M.open(termname, agent_config, cwd)
     env_parts[#env_parts + 1] = string.format("export %s=%s;", k, vim.fn.shellescape(v))
   end
   if vim.v.servername then
-    env_parts[#env_parts + 1] =
-      string.format("export NVIM_SOCKET_PATH=%s;", vim.fn.shellescape(vim.v.servername))
+    env_parts[#env_parts + 1] = string.format("export NVIM_SOCKET_PATH=%s;", vim.fn.shellescape(vim.v.servername))
   end
   local env_str = table.concat(env_parts, " ")
 

@@ -235,17 +235,17 @@ def cmd_review(file_path: str, dry_run: bool = False) -> None:
         import time
         timeout_sec = 300  # 5 minutes should be enough for any review
         start = time.time()
-        
+
         while True:
             # Check if result file exists (notification might have failed)
             if os.path.exists(result_path):
                 time.sleep(0.05)  # Brief pause to ensure write is complete
                 break
-                
+
             # Check for timeout
             if time.time() - start > timeout_sec:
                 raise TimeoutError(f"Review timed out after {timeout_sec}s")
-            
+
             # Try to read message (blocks briefly)
             time.sleep(0.1)
             # Skip message reading if in dry-run or no nvim
