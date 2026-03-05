@@ -311,15 +311,20 @@ local function prompt_hunk_action()
     current_range.end_line, 
     false
   )
+  local preview_text = table.concat(preview_lines, "\n")
+  local ft = vim.filetype.match({ buf = left_buf }) or ""
+  
+  -- Add preview to each item
+  local items = { 
+    { text = "Accept", action = "accept", preview = { text = preview_text, ft = ft } },
+    { text = "Reject", action = "reject", preview = { text = preview_text, ft = ft } },
+    { text = "Accept all", action = "accept_all", preview = { text = preview_text, ft = ft } },
+    { text = "Reject all", action = "reject_all", preview = { text = preview_text, ft = ft } },
+    { text = "Manual edit", action = "manual", preview = { text = preview_text, ft = ft } },
+  }
   
   Snacks.picker.select(
-    { 
-      { text = "Accept", action = "accept" },
-      { text = "Reject", action = "reject" },
-      { text = "Accept all", action = "accept_all" },
-      { text = "Reject all", action = "reject_all" },
-      { text = "Manual edit", action = "manual" },
-    },
+    items,
     {
       prompt = string.format("Hunk %d/%d", hunk_idx, total_hunks),
       format_item = function(item) return item.text end,
@@ -327,15 +332,6 @@ local function prompt_hunk_action()
         layout = {
           preset = "ivy",
           backdrop = false,
-        },
-        preview = {
-          enabled = function(item)
-            -- Show preview with hunk content
-            return {
-              lines = preview_lines,
-              ft = vim.filetype.match({ buf = left_buf }) or "",
-            }
-          end,
         },
       },
     },
