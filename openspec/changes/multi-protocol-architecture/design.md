@@ -205,9 +205,9 @@ pi.on("tool_call", async (event, ctx) => {
 - ❌ **Keep subprocess model**: Fragile, hard to test
 - ❌ **Temp files + polling**: Current model, unnecessary complexity
 
-### 5. Pi Integration via Extension (Native API)
+### 5. Pi Integration via Extension (Hook, Don't Replace)
 
-**Decision:** Integrate with pi using its extension API properly:
+**Decision:** Hook into pi's tool execution flow, don't replace tools:
 
 ```typescript
 // tools/pi/extensions/neph.ts
@@ -215,45 +215,127 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 
 export default function (pi: ExtensionAPI) {
   
-  // Hook into tool calls for diff review
+  // Hook BEFORE tool executes (intercept)
   pi.on("tool_call", async (event, ctx) => {
-    if (event.toolName !== "write_file") return;
+    if (!["write_file", "edit_file"].includes(event.toolName)) return;
     
-    // Call Lua API via ctx.nvim (Neovim RPC connection)
+    // Let tool execute first, get the result
+    const original = event.toolName === "edit_file" 
+      ? await readFile(event.input.path)
+      : null;
+    
+    // Tool will execute, then we review
+    return undefined; // don't block yet
+  });
+  
+  // Hook AFTER tool executes (review)
+  pi.on("tool_result", async (event, ctx) => {
+    if (!["write_file", "edit_file"].includes(event.toolName)) return;
+    
+    // Show diff of what tool just did
     const result = await ctx.nvim.lua(`
-      return require("neph.api.review").show_diff(...)
+      return require("neph.api.review").show_diff(
+        "${event.input.path}",
+        "${original || ''}",
+        "${event.result.content}"
+      )
     `);
     
     if (result.decision === "Reject") {
-      return { block: true, reason: "User rejected change" };
+      // Revert the change
+      await writeFile(event.input.path, original);
+      return { modify: { error: "User rejected change" } };
     }
-  });
-  
-  // Use pi's UI methods for prompts
-  pi.on("session_start", async (_event, ctx) => {
-    ctx.ui.setStatus("neph", "Ready");
+    
+    if (result.decision === "Edit") {
+      // Update with user's edited version
+      await writeFile(event.input.path, result.content);
+      return { modify: { content: result.content } };
+    }
+    
+    // Accept - let original result stand
   });
 }
 ```
 
 **Benefits:**
-- Uses pi's `ctx.nvim` (built-in Neovim RPC connection)
-- Uses pi's `ctx.ui` methods (native dialogs)
-- No subprocess spawning
-- No intermediate shim layer
+- Uses pi's existing write_file/edit_file tools (tested, maintained by pi team)
+- We just wrap with review UX
+- Can accept/reject/edit after seeing what tool did
+- No need to reimplement tool logic
 
 **Rationale:**
-- This is how pi extensions are meant to work (see rpc-demo.ts example)
-- Direct RPC connection already exists in pi's extension context
-- Cleaner than spawning external process
+- Pi's tools already handle edge cases (file permissions, encoding, etc.)
+- OpenCode, Claude, Gemini, Amp also have their own tools
+- Our job: add review UX, not replace tools
 
 **Alternatives considered:**
-- ❌ **External process**: Adds latency, complexity
-- ❌ **Override tools completely**: Bypasses pi's tool system
+- ❌ **Replace tools entirely**: Reimplementing tool logic, maintenance burden
+- ❌ **Override tool definitions**: Bypasses agent's tool system, fragile
 
-### 6. Terminal Integration for CLI Agents
+### 6. Integration Patterns Per Agent
 
-**Decision:** For agents without RPC APIs, keep terminal integration simple:
+**Decision:** Focus on 5 agents with appropriate integration for each:
+
+#### Pi (RPC via Extension)
+```typescript
+// Hook tool_result to review after execution
+pi.on("tool_result", async (event, ctx) => {
+  if (["write_file", "edit_file"].includes(event.toolName)) {
+    const result = await ctx.nvim.lua(`review.show_diff(...)`);
+    // Accept/Reject/Edit based on user choice
+  }
+});
+```
+
+#### OpenCode (RPC via Extension - similar to pi)
+```typescript
+// OpenCode also supports extensions, same pattern
+opencode.on("tool_result", async (event, ctx) => {
+  // Same review flow as pi
+});
+```
+
+#### Claude (Terminal Mode)
+```lua
+-- Claude CLI doesn't expose RPC API
+-- Send prompts to terminal, let Claude control UX
+terminal.send("claude", context.expand(prompt))
+```
+
+#### Gemini (Terminal Mode)
+```lua
+-- Gemini CLI - terminal integration
+terminal.send("gemini", context.expand(prompt))
+```
+
+#### Amp (Hybrid - Check Capabilities)
+```lua
+-- Amp might support extensions in future
+-- For now: terminal mode, but watch for RPC support
+if amp.supports_rpc then
+  -- Use RPC integration
+else
+  -- Fall back to terminal
+  terminal.send("amp", context.expand(prompt))
+end
+```
+
+**Rationale:**
+- Use RPC when available (pi, opencode)
+- Terminal for CLI-only agents (claude, gemini)
+- Ready to upgrade when agents add RPC support (amp)
+
+**Key insight:**
+We're not building one universal protocol - we're building **integration patterns** that match each agent's capabilities.
+
+**Alternatives considered:**
+- ❌ **Force all agents to one protocol**: Limits what we can do
+- ❌ **Build MCP server**: Wrong abstraction, we're integrating with agents, not serving them
+
+### 7. Terminal Integration (Simple Text Sending)
+
+**Decision:** For CLI agents (claude, gemini), just send text reliably:
 
 ```lua
 -- lua/neph/integrations/terminal.lua
@@ -270,20 +352,18 @@ end
 ```
 
 **Key point:**
-- Terminal integration doesn't need diff review (CLI agents control their own UX)
-- Just need reliable text sending + context expansion
-- Keep it simple
+- Terminal integration doesn't intercept agent's UX
+- No diff review (CLI agents handle their own prompting)
+- Just reliable text sending + context expansion
 
 **Rationale:**
-- CLI agents already have their own prompting/review flows
-- Our job is just to send them the right input
-- Don't try to intercept/modify their UX
+- Claude, Gemini already have their own review flows
+- Trying to intercept CLI output is fragile
+- Keep it simple: send input, let agent control UX
 
 **Alternatives considered:**
-- ❌ **Try to intercept CLI output**: Fragile, breaks with agent updates
-- ❌ **Build wrapper for every CLI agent**: Maintenance nightmare
-
-### 7. Testing Strategy - Real Behavior
+- ❌ **Parse CLI output**: Breaks with agent updates
+- ❌ **Build wrapper per agent**: Maintenance nightmare
 
 **Decision:** Test the actual integration, not mocked approximations:
 
@@ -334,24 +414,55 @@ echo "Write hello.py" | pi
 - ❌ **Mock everything**: Tests pass but real integration breaks
 - ❌ **Only e2e tests**: Too slow for development loop
 
-### 8. Configuration is Code (Not Files)
+### 8. Testing Strategy - Real Behavior
 
 **Decision:** Agent configuration is Lua code, not config files:
 
 ```lua
 -- lua/neph/internal/agents.lua (shipped with plugin)
 return {
+  -- RPC Integration (agents with extension APIs)
   pi = {
     integration = "rpc",
     command = "pi",
     rpc = {
       extension = "tools/pi/extensions/neph.ts",
+      socket = "~/.pi/socket",  -- or auto-discover
     },
   },
   
-  goose = {
+  opencode = {
+    integration = "rpc",
+    command = "opencode",
+    rpc = {
+      extension = "tools/opencode/extensions/neph.ts",
+      socket = "~/.opencode/socket",
+    },
+  },
+  
+  -- Terminal Integration (CLI-only agents)
+  claude = {
     integration = "terminal",
-    command = "goose session start",
+    command = "claude",
+    terminal = {
+      multiplexer = "wezterm",  -- or native, tmux
+    },
+  },
+  
+  gemini = {
+    integration = "terminal",
+    command = "gemini",
+    terminal = {
+      multiplexer = "wezterm",
+    },
+  },
+  
+  amp = {
+    integration = "terminal",  -- for now, may add RPC later
+    command = "amp",
+    terminal = {
+      multiplexer = "wezterm",
+    },
   },
 }
 ```
@@ -365,6 +476,9 @@ require("neph").setup({
         socket = "~/custom/pi.sock",  -- override socket path
       },
     },
+    claude = {
+      command = "claude --model sonnet-4",  -- override command
+    },
   },
 })
 ```
@@ -374,12 +488,13 @@ require("neph").setup({
 - LSP provides completion for config
 - Easy to document (it's just Lua)
 - User overrides merge with defaults
+- Clear which agents use RPC vs Terminal
 
 **Alternatives considered:**
 - ❌ **JSON/YAML files**: No validation, no completion
 - ❌ **Env vars**: Hard to document, no structure
 
-## Risks / Trade-offs
+### 9. Configuration is Code (Not Files)
 
 ### Risk: pi extension needs pi to already be running
 **Decision:** That's fine. User starts pi, loads extension. If pi isn't running, show clear error.
