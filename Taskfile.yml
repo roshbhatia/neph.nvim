@@ -21,3 +21,4 @@ tasks:
           -c "PlenaryBustedDirectory tests/ {minimal_init='tests/minimal_init.lua'}" \
           -c 'qa!'
       - task tools:test
+
