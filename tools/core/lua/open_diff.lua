@@ -119,10 +119,24 @@ vim.cmd("diffthis")
 vim.cmd("wincmd =")
 vim.cmd("wincmd h") -- focus left (current) window
 
+-- Force diff computation now that both windows have diffthis set
+vim.cmd("diffupdate")
+vim.cmd("redraw")  -- Ensure display is updated
+
 -- ── Parse hunk ranges after diff is set up ───────────────────────────────────
 
--- Add a small delay to ensure diff is fully computed
+-- Force diff computation and verify diff mode is active
 vim.cmd("diffupdate")
+
+-- Debug: check if diff mode is actually active
+local left_diff = vim.wo[left_win].diff
+local right_diff = vim.wo[right_win].diff
+if not left_diff or not right_diff then
+  vim.api.nvim_echo({{
+    string.format("open_diff: diff mode not active! left=%s right=%s", 
+                  tostring(left_diff), tostring(right_diff)), "ErrorMsg"
+  }}, true, {})
+end
 
 local hunk_ranges = parse_hunk_ranges(left_buf, left_win)
 local total_hunks = #hunk_ranges
