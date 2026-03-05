@@ -12,5 +12,11 @@ pkgs.mkShell {
     pkgs.luajitPackages.luacheck
     pkgs.python311Packages.flake8
     pkgs.go-task
+    pkgs.neovim
+    pkgs.vimPlugins.plenary-nvim
   ];
+
+  shellHook = ''
+    export PLENARY_PATH=${pkgs.vimPlugins.plenary-nvim}
+  '';
 }

@@ -10,7 +10,7 @@ tasks:
 
   test:
     cmds:
-      - "nvim --headless --cmd 'set rtp+=.' --cmd 'set rtp+=~/.local/share/nvim/lazy/plenary.nvim' -c \"PlenaryBustedDirectory tests/ {minimal_init='tests/minimal_init.lua'}\" -c 'qa!'"
+      - "nvim --headless --cmd 'set rtp+=.' --cmd 'set rtp+=${PLENARY_PATH:-~/.local/share/nvim/lazy/plenary.nvim}' -c \"PlenaryBustedDirectory tests/ {minimal_init='tests/minimal_init.lua'}\" -c 'qa!'"
 
   ci:
     cmds:
