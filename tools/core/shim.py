@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["msgpack>=1.0"]
+# dependencies = ["msgpack>=1.0", "click>=8.0"]
 # ///
 """
 shim - Neovim msgpack-rpc integration for LLM agents.
@@ -32,6 +32,7 @@ import sys
 from pathlib import Path
 from typing import NoReturn
 
+import click
 import msgpack
 
 SOCKET_PATH = os.environ.get("NVIM_SOCKET_PATH", "")
@@ -41,11 +42,19 @@ SOCKET_PATH = os.environ.get("NVIM_SOCKET_PATH", "")
 
 
 class NvimRPC:
-    """Minimal msgpack-rpc client for a Neovim Unix socket."""
+    """Minimal msgpack-rpc client for a Neovim Unix socket.
 
-    def __init__(self, path: str) -> None:
+    Args:
+        path: Path to the Neovim Unix socket.
+        timeout: Socket read/write timeout in seconds. Pass None for no
+                 timeout (interactive commands like preview). Default: 30.0.
+    """
+
+    def __init__(self, path: str, timeout: float | None = 30.0) -> None:
         self._sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self._sock.connect(path)
+        if timeout is not None:
+            self._sock.settimeout(timeout)
         self._msgid = 0
         self._buf = msgpack.Unpacker(raw=False, strict_map_key=False)
 
@@ -76,17 +85,17 @@ class NvimRPC:
 
 
 def die(msg: str) -> NoReturn:
-    print(f"shim: {msg}", file=sys.stderr)
+    click.echo(f"shim: {msg}", err=True)
     sys.exit(1)
 
 
-def connect() -> NvimRPC:
+def connect(timeout: float | None = 30.0) -> NvimRPC:
     if not SOCKET_PATH:
         die("NVIM_SOCKET_PATH is not set")
     if not os.path.exists(SOCKET_PATH):
         die(f"socket not found: {SOCKET_PATH}")
     try:
-        return NvimRPC(SOCKET_PATH)
+        return NvimRPC(SOCKET_PATH, timeout=timeout)
     except OSError as e:
         die(f"cannot connect to nvim: {e}")
 
@@ -94,26 +103,18 @@ def connect() -> NvimRPC:
 # ── Lua ──────────────────────────────────────────────────────────────────
 
 _LUA_DIR = Path(__file__).resolve().parent / "lua"
-LUA_OPEN    = (_LUA_DIR / "open.lua").read_text()
-
-LUA_REVERT  = (_LUA_DIR / "revert.lua").read_text()
-
-# Vimdiff review with fully blocking hunk-by-hunk confirm / input.
-# Args passed via nvim_exec_lua varargs:
-#   raw_path (string), proposed_content (string)
-# Returns a Lua table decoded by msgpack into a Python dict:
-#   {decision="accept", content="...", reason="..."}
-#                                           -- partial or full accept
-#   {decision="reject", reason="..."}
+LUA_OPEN = (_LUA_DIR / "open.lua").read_text()
+LUA_REVERT = (_LUA_DIR / "revert.lua").read_text()
 LUA_PREVIEW = (_LUA_DIR / "preview.lua").read_text()
 
 
-# ── Commands ─────────────────────────────────────────────────────────────
+# ── Command implementations ─────────────────────────────────────────────
+# Plain functions so tests can call them directly without Click overhead.
 
 
 def cmd_status() -> None:
     nvim = connect()
-    print(f"connected: {SOCKET_PATH}")
+    click.echo(f"connected: {SOCKET_PATH}")
     nvim.close()
 
 
@@ -125,9 +126,10 @@ def cmd_open(file_path: str) -> None:
 
 def cmd_preview(file_path: str) -> None:
     proposed_content = sys.stdin.read()
-    nvim = connect()
+    # No timeout: this is interactive and blocks on user input.
+    nvim = connect(timeout=None)
     result = nvim.exec_lua(LUA_PREVIEW, [file_path, proposed_content])
-    print(json.dumps(result))
+    click.echo(json.dumps(result))
     nvim.close()
 
 
@@ -155,7 +157,6 @@ def cmd_checktime() -> None:
 
 
 def cmd_set(name: str, lua_value: str) -> None:
-    # lua_value is a raw Lua expression, e.g. "true" or "false"
     nvim = connect()
     nvim.exec_lua(f"vim.g[...] = {lua_value}", [name])
     nvim.close()
@@ -167,52 +168,77 @@ def cmd_unset(name: str) -> None:
     nvim.close()
 
 
-# ── Dispatch ─────────────────────────────────────────────────────────────
-
-USAGE = """\
-usage: shim <command> [args]
-
-  status
-  open <file>
-  preview <file>           proposed content on stdin; prints JSON result
-  revert <file>
-  close-tab
-  checktime
-  set <name> <lua-value>
-  unset <name>
-"""
+# ── Click CLI ─────────────────────────────────────────────────────────────
 
 
-def main() -> None:
-    args = sys.argv[1:]
-    if not args:
-        print(USAGE, file=sys.stderr)
-        sys.exit(1)
+@click.group()
+def cli() -> None:
+    """Neovim msgpack-rpc integration shim for LLM agents.
 
-    cmd, *rest = args
-    try:
-        match cmd:
-            case "status":
-                cmd_status()
-            case "open":
-                cmd_open(rest[0])
-            case "preview":
-                cmd_preview(rest[0])
-            case "revert":
-                cmd_revert(rest[0])
-            case "close-tab":
-                cmd_close_tab()
-            case "checktime":
-                cmd_checktime()
-            case "set":
-                cmd_set(rest[0], rest[1])
-            case "unset":
-                cmd_unset(rest[0])
-            case _:
-                die(f"unknown command: {cmd}")
-    except (RuntimeError, OSError, IndexError) as e:
-        die(str(e))
+    Connects to the Neovim instance at NVIM_SOCKET_PATH, runs a command,
+    and exits. NVIM_SOCKET_PATH must be set in the environment.
+    """
+
+
+@cli.command("status")
+def _cli_status() -> None:
+    """Check connectivity to the Neovim socket."""
+    cmd_status()
+
+
+@cli.command("open")
+@click.argument("file", metavar="FILE")
+def _cli_open(file: str) -> None:
+    """Open FILE in the agent tab (creates tab if needed)."""
+    cmd_open(file)
+
+
+@cli.command("preview")
+@click.argument("file", metavar="FILE")
+def _cli_preview(file: str) -> None:
+    """Show a vimdiff review of FILE vs proposed content from stdin.
+
+    Prints JSON result: {decision, content?, reason?}
+
+    The proposed content is read from stdin. This call blocks until the user
+    accepts or rejects the diff in Neovim, so no socket timeout is used.
+    """
+    cmd_preview(file)
+
+
+@cli.command("revert")
+@click.argument("file", metavar="FILE")
+def _cli_revert(file: str) -> None:
+    """Revert FILE to its on-disk state, closing any diff view."""
+    cmd_revert(file)
+
+
+@cli.command("close-tab")
+def _cli_close_tab() -> None:
+    """Close the agent tab in Neovim."""
+    cmd_close_tab()
+
+
+@cli.command("checktime")
+def _cli_checktime() -> None:
+    """Run :checktime to reload buffers from disk."""
+    cmd_checktime()
+
+
+@cli.command("set")
+@click.argument("name", metavar="NAME")
+@click.argument("lua_value", metavar="LUA_VALUE")
+def _cli_set(name: str, lua_value: str) -> None:
+    """Set vim.g.NAME to LUA_VALUE (raw Lua expression, e.g. 'true')."""
+    cmd_set(name, lua_value)
+
+
+@cli.command("unset")
+@click.argument("name", metavar="NAME")
+def _cli_unset(name: str) -> None:
+    """Set vim.g.NAME to nil."""
+    cmd_unset(name)
 
 
 if __name__ == "__main__":
-    main()
+    cli()

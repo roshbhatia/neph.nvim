@@ -1,7 +1,7 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { createWriteTool } from "@mariozechner/pi-coding-agent";
+import { createWriteTool, createEditTool } from "@mariozechner/pi-coding-agent";
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { resolve, relative, basename } from "node:path";
 import { spawn } from "node:child_process";
 import process from "node:process";
 import { Buffer } from "node:buffer";
@@ -25,6 +25,7 @@ import { Buffer } from "node:buffer";
 // vim.g globals for statusline integration:
 //   vim.g.pi_active   — set while a pi session is live
 //   vim.g.pi_running  — set while the agent is processing a turn
+//   vim.g.pi_reading  — path of file currently being read by the agent (nil otherwise)
 
 interface NvimPreviewResult {
   decision: "accept" | "reject";
@@ -32,11 +33,20 @@ interface NvimPreviewResult {
   reason?: string;
 }
 
+// Timeout for fire-and-forget shim calls (ms). Interactive preview has no timeout.
+export const SHIM_TIMEOUT_MS = 15_000;
+
 export default function (pi: ExtensionAPI) {
   let toolsRegistered = false;
 
+  // Serial queue for fire-and-forget shim calls. Each call is appended via
+  // .then() so commands reach nvim in the order they were dispatched, and a
+  // single hung call cannot starve subsequent ones beyond its own timeout.
+  let _shimQueue: Promise<void> = Promise.resolve();
+
   // Run the shim and await exit. stdin is optional; stdout is returned.
-  function shimRun(args: string[], stdin?: string): Promise<string> {
+  // timeoutMs: kill the child and reject after this many ms. Omit for interactive calls.
+  function shimRun(args: string[], stdin?: string, timeoutMs?: number): Promise<string> {
     return new Promise((res, rej) => {
       const child = spawn("shim", args, {
         stdio: ["pipe", "pipe", "pipe"],
@@ -48,21 +58,38 @@ export default function (pi: ExtensionAPI) {
       child.stderr.on("data", (d: Buffer) => err.push(d));
       if (stdin !== undefined) child.stdin.write(stdin, "utf-8");
       child.stdin.end();
-      child.on("error", rej);
+
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      if (timeoutMs !== undefined && isFinite(timeoutMs)) {
+        timer = setTimeout(() => {
+          child.kill("SIGTERM");
+          rej(new Error(`shim timed out after ${timeoutMs}ms (args: ${args.join(" ")})`));
+        }, timeoutMs);
+      }
+
+      child.on("error", (e) => {
+        if (timer !== undefined) clearTimeout(timer);
+        rej(e);
+      });
       child.on("close", (code) => {
+        if (timer !== undefined) clearTimeout(timer);
         if (code !== 0) rej(new Error(Buffer.concat(err).toString().trim() || `shim exited ${code}`));
         else res(Buffer.concat(out).toString());
       });
     });
   }
 
-  // Fire-and-forget: run a shim command, swallow errors.
-  async function shim(...args: string[]): Promise<void> {
-    try { await shimRun(args); } catch { /* nvim may have closed */ }
+  // Fire-and-forget: enqueue a shim command, swallow errors.
+  // Commands are executed serially in dispatch order.
+  function shim(...args: string[]): void {
+    _shimQueue = _shimQueue.then(() =>
+      shimRun(args, undefined, SHIM_TIMEOUT_MS).catch(() => { /* nvim may have closed */ })
+    );
   }
 
   // Blocking vimdiff review. Proposed content is sent via stdin.
   // Returns the user's decision plus the final buffer content (may be partial).
+  // No timeout — this is interactive and waits for the user.
   async function preview(
     filePath: string,
     content: string,
@@ -93,7 +120,7 @@ export default function (pi: ExtensionAPI) {
         const result = await preview(filePath, newContent);
 
         if (result.decision === "reject") {
-          await shim("revert", filePath);
+          shim("revert", filePath);
           const reason = result.reason ? `: ${result.reason}` : "";
           return {
             content: [{ type: "text", text: `Write rejected${reason}` }],
@@ -128,7 +155,8 @@ export default function (pi: ExtensionAPI) {
       label: "edit",
       description:
         "Edit a file by replacing exact text. The oldText must match exactly (including whitespace). Use this for precise, surgical edits.",
-      parameters: createWriteTool(process.cwd()).parameters,
+      // Use createEditTool schema: { path, oldText, newText }
+      parameters: createEditTool(process.cwd()).parameters,
 
       async execute(toolCallId, params, signal, onUpdate, ctx) {
         const filePath = resolve(ctx.cwd, params.path as string);
@@ -156,7 +184,7 @@ export default function (pi: ExtensionAPI) {
         const result = await preview(filePath, newContent);
 
         if (result.decision === "reject") {
-          await shim("revert", filePath);
+          shim("revert", filePath);
           const reason = result.reason ? `: ${result.reason}` : "";
           return {
             content: [{ type: "text", text: `Edit rejected${reason}` }],
@@ -165,9 +193,10 @@ export default function (pi: ExtensionAPI) {
         }
 
         const finalContent = result.content ?? newContent;
-        const writeResult = await createWriteTool(ctx.cwd).execute(
+        // Delegate final write to createEditTool so the agent gets a proper diff result
+        const writeResult = await createEditTool(ctx.cwd).execute(
           toolCallId,
-          { path: params.path, content: finalContent },
+          { path: params.path as string, oldText, newText: finalContent },
           signal,
           onUpdate,
         );
@@ -187,44 +216,56 @@ export default function (pi: ExtensionAPI) {
 
   // --- Session lifecycle: activate only when nvim socket is present ---
 
-  pi.on("session_start", async (_event, ctx) => {
+  pi.on("session_start", (_event, ctx) => {
     if (!process.env.NVIM_SOCKET_PATH) return;
     ctx.ui.setStatus("nvim", "nvim");
-    await shim("set", "pi_active", "true");
+    shim("set", "pi_active", "true");
     registerTools();
   });
 
-  pi.on("session_shutdown", async () => {
+  pi.on("session_shutdown", () => {
     if (!process.env.NVIM_SOCKET_PATH) return;
-    await shim("close-tab");
-    await shim("unset", "pi_active");
-    await shim("unset", "pi_running");
+    shim("close-tab");
+    shim("unset", "pi_active");
+    shim("unset", "pi_running");
   });
 
-  pi.on("agent_start", async () => {
+  pi.on("agent_start", () => {
     if (!process.env.NVIM_SOCKET_PATH) return;
-    await shim("set", "pi_running", "true");
+    shim("set", "pi_running", "true");
   });
 
-  pi.on("agent_end", async () => {
+  pi.on("agent_end", (_event, ctx) => {
     if (!process.env.NVIM_SOCKET_PATH) return;
-    await shim("unset", "pi_running");
-    await shim("checktime");
-    await shim("close-tab");
+    shim("unset", "pi_running");
+    shim("unset", "pi_reading");
+    shim("checktime");
+    // Note: close-tab is intentionally NOT called here — the agent tab
+    // persists across turns and is only closed at session_shutdown.
+    ctx.ui.setStatus("nvim-reading", "");
   });
 
-  pi.on("tool_call", async (event) => {
+  pi.on("tool_call", (event, ctx) => {
     if (!process.env.NVIM_SOCKET_PATH) return;
     if (event.toolName === "read") {
       const path = event.input.path as string | undefined;
-      if (path) await shim("open", path);
+      if (path) {
+        // Compute a short display path (relative to cwd when possible, otherwise basename)
+        const abs = resolve(ctx.cwd, path);
+        const rel = relative(ctx.cwd, abs);
+        const shortPath = rel.startsWith("..") ? basename(abs) : rel;
+        // Set vim.g.pi_reading so users can surface it in their statusline.
+        // JSON.stringify produces a valid Lua double-quoted string literal.
+        shim("set", "pi_reading", JSON.stringify(shortPath));
+        ctx.ui.setStatus("nvim-reading", `📖 ${shortPath}`);
+      }
     }
   });
 
-  pi.on("tool_result", async (event) => {
+  pi.on("tool_result", (event) => {
     if (!process.env.NVIM_SOCKET_PATH) return;
     if (event.toolName === "write" || event.toolName === "edit") {
-      await shim("checktime");
+      shim("checktime");
     }
   });
 }
