@@ -251,7 +251,7 @@ local function finalize()
 
   local reasons = {}
   for _, h in ipairs(rejected) do
-    if h.reason and h.reason ~= "" then
+    if h.reason and type(h.reason) == "string" and h.reason ~= "" then
       table.insert(reasons, h.reason)
     end
   end
@@ -390,11 +390,7 @@ local function prompt_hunk_action()
       elseif action == "reject" then
         vim.ui.input({ prompt = "Reject reason (optional): " }, function(reason)
           -- Handle nil (cancelled) vs empty string
-          if reason == nil then
-            -- User cancelled input, go back to menu
-            prompt_hunk_action()
-            return
-          end
+          reason = reason or ""
           
           if current_hunk_line then
             unplace_sign(current_hunk_line)
