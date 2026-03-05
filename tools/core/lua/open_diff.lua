@@ -234,17 +234,9 @@ end
 
 -- ── Jump to first hunk ────────────────────────────────────────────────────────
 
--- Go to end of file then wrap-scan to catch diffs starting at line 1
-vim.api.nvim_set_current_win(left_win)
-local _before = vim.api.nvim_win_get_cursor(left_win)
-vim.cmd("normal! G")
-vim.o.wrapscan = true
-pcall(vim.cmd, "normal! ]c")
-vim.o.wrapscan = false
-local _after = vim.api.nvim_win_get_cursor(left_win)
-
--- No diffs — files are identical; accept immediately
-if _before[1] == _after[1] and _before[2] == _after[2] then
+-- Check if there are any hunks to review
+if total_hunks == 0 then
+  -- No diffs — files are identical; accept immediately
   local lines = vim.api.nvim_buf_get_lines(left_buf, 0, -1, false)
   cleanup()
   write_result({
@@ -257,12 +249,16 @@ if _before[1] == _after[1] and _before[2] == _after[2] then
   return
 end
 
+-- Jump to first hunk using ]c motion
+vim.api.nvim_set_current_win(left_win)
+vim.cmd("normal! gg")  -- Start from top
+vim.o.wrapscan = false
+pcall(vim.cmd, "normal! ]c")  -- Jump to first diff
+
 hunk_idx = 1
-if hunk_ranges[1] then
-  current_hunk_line = hunk_ranges[1].start_line
-  place_sign("neph_current", current_hunk_line)
-  show_hints(hunk_ranges[1], 1)
-end
+current_hunk_line = hunk_ranges[1].start_line
+place_sign("neph_current", current_hunk_line)
+show_hints(hunk_ranges[1], 1)
 
 -- ── Keymaps ───────────────────────────────────────────────────────────────────
 
