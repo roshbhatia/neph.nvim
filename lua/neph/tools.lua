@@ -27,7 +27,7 @@ end
 ---@type neph.ToolSpec[]
 local TOOLS = {
   { src = "core/shim.py", dst = "~/.local/bin/shim" },
-  { src = "pi/pi.ts",     dst = "~/.pi/agent/extensions/nvim.ts" },
+  { src = "pi/pi.ts", dst = "~/.pi/agent/extensions/nvim.ts" },
 }
 
 --- Install (symlink) all bundled tools to their canonical locations.
@@ -39,10 +39,7 @@ function M.install()
     local dst = vim.fn.expand(tool.dst)
 
     if vim.fn.filereadable(src) == 0 then
-      vim.notify(
-        string.format("Neph: tool not found, skipping symlink: %s", src),
-        vim.log.levels.WARN
-      )
+      vim.notify(string.format("Neph: tool not found, skipping symlink: %s", src), vim.log.levels.WARN)
     else
       vim.fn.mkdir(vim.fn.fnamemodify(dst, ":h"), "p")
       vim.fn.system({ "ln", "-sf", src, dst })
