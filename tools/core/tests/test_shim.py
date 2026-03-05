@@ -248,3 +248,82 @@ class TestMain:
         code, _, stderr = _run_shim()
         assert code == 1
         assert "usage" in stderr.lower()
+
+
+# ── Lua script loading ────────────────────────────────────────────────────────
+
+
+class TestLuaScriptLoading:
+    def test_lua_open_is_nonempty_string(self, shim):
+        assert isinstance(shim.LUA_OPEN, str)
+        assert len(shim.LUA_OPEN.strip()) > 0
+
+    def test_lua_revert_is_nonempty_string(self, shim):
+        assert isinstance(shim.LUA_REVERT, str)
+        assert len(shim.LUA_REVERT.strip()) > 0
+
+    def test_lua_preview_is_nonempty_string(self, shim):
+        assert isinstance(shim.LUA_PREVIEW, str)
+        assert len(shim.LUA_PREVIEW.strip()) > 0
+
+    def test_missing_lua_file_raises_file_not_found(self, tmp_path, monkeypatch):
+        """Patching _LUA_DIR to a dir without .lua files causes FileNotFoundError on reload."""
+        import importlib, types
+        src = SHIM_PATH.read_text()
+        lines = src.splitlines()
+        if lines and lines[0].startswith("#!"):
+            lines = lines[1:]
+        module = types.ModuleType("shim_missing")
+        module.__file__ = str(SHIM_PATH)
+        # Patch _LUA_DIR into the source before exec
+        patched = "\n".join(lines).replace(
+            '_LUA_DIR = Path(__file__).resolve().parent / "lua"',
+            f'_LUA_DIR = Path("{tmp_path}")',
+        )
+        with pytest.raises(FileNotFoundError):
+            exec(compile(patched, str(SHIM_PATH), "exec"), module.__dict__)
+
+
+# ── Lua script content via FakeNvimServer ─────────────────────────────────────
+
+
+class TestLuaScriptContent:
+    """Assert that each cmd_* function sends the correct loaded Lua to nvim_exec_lua."""
+
+    def _patch(self, shim, nvim_server, fn_name, *args, reply="ok", stdin_text=None):
+        old = shim.SOCKET_PATH
+        shim.SOCKET_PATH = nvim_server.socket_path
+        nvim_server.set_reply(result=reply)
+        try:
+            fn = getattr(shim, fn_name)
+            if stdin_text is not None:
+                old_stdin = sys.stdin
+                sys.stdin = io.StringIO(stdin_text)
+                try:
+                    fn(*args)
+                finally:
+                    sys.stdin = old_stdin
+            else:
+                fn(*args)
+        finally:
+            shim.SOCKET_PATH = old
+
+    def test_cmd_open_sends_lua_open_script(self, shim, nvim_server):
+        self._patch(shim, nvim_server, "cmd_open", "/tmp/test.py")
+        req = nvim_server.last_call
+        assert req["method"] == "nvim_exec_lua"
+        assert req["params"][0] == shim.LUA_OPEN
+
+    def test_cmd_revert_sends_lua_revert_script(self, shim, nvim_server):
+        self._patch(shim, nvim_server, "cmd_revert", "/tmp/test.py")
+        req = nvim_server.last_call
+        assert req["method"] == "nvim_exec_lua"
+        assert req["params"][0] == shim.LUA_REVERT
+
+    def test_cmd_preview_sends_lua_preview_script(self, shim, nvim_server):
+        reply = json.dumps({"decision": "accept", "content": "proposed content"})
+        self._patch(shim, nvim_server, "cmd_preview", "/tmp/test.py",
+                    reply=reply, stdin_text="proposed content")
+        req = nvim_server.last_call
+        assert req["method"] == "nvim_exec_lua"
+        assert req["params"][0] == shim.LUA_PREVIEW

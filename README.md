@@ -109,7 +109,7 @@ it** during `setup()` by creating symlinks:
 
 | Tool | Symlinked to | Purpose |
 |------|-------------|---------|
-| `tools/core/shim.py` | `~/.local/bin/shim` | Python msgpack-rpc Neovim client for LLM agents. Provides blocking hunk-by-hunk diff review via `nvim_exec_lua`. Requires `uv`. |
+| `tools/core/shim.py` | `~/.local/bin/shim` | Python msgpack-rpc Neovim client for LLM agents. Provides blocking hunk-by-hunk diff review via `nvim_exec_lua`. Lua scripts in `tools/core/lua/`. Requires `uv`. |
 | `tools/pi/pi.ts` | `~/.pi/agent/extensions/nvim.ts` | [pi coding agent](https://github.com/mariozechner/pi-coding-agent) extension. Intercepts `write`/`edit` tool calls and triggers a vimdiff review in Neovim before writing to disk. |
 
 If a source file is missing (e.g., non-lazy plugin manager), a warning is
