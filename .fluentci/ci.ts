@@ -1,4 +1,4 @@
-import Client, { connect } from "@dagger.io/dagger";
+import Client, { connect } from "npm:@dagger.io/dagger";
 
 connect(async (client: Client) => {
   const container = client
