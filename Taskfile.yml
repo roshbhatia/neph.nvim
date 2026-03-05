@@ -1,12 +1,16 @@
 version: "3"
 
+includes:
+  tools:
+    taskfile: tools/Taskfile.yml
+    dir: tools
+
 tasks:
   lint:
     cmds:
       - stylua --check lua/ tests/
       - luacheck lua/ tests/ --globals vim Snacks describe it before_each after_each assert
-      - deno lint tools/pi/pi.ts
-      - flake8 tools/core/shim.py
+      - task tools:lint
 
   test:
     cmds:
@@ -16,3 +20,4 @@ tasks:
           --cmd "set rtp+=${PLENARY_PATH:-~/.local/share/nvim/lazy/plenary.nvim}" \
           -c "PlenaryBustedDirectory tests/ {minimal_init='tests/minimal_init.lua'}" \
           -c 'qa!'
+      - task tools:test

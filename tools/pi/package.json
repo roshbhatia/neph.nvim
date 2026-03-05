@@ -4,7 +4,9 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "build": "tsc"
   },
   "keywords": [],
   "author": "",
@@ -14,6 +16,8 @@
   },
   "devDependencies": {
     "@types/node": "^20.11.25",
-    "typescript": "^5.4.2"
+    "@vitest/coverage-v8": "^2.0.0",
+    "typescript": "^5.4.2",
+    "vitest": "^2.0.0"
   }
 }

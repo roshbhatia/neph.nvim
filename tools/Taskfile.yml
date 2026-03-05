@@ -1,0 +1,26 @@
+version: "3"
+
+tasks:
+  test:
+    deps: [test:core, test:pi]
+
+  test:core:
+    dir: core
+    cmds:
+      - uv run pytest tests/ -v
+
+  test:pi:
+    dir: pi
+    cmds:
+      - npm test
+
+  lint:
+    deps: [lint:core, lint:pi]
+
+  lint:core:
+    cmds:
+      - flake8 core/shim.py
+
+  lint:pi:
+    cmds:
+      - deno lint pi/pi.ts
