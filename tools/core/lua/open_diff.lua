@@ -190,16 +190,30 @@ local function next_hunk()
 end
 
 local function cleanup()
-  vim.fn.sign_unplace("neph_review", { buffer = left_buf })
-  clear_hints()
-  pcall(vim.api.nvim_win_close, right_win, true)
-  for _, w in ipairs(vim.api.nvim_tabpage_list_wins(diff_tab)) do
-    if vim.api.nvim_win_is_valid(w) then
-      vim.api.nvim_set_current_win(w)
-      pcall(vim.cmd, "diffoff")
-    end
+  -- Unplace all signs
+  pcall(vim.fn.sign_unplace, "neph_review", { buffer = left_buf })
+  
+  -- Clear virtual text hints
+  pcall(clear_hints)
+  
+  -- Close windows and turn off diff mode if they still exist
+  if vim.api.nvim_win_is_valid(right_win) then
+    pcall(vim.api.nvim_win_close, right_win, true)
   end
-  pcall(vim.cmd, "tabclose " .. vim.api.nvim_tabpage_get_number(diff_tab))
+  
+  -- Turn off diff mode in all windows in the tab
+  if vim.api.nvim_tabpage_is_valid(diff_tab) then
+    for _, w in ipairs(vim.api.nvim_tabpage_list_wins(diff_tab)) do
+      if vim.api.nvim_win_is_valid(w) then
+        pcall(function()
+          vim.api.nvim_set_current_win(w)
+          vim.cmd("diffoff")
+        end)
+      end
+    end
+    -- Close the entire tab
+    pcall(vim.cmd, "tabclose " .. vim.api.nvim_tabpage_get_number(diff_tab))
+  end
 end
 
 local function finalize()
@@ -314,13 +328,13 @@ local function prompt_hunk_action()
   local preview_text = table.concat(preview_lines, "\n")
   local ft = vim.filetype.match({ buf = left_buf }) or ""
   
-  -- Add preview to each item
+  -- Add preview to each item - use buf instead of file
   local items = { 
-    { text = "Accept", action = "accept", preview = { text = preview_text, ft = ft } },
-    { text = "Reject", action = "reject", preview = { text = preview_text, ft = ft } },
-    { text = "Accept all", action = "accept_all", preview = { text = preview_text, ft = ft } },
-    { text = "Reject all", action = "reject_all", preview = { text = preview_text, ft = ft } },
-    { text = "Manual edit", action = "manual", preview = { text = preview_text, ft = ft } },
+    { text = "Accept", action = "accept", buf = right_buf, preview = { text = preview_text, ft = ft, loc = false } },
+    { text = "Reject", action = "reject", buf = right_buf, preview = { text = preview_text, ft = ft, loc = false } },
+    { text = "Accept all", action = "accept_all", buf = right_buf, preview = { text = preview_text, ft = ft, loc = false } },
+    { text = "Reject all", action = "reject_all", buf = right_buf, preview = { text = preview_text, ft = ft, loc = false } },
+    { text = "Manual edit", action = "manual", buf = right_buf, preview = { text = preview_text, ft = ft, loc = false } },
   }
   
   Snacks.picker.select(
@@ -337,9 +351,14 @@ local function prompt_hunk_action()
     },
     function(choice)
       if not choice then
-        -- User cancelled (Esc)
-        vim.ui.input({ prompt = "Reject reason: " }, function(reason)
-          table.insert(hunks, { index = hunk_idx, decision = "reject", reason = reason or vim.NIL })
+        -- User cancelled picker with Esc - reject all remaining hunks
+        vim.ui.input({ prompt = "Reject all remaining hunks - reason: " }, function(reason)
+          if reason == nil then
+            -- User cancelled the reason input too - still reject all and cleanup
+            reason = "User cancelled review"
+          end
+          
+          table.insert(hunks, { index = hunk_idx, decision = "reject", reason = reason ~= "" and reason or vim.NIL })
           while next_hunk() do
             hunk_idx = hunk_idx + 1
             table.insert(hunks, { index = hunk_idx, decision = "reject", reason = vim.NIL })
@@ -370,16 +389,23 @@ local function prompt_hunk_action()
         
       elseif action == "reject" then
         vim.ui.input({ prompt = "Reject reason (optional): " }, function(reason)
+          -- Handle nil (cancelled) vs empty string
+          if reason == nil then
+            -- User cancelled input, go back to menu
+            prompt_hunk_action()
+            return
+          end
+          
           if current_hunk_line then
             unplace_sign(current_hunk_line)
-            if reason and reason ~= "" then
+            if reason ~= "" then
               place_sign("neph_commented", current_hunk_line)
             else
               place_sign("neph_reject", current_hunk_line)
             end
           end
           
-          table.insert(hunks, { index = hunk_idx, decision = "reject", reason = reason or vim.NIL })
+          table.insert(hunks, { index = hunk_idx, decision = "reject", reason = reason ~= "" and reason or vim.NIL })
           
           local next_range = next_hunk()
           if next_range then
@@ -409,12 +435,17 @@ local function prompt_hunk_action()
         finalize()
         
       elseif action == "reject_all" then
-        vim.ui.input({ prompt = "Reject reason: " }, function(reason)
+        vim.ui.input({ prompt = "Reject all - reason: " }, function(reason)
+          if reason == nil then
+            -- User cancelled - still reject all
+            reason = "User cancelled review"
+          end
+          
           if current_hunk_line then
             unplace_sign(current_hunk_line)
             place_sign("neph_reject", current_hunk_line)
           end
-          table.insert(hunks, { index = hunk_idx, decision = "reject", reason = reason or vim.NIL })
+          table.insert(hunks, { index = hunk_idx, decision = "reject", reason = reason ~= "" and reason or vim.NIL })
           
           while true do
             local next_range = next_hunk()
