@@ -13,24 +13,35 @@ import { Buffer } from "node:buffer";
 // and terminal panes spawned from within Neovim inherit it automatically.
 // When absent the extension is a complete no-op.
 //
-// write / edit tools are overridden to open a vimdiff review in Neovim before
-// any disk write. The shim speaks msgpack-rpc directly to nvim_exec_lua, which
-// is a blocking RPC call — the hunk review (vim.fn.confirm / vim.fn.input)
-// happens entirely inside that call, and the result comes back as JSON on
-// stdout. No polling, no temp files, no race conditions.
+// write / edit tools are overridden to open a non-blocking vimdiff review in
+// Neovim before any disk write. The shim writes proposed content to a temp
+// file, opens a diff tab via exec_lua (returns immediately), then waits for
+// a pynvim notification fired by the user's keymap decision. This avoids
+// calling interactive Lua (getcharstr) inside an RPC call, which deadlocks
+// when the shim runs inside a Neovim :terminal buffer.
 //
-// Per-hunk choices: Accept / Reject (+ optional reason) / Accept all / Reject all
-// Partial acceptance is supported: only accepted hunks reach disk.
+// Per-hunk choices: y accept / n reject (+ reason) / a accept-all / d reject-all
+// decision: "accept" | "reject" | "partial" (some hunks accepted, some rejected)
 //
 // vim.g globals for statusline integration:
 //   vim.g.pi_active   — set while a pi session is live
 //   vim.g.pi_running  — set while the agent is processing a turn
 //   vim.g.pi_reading  — path of file currently being read by the agent (nil otherwise)
 
-interface NvimPreviewResult {
+interface HunkResult {
+  index: number;
   decision: "accept" | "reject";
-  content?: string;
   reason?: string;
+}
+
+interface ReviewEnvelope {
+  schema?: string;
+  decision: "accept" | "reject" | "partial";
+  content?: string;
+  hunks?: HunkResult[];
+  reason?: string;
+  verification_error?: string;
+  verification_skipped?: boolean;
 }
 
 // Timeout for fire-and-forget shim calls (ms). Interactive preview has no timeout.
@@ -90,15 +101,15 @@ export default function (pi: ExtensionAPI) {
   // Blocking vimdiff review. Proposed content is sent via stdin.
   // Returns the user's decision plus the final buffer content (may be partial).
   // No timeout — this is interactive and waits for the user.
-  async function preview(
+  async function review(
     filePath: string,
     content: string,
-  ): Promise<NvimPreviewResult> {
+  ): Promise<ReviewEnvelope> {
     try {
-      const json = await shimRun(["preview", filePath], content);
-      return JSON.parse(json) as NvimPreviewResult;
+      const json = await shimRun(["review", filePath], content);
+      return JSON.parse(json) as ReviewEnvelope;
     } catch {
-      return { decision: "reject", reason: "Preview failed or timed out" };
+      return { decision: "reject", reason: "Review failed or timed out" };
     }
   }
 
@@ -117,7 +128,7 @@ export default function (pi: ExtensionAPI) {
         const filePath = resolve(ctx.cwd, params.path as string);
         const newContent = params.content as string;
 
-        const result = await preview(filePath, newContent);
+        const result = await review(filePath, newContent);
 
         if (result.decision === "reject") {
           shim("revert", filePath);
@@ -135,13 +146,16 @@ export default function (pi: ExtensionAPI) {
           signal,
           onUpdate,
         );
-        // Surface partial-rejection notes back to the agent so it knows
-        // which hunks were not applied and why.
-        if (result.reason) {
+        // Surface partial / rejection notes back to the agent
+        const notes: string[] = [];
+        if (result.decision === "partial") notes.push("partial accept");
+        if (result.reason) notes.push(result.reason);
+        if (result.verification_error) notes.push(`buffer mismatch: ${result.verification_error}`);
+        if (notes.length > 0) {
           return {
             content: [
               ...(writeResult as { content: { type: "text"; text: string }[] }).content,
-              { type: "text" as const, text: `Note: some hunks were rejected — ${result.reason}` },
+              { type: "text" as const, text: `Note: ${notes.join(" — ")}` },
             ],
             details: (writeResult as { details: unknown }).details,
           };
@@ -181,7 +195,7 @@ export default function (pi: ExtensionAPI) {
         }
 
         const newContent = currentContent.replace(oldText, newText);
-        const result = await preview(filePath, newContent);
+        const result = await review(filePath, newContent);
 
         if (result.decision === "reject") {
           shim("revert", filePath);
@@ -200,11 +214,15 @@ export default function (pi: ExtensionAPI) {
           signal,
           onUpdate,
         );
-        if (result.reason) {
+        const notes: string[] = [];
+        if (result.decision === "partial") notes.push("partial accept");
+        if (result.reason) notes.push(result.reason);
+        if (result.verification_error) notes.push(`buffer mismatch: ${result.verification_error}`);
+        if (notes.length > 0) {
           return {
             content: [
               ...(writeResult as { content: { type: "text"; text: string }[] }).content,
-              { type: "text" as const, text: `Note: some hunks were rejected — ${result.reason}` },
+              { type: "text" as const, text: `Note: ${notes.join(" — ")}` },
             ],
             details: (writeResult as { details: unknown }).details,
           };

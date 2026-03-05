@@ -172,15 +172,15 @@ describe("shimRun timeout", () => {
   });
 });
 
-// ── preview() tests ───────────────────────────────────────────────────────────
+// ── review() tests ───────────────────────────────────────────────────────────
 
-describe("preview()", () => {
+describe("review()", () => {
   beforeEach(async () => { await activate(); });
 
   it("returns accept decision from shim stdout", async () => {
     const accepted = { decision: "accept", content: "final" };
     spawnMock.mockImplementation((cmd: string, args: string[]) => {
-      if (args[0] === "preview") return makeChild({ stdout: JSON.stringify(accepted) });
+      if (args[0] === "review") return makeChild({ stdout: JSON.stringify(accepted) });
       return makeChild({ stdout: "" });
     });
     createWriteToolMock.mockReturnValue({
@@ -196,7 +196,7 @@ describe("preview()", () => {
   it("returns reject decision on reject from shim", async () => {
     const rejected = { decision: "reject", reason: "too noisy" };
     spawnMock.mockImplementation((cmd: string, args: string[]) => {
-      if (args[0] === "preview") return makeChild({ stdout: JSON.stringify(rejected) });
+      if (args[0] === "review") return makeChild({ stdout: JSON.stringify(rejected) });
       return makeChild({ stdout: "" });
     });
 
@@ -207,7 +207,7 @@ describe("preview()", () => {
 
   it("returns reject with fallback message when shimRun throws", async () => {
     spawnMock.mockImplementation((cmd: string, args: string[]) => {
-      if (args[0] === "preview") return makeChild({ stderr: "crash", exitCode: 1 });
+      if (args[0] === "review") return makeChild({ stderr: "crash", exitCode: 1 });
       return makeChild({ stdout: "" });
     });
 
@@ -216,9 +216,9 @@ describe("preview()", () => {
     expect(result.content[0].text).toMatch(/rejected/i);
   });
 
-  it("preview spawns shim with 'preview' as first arg and sends stdin", async () => {
+  it("review spawns shim with 'review' as first arg and sends stdin", async () => {
     spawnMock.mockImplementation((cmd: string, args: string[]) => {
-      if (args[0] === "preview") return makeChild({ stdout: JSON.stringify({ decision: "accept", content: "ok" }) });
+      if (args[0] === "review") return makeChild({ stdout: JSON.stringify({ decision: "accept", content: "ok" }) });
       return makeChild({ stdout: "" });
     });
     createWriteToolMock.mockReturnValue({
@@ -229,9 +229,9 @@ describe("preview()", () => {
     const writeTool = pi.tools["write"];
     await writeTool.execute("id", { path: "/tmp/x.ts", content: "proposed content" }, null, vi.fn(), { cwd: "/tmp" });
 
-    const previewCall = spawnMock.mock.calls.find(([, a]: [string, string[]]) => a[0] === "preview");
-    expect(previewCall).toBeDefined();
-    const child = spawnMock.mock.results[spawnMock.mock.calls.indexOf(previewCall!)].value;
+    const reviewCall = spawnMock.mock.calls.find(([, a]: [string, string[]]) => a[0] === "review");
+    expect(reviewCall).toBeDefined();
+    const child = spawnMock.mock.results[spawnMock.mock.calls.indexOf(reviewCall!)].value;
     expect(child.stdin.write).toHaveBeenCalledWith("proposed content", "utf-8");
   });
 });
@@ -246,7 +246,7 @@ describe("write tool override", () => {
     createWriteToolMock.mockReturnValue({ parameters: {}, execute: mockExecute });
 
     spawnMock.mockImplementation((cmd: string, args: string[]) => {
-      if (args[0] === "preview") return makeChild({ stdout: JSON.stringify({ decision: "accept", content: "accepted!" }) });
+      if (args[0] === "review") return makeChild({ stdout: JSON.stringify({ decision: "accept", content: "accepted!" }) });
       return makeChild({ stdout: "" });
     });
 
@@ -260,7 +260,7 @@ describe("write tool override", () => {
     createWriteToolMock.mockReturnValue({ parameters: {}, execute: mockExecute });
 
     spawnMock.mockImplementation((cmd: string, args: string[]) => {
-      if (args[0] === "preview") return makeChild({ stdout: JSON.stringify({ decision: "reject", reason: "nope" }) });
+      if (args[0] === "review") return makeChild({ stdout: JSON.stringify({ decision: "reject", reason: "nope" }) });
       return makeChild({ stdout: "" });
     });
 
@@ -274,14 +274,14 @@ describe("write tool override", () => {
     expect(result.content[0].text).toMatch(/rejected.*nope/i);
   });
 
-  it("surfaces partial rejection notes in the result", async () => {
+  it("surfaces partial rejection notes for decision:partial", async () => {
     createWriteToolMock.mockReturnValue({
       parameters: {},
       execute: vi.fn().mockResolvedValue({ content: [{ type: "text", text: "written" }], details: {} }),
     });
 
     spawnMock.mockImplementation((cmd: string, args: string[]) => {
-      if (args[0] === "preview") return makeChild({ stdout: JSON.stringify({ decision: "accept", content: "ok", reason: "hunk 2 skipped" }) });
+      if (args[0] === "review") return makeChild({ stdout: JSON.stringify({ decision: "partial", content: "ok", hunks: [{index:1,decision:"accept"},{index:2,decision:"reject",reason:"hunk 2 skipped"}], reason: "hunk 2 skipped" }) });
       return makeChild({ stdout: "" });
     });
 
@@ -309,8 +309,8 @@ describe("edit tool override", () => {
     const editTool = pi.tools["edit"];
     const result = await editTool.execute("id", { path: "/f.ts", oldText: "not present", newText: "y" }, null, vi.fn(), { cwd: "/" });
     expect(result.content[0].text).toMatch(/edit failed/i);
-    const previewCall = spawnMock.mock.calls.find(([, a]: [string, string[]]) => a[0] === "preview");
-    expect(previewCall).toBeUndefined();
+    const reviewCall = spawnMock.mock.calls.find(([, a]: [string, string[]]) => a[0] === "review");
+    expect(reviewCall).toBeUndefined();
   });
 
   it("applies accepted content via createEditTool execute (not createWriteTool)", async () => {
@@ -321,7 +321,7 @@ describe("edit tool override", () => {
     createWriteToolMock.mockReturnValue({ parameters: {}, execute: mockWriteExecute });
 
     spawnMock.mockImplementation((cmd: string, args: string[]) => {
-      if (args[0] === "preview") return makeChild({ stdout: JSON.stringify({ decision: "accept", content: "hello universe" }) });
+      if (args[0] === "review") return makeChild({ stdout: JSON.stringify({ decision: "accept", content: "hello universe" }) });
       return makeChild({ stdout: "" });
     });
 
@@ -337,7 +337,7 @@ describe("edit tool override", () => {
     createEditToolMock.mockReturnValue({ parameters: {}, execute: vi.fn() });
 
     spawnMock.mockImplementation((cmd: string, args: string[]) => {
-      if (args[0] === "preview") return makeChild({ stdout: JSON.stringify({ decision: "reject", reason: "bad change" }) });
+      if (args[0] === "review") return makeChild({ stdout: JSON.stringify({ decision: "reject", reason: "bad change" }) });
       return makeChild({ stdout: "" });
     });
 
