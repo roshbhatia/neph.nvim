@@ -2,8 +2,9 @@
 ---@brief [[
 --- neph.nvim consolidates AI-agent terminal management for Neovim.
 --- It supports multiple agent backends (goose, claude, opencode, amp, copilot,
---- gemini, codex, pi, cursor, crush) and two terminal strategies: native
---- (snacks.nvim splits) and WezTerm panes (auto-detected).
+--- gemini, codex, pi, cursor, crush) and four terminal multiplexer strategies:
+--- native (snacks.nvim splits), WezTerm panes, tmux (stub), and zellij (stub).
+--- The strategy is auto-detected or set explicitly via the `multiplexer` option.
 ---
 --- Quick-start (lazy.nvim):
 ---
@@ -32,6 +33,7 @@ function M.setup(opts)
   require("neph.internal.session").setup(config.current)
   require("neph.internal.file_refresh").setup(config.current)
   require("neph.internal.completion").setup()
+  require("neph.tools").install()
 end
 
 return M

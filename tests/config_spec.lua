@@ -1,0 +1,42 @@
+---@diagnostic disable: undefined-global
+-- config_spec.lua – unit tests for neph.config defaults
+
+describe("neph.config", function()
+  local cfg
+
+  before_each(function()
+    package.loaded["neph.config"] = nil
+    cfg = require("neph.config")
+  end)
+
+  describe("defaults", function()
+    it("has keymaps = true", function()
+      assert.is_true(cfg.defaults.keymaps)
+    end)
+
+    it("has env = {}", function()
+      assert.are.same({}, cfg.defaults.env)
+    end)
+
+    it("has file_refresh table with expected keys", function()
+      assert.is_table(cfg.defaults.file_refresh)
+      assert.is_true(cfg.defaults.file_refresh.enable)
+      assert.equals(1000, cfg.defaults.file_refresh.timer_interval)
+      assert.equals(750, cfg.defaults.file_refresh.updatetime)
+    end)
+
+    it("has agents = nil", function()
+      assert.is_nil(cfg.defaults.agents)
+    end)
+
+    it("has multiplexer = nil", function()
+      assert.is_nil(cfg.defaults.multiplexer)
+    end)
+  end)
+
+  describe("current", function()
+    it("starts as an empty table", function()
+      assert.is_table(cfg.current)
+    end)
+  end)
+end)

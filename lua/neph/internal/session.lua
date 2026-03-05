@@ -23,8 +23,12 @@ local augroup = nil
 -- Backend detection
 -- ---------------------------------------------------------------------------
 
----@return "wezterm"|"native"
+---@return "wezterm"|"native"|"tmux"|"zellij"
 local function detect_backend()
+  -- Explicit override from config takes priority over env-var heuristics
+  if config.multiplexer then
+    return config.multiplexer
+  end
   if vim.env.SSH_CONNECTION then
     return "native"
   end
@@ -49,6 +53,14 @@ function M.setup(opts)
   local btype = detect_backend()
   if btype == "wezterm" then
     backend = require("neph.internal.backends.wezterm")
+  elseif btype == "tmux" then
+    -- Stub: warns and falls back to native
+    require("neph.internal.backends.tmux").setup(config)
+    backend = require("neph.internal.backends.native")
+  elseif btype == "zellij" then
+    -- Stub: warns and falls back to native
+    require("neph.internal.backends.zellij").setup(config)
+    backend = require("neph.internal.backends.native")
   else
     backend = require("neph.internal.backends.native")
   end

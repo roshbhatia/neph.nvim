@@ -54,8 +54,32 @@ require("neph").setup({
     timer_interval = 1000, -- ms
     updatetime     = 750,  -- sets vim.o.updatetime
   },
+
+  -- Terminal multiplexer backend.
+  -- nil (default): auto-detect — WezTerm if WEZTERM_PANE is set, otherwise native.
+  -- "native":  snacks.nvim right-split (works everywhere)
+  -- "wezterm": WezTerm pane split (requires WEZTERM_PANE env var and wezterm CLI)
+  -- "tmux":    tmux pane (stub — falls back to native with a warning)
+  -- "zellij":  zellij pane (stub — falls back to native with a warning)
+  multiplexer = nil,
 })
 ```
+
+## Companion Tools
+
+`neph.nvim` ships companion tooling in its `tools/` directory and **auto-installs
+it** during `setup()` by creating symlinks:
+
+| Tool | Symlinked to | Purpose |
+|------|-------------|---------|
+| `tools/core/shim.py` | `~/.local/bin/shim` | Python msgpack-rpc Neovim client for LLM agents. Provides blocking hunk-by-hunk diff review via `nvim_exec_lua`. Requires `uv`. |
+| `tools/pi/pi.ts` | `~/.pi/agent/extensions/nvim.ts` | [pi coding agent](https://github.com/mariozechner/pi-coding-agent) extension. Intercepts `write`/`edit` tool calls and triggers a vimdiff review in Neovim before writing to disk. |
+
+`tools/core/nvim-shim` (bash alternative to `shim.py`) is bundled but **not**
+auto-symlinked — add it to your PATH manually if preferred.
+
+If a source file is missing (e.g., non-lazy plugin manager), a warning is
+emitted via `vim.notify` and that symlink is skipped.
 
 ## API
 
