@@ -111,23 +111,16 @@ local total_hunks = #hunk_ranges
 
 local config = vim.g.neph_config or {}
 local signs = vim.tbl_extend("force", {
-  accept = "✓",     -- single checkmark instead of ✅
-  reject = "✗",     -- single X instead of ❌
-  current = "→",    -- simple arrow instead of 👉
-  commented = "💬", -- just speech bubble, no X
+  accept = "✓",
+  reject = "✗",
+  current = "→",
+  commented = "💬",
 }, config.review_signs or {})
 
-                  signs.accept, signs.reject, signs.current, signs.commented))
-
-local ok, err = pcall(function()
-  vim.fn.sign_define("neph_current",   { text = signs.current,   texthl = "DiagnosticInfo" })
-  vim.fn.sign_define("neph_accept",    { text = signs.accept,    texthl = "DiagnosticOk" })
-  vim.fn.sign_define("neph_reject",    { text = signs.reject,    texthl = "DiagnosticError" })
-  vim.fn.sign_define("neph_commented", { text = signs.commented, texthl = "DiagnosticWarn" })
-end)
-if not ok then
-else
-end
+vim.fn.sign_define("neph_current",   { text = signs.current,   texthl = "DiagnosticInfo" })
+vim.fn.sign_define("neph_accept",    { text = signs.accept,    texthl = "DiagnosticOk" })
+vim.fn.sign_define("neph_reject",    { text = signs.reject,    texthl = "DiagnosticError" })
+vim.fn.sign_define("neph_commented", { text = signs.commented, texthl = "DiagnosticWarn" })
 
 local function place_sign(sign_name, line)
   vim.fn.sign_place(0, "neph_review", sign_name, left_buf, { lnum = line, priority = 10 })
