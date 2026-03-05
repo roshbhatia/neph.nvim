@@ -35,10 +35,6 @@ from typing import NoReturn
 import click
 import pynvim
 
-# Socket path injected by neph.nvim's native backend into agent terminals.
-SOCKET_PATH = os.environ.get("NVIM_SOCKET_PATH", "")
-
-
 # ── Helpers ───────────────────────────────────────────────────────────────
 
 
@@ -48,7 +44,10 @@ def die(msg: str) -> NoReturn:
 
 
 def get_nvim(timeout: float | None = 30.0) -> pynvim.Nvim:
-    """Attach to the Neovim instance at SOCKET_PATH and return a pynvim.Nvim.
+    """Attach to Neovim at NVIM_SOCKET_PATH and return a pynvim.Nvim.
+
+    Reads NVIM_SOCKET_PATH from the environment at call time so that changes
+    made after module load (e.g. os.environ updates in tests) are respected.
 
     Args:
         timeout: Socket timeout in seconds passed via socket.setdefaulttimeout
@@ -56,16 +55,17 @@ def get_nvim(timeout: float | None = 30.0) -> pynvim.Nvim:
                  preview that blocks on user input). Default: 30.0.
 
     Raises:
-        SystemExit(1): If SOCKET_PATH is unset, the file does not exist, or
-                       pynvim cannot connect.
+        SystemExit(1): If NVIM_SOCKET_PATH is unset, the file does not exist,
+                       or pynvim cannot connect.
     """
-    if not SOCKET_PATH:
+    path = os.environ.get("NVIM_SOCKET_PATH", "")
+    if not path:
         die("NVIM_SOCKET_PATH is not set")
-    if not os.path.exists(SOCKET_PATH):
-        die(f"socket not found: {SOCKET_PATH}")
+    if not os.path.exists(path):
+        die(f"socket not found: {path}")
     socket.setdefaulttimeout(timeout)
     try:
-        nvim = pynvim.attach("socket", path=SOCKET_PATH)
+        nvim = pynvim.attach("socket", path=path)
     except OSError as e:
         die(f"cannot connect to nvim: {e}")
     finally:
@@ -87,7 +87,7 @@ LUA_PREVIEW = (_LUA_DIR / "preview.lua").read_text()
 
 def cmd_status() -> None:
     get_nvim()
-    click.echo(f"connected: {SOCKET_PATH}")
+    click.echo(f"connected: {os.environ.get('NVIM_SOCKET_PATH', '')}")
 
 
 def cmd_open(file_path: str) -> None:

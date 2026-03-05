@@ -70,7 +70,7 @@ interface NvimPreviewResult {
 }
 
 // Timeout for fire-and-forget shim calls (ms). Interactive preview has no timeout.
-export const SHIM_TIMEOUT_MS = 15_000;
+export const SHIM_TIMEOUT_MS = 5_000;
 
 export default function (pi: ExtensionAPI) {
   let toolsRegistered = false;

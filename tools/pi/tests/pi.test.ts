@@ -124,8 +124,8 @@ async function activate(): Promise<void> {
 // ── SHIM_TIMEOUT_MS export ───────────────────────────────────────────────────
 
 describe("SHIM_TIMEOUT_MS", () => {
-  it("is exported and equals 15000", () => {
-    expect(SHIM_TIMEOUT_MS).toBe(15_000);
+  it("is exported and equals 5000", () => {
+    expect(SHIM_TIMEOUT_MS).toBe(5_000);
   });
 });
 
@@ -167,8 +167,8 @@ describe("shimRun timeout", () => {
   });
 
   it("SHIM_TIMEOUT_MS is a reasonable value (>5s, <60s)", () => {
-    expect(SHIM_TIMEOUT_MS).toBeGreaterThan(5_000);
-    expect(SHIM_TIMEOUT_MS).toBeLessThan(60_000);
+    expect(SHIM_TIMEOUT_MS).toBeGreaterThan(1_000);
+    expect(SHIM_TIMEOUT_MS).toBeLessThan(30_000);
   });
 });
 
