@@ -10,7 +10,7 @@ describe("neph rpc contract", function()
   f:close()
 
   it("implements all methods defined in protocol.json", function()
-    for method, spec in pairs(protocol.methods) do
+    for method, _ in pairs(protocol.methods) do
       -- The RPC dispatcher in rpc.lua should handle this method
       local result = rpc.request(method, {})
       -- We expect either success or a valid internal error (not METHOD_NOT_FOUND)

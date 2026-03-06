@@ -8,19 +8,21 @@
 local M = {}
 
 local engine = require("neph.api.review.engine")
-local ui     = require("neph.api.review.ui")
+local ui = require("neph.api.review.ui")
 
 function M.open(params)
-  local request_id  = params.request_id
+  local request_id = params.request_id
   local result_path = params.result_path
-  local channel_id  = params.channel_id
-  local path        = params.path
-  local content     = params.content
+  local channel_id = params.channel_id
+  local path = params.path
+  local content = params.content
 
   local old_lines = {}
   local f = io.open(path, "r")
   if f then
-    for line in f:lines() do table.insert(old_lines, line) end
+    for line in f:lines() do
+      table.insert(old_lines, line)
+    end
     f:close()
   else
     -- File might not exist yet (new file)
@@ -28,15 +30,13 @@ function M.open(params)
   end
 
   -- Handle trailing newline in content to match buffer line splitting behavior
-  if content:sub(-1) == "
-" then
+  if content:sub(-1) == "\n" then
     content = content:sub(1, -2)
   end
-  local new_lines = vim.split(content, "
-", { plain = true })
-  
+  local new_lines = vim.split(content, "\n", { plain = true })
+
   local session = engine.create_session(old_lines, new_lines)
-  
+
   if session.get_total_hunks() == 0 then
     local envelope = session.finalize()
     M.write_result(result_path, channel_id, request_id, envelope)
@@ -61,11 +61,11 @@ function M.open(params)
       local rf = io.open(result_path, "r")
       if not rf then
         M.write_result(result_path, channel_id, request_id, {
-          schema   = "review/v1",
+          schema = "review/v1",
           decision = "reject",
-          content  = "",
-          hunks    = {},
-          reason   = "User manually closed diff - review incomplete.",
+          content = "",
+          hunks = {},
+          reason = "User manually closed diff - review incomplete.",
         })
       else
         rf:close()
@@ -83,7 +83,7 @@ function M.write_result(path, channel_id, request_id, envelope)
   f:write(vim.json.encode(envelope))
   f:close()
   os.rename(tmp_path, path)
-  
+
   pcall(vim.rpcnotify, channel_id, "neph:review_done", { request_id = request_id })
 end
 

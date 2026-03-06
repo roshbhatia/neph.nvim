@@ -9,7 +9,7 @@
   "scripts": {
     "build": "esbuild src/index.ts --bundle --platform=node --outfile=dist/index.js --external:@neovim/node-client",
     "test": "vitest",
-    "lint": "eslint src/**/*.ts"
+    "lint": "tsc --noEmit"
   },
   "dependencies": {
     "neovim": "^5.2.0",

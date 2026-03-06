@@ -25,7 +25,7 @@ tasks:
   ci:
     desc: Run the Dagger CI pipeline locally
     cmds:
-      - deno run -A .fluentci/ci.ts
+      - nix develop --no-write-lock-file -c deno run -A .fluentci/ci.ts
 
   docs:
     desc: Generate vimdoc from EmmyLua annotations

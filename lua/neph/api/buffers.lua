@@ -8,7 +8,7 @@ local M = {}
 ---Reload all buffers from disk (`:checktime`).
 ---@param params? table Unused, present for RPC dispatch consistency.
 ---@return {ok: boolean}
-function M.checktime(params)
+function M.checktime(_params)
   vim.cmd("checktime")
   return { ok = true }
 end
@@ -16,7 +16,7 @@ end
 ---Close the current tab (`:tabclose`).
 ---@param params? table Unused, present for RPC dispatch consistency.
 ---@return {ok: boolean}
-function M.close_tab(params)
+function M.close_tab(_params)
   vim.cmd("tabclose")
   return { ok = true }
 end

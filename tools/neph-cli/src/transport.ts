@@ -85,7 +85,7 @@ export class SocketTransport implements NvimTransport {
   }
 
   async executeLua(code: string, args: unknown[]): Promise<unknown> {
-    return this.client.executeLua(code, args);
+    return this.client.executeLua(code, args as any[]);
   }
 
   onNotification(event: string, handler: (args: unknown[]) => void): void {

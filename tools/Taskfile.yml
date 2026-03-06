@@ -20,9 +20,9 @@ tasks:
   lint:neph:
     dir: neph-cli
     cmds:
-      - npm run lint
+      - npx tsc --noEmit
 
   lint:pi:
     dir: pi
     cmds:
-      - deno lint pi/pi.ts
+      - deno lint pi.ts

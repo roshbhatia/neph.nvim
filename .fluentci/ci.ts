@@ -21,23 +21,39 @@ connect(async (client: Client) => {
       "sh", "-c", "npm ci --prefix tools/neph-cli && npm ci --prefix tools/pi",
     ]);
 
-  const lint = base.withExec([
-    "nix", "develop", "--no-write-lock-file", "-c",
-    "task", "lint",
-  ]);
+  try {
+    const lint = base.withExec([
+      "nix", "develop", "--no-write-lock-file", "-c",
+      "task", "lint",
+    ]);
 
-  const test = base.withExec([
-    "nix", "develop", "--no-write-lock-file", "-c",
-    "task", "test",
-  ]);
+    const lintResult = await lint.stdout();
+    console.log("=== LINT ===");
+    console.log(lintResult);
+    const lintErr = await lint.stderr();
+    if (lintErr) console.error(lintErr);
+  } catch (e) {
+    console.error("=== LINT FAILED ===");
+    console.error(e);
+    process.exit(1);
+  }
 
-  const lintResult = await lint.stdout();
-  console.log("=== LINT ===");
-  console.log(lintResult);
+  try {
+    const test = base.withExec([
+      "nix", "develop", "--no-write-lock-file", "-c",
+      "task", "test",
+    ]);
 
-  const testResult = await test.stdout();
-  console.log("=== TEST ===");
-  console.log(testResult);
+    const testResult = await test.stdout();
+    console.log("=== TEST ===");
+    console.log(testResult);
+    const testErr = await test.stderr();
+    if (testErr) console.error(testErr);
+  } catch (e) {
+    console.error("=== TEST FAILED ===");
+    console.error(e);
+    process.exit(1);
+  }
 
   // Force exit to avoid Dagger SDK session teardown crash on Deno v2
   process.exit(0);
