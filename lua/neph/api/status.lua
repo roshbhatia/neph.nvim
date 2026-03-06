@@ -1,10 +1,22 @@
+---@mod neph.api.status Status management
+---@brief [[
+--- Manages vim.g global variables for statusline integration.
+--- Used by the neph CLI to communicate agent state to Neovim.
+---@brief ]]
+
 local M = {}
 
+---Set a vim.g global variable.
+---@param params {name: string, value: any}
+---@return {ok: boolean}
 function M.set(params)
   vim.g[params.name] = params.value
   return { ok = true }
 end
 
+---Unset (clear) a vim.g global variable.
+---@param params {name: string}
+---@return {ok: boolean}
 function M.unset(params)
   vim.g[params.name] = nil
   return { ok = true }

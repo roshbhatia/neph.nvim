@@ -26,3 +26,8 @@ tasks:
     desc: Run the Dagger CI pipeline locally
     cmds:
       - deno run -A .fluentci/ci.ts
+
+  docs:
+    desc: Generate vimdoc from EmmyLua annotations
+    cmds:
+      - nvim --headless -u NONE -l scripts/docgen.lua

@@ -5,33 +5,25 @@ connect(async (client: Client) => {
   const base = client
     .container()
     .from("nixos/nix")
-    .withExec([
-      "nix-channel",
-      "--add",
-      "https://nixos.org/channels/nixpkgs-unstable",
-      "nixpkgs",
-    ])
-    .withExec(["nix-channel", "--update"])
-    .withExec(["nix-env", "-iA", "nixpkgs.bash"])
+    .withEnvVariable(
+      "NIX_CONFIG",
+      "experimental-features = nix-command flakes",
+    )
     .withDirectory("/app", client.host().directory("."), {
       exclude: [".git", "node_modules", ".fluentci"],
     })
-    .withWorkdir("/app/tools/pi")
-    .withExec(["nix-shell", "/app/shell.nix", "--run", "npm install"])
-    .withWorkdir("/app");
+    .withWorkdir("/app")
+    .withExec(["nix", "develop", "--no-write-lock-file", "-c", "npm", "ci", "--prefix", "tools/neph-cli"])
+    .withExec(["nix", "develop", "--no-write-lock-file", "-c", "npm", "ci", "--prefix", "tools/pi"]);
 
   const lint = base.withExec([
-    "nix-shell",
-    "shell.nix",
-    "--run",
-    "task lint",
+    "nix", "develop", "--no-write-lock-file", "-c",
+    "task", "lint",
   ]);
 
   const test = base.withExec([
-    "nix-shell",
-    "shell.nix",
-    "--run",
-    "task test",
+    "nix", "develop", "--no-write-lock-file", "-c",
+    "task", "test",
   ]);
 
   const lintResult = await lint.stdout();

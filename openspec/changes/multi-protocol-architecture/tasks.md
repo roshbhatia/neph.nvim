@@ -6,8 +6,8 @@
 - [x] 1.4 Implement `build_envelope(decisions, content)` returning ReviewEnvelope table
 - [x] 1.5 Implement state machine: `create_session()`, `accept()`, `reject(reason)`, `accept_all()`, `reject_all(reason)`
 - [x] 1.6 Create `tests/api/review/engine_spec.lua` — table-driven tests for hunk computation
-- [ ] 1.7 Test envelope construction for accept, reject, partial decisions
-- [ ] 1.8 Test state machine transitions and edge cases (no hunks, single hunk, all-accept, all-reject)
+- [x] 1.7 Test envelope construction for accept, reject, partial decisions
+- [x] 1.8 Test state machine transitions and edge cases (no hunks, single hunk, all-accept, all-reject)
 
 ## 2. Review UI (Thin Adapter)
 
@@ -23,14 +23,14 @@
 - [x] 3.1 Create `lua/neph/api/status.lua` with `set(params)` and `unset(params)`
 - [x] 3.2 Create `lua/neph/api/buffers.lua` with `checktime(params)` and `close_tab(params)`
 - [x] 3.3 Create `lua/neph/api/review/init.lua` with `open(params)` wiring engine + UI
-- [ ] 3.4 Create `tests/api/status_spec.lua` — verify vim.g set/unset
-- [ ] 3.5 Create `tests/api/buffers_spec.lua` — verify checktime/close_tab behavior
+- [x] 3.4 Create `tests/api/status_spec.lua` — verify vim.g set/unset
+- [x] 3.5 Create `tests/api/buffers_spec.lua` — verify checktime/close_tab behavior
 
 ## 4. RPC Dispatch Facade
 
 - [x] 4.1 Create `lua/neph/rpc.lua` with dispatch table and `request(method, params)`
 - [x] 4.2 Implement error normalization: `{ ok, result }` / `{ ok, error = { code, message } }`
-- [ ] 4.3 Create `tests/rpc_spec.lua` — test dispatch routing, unknown method error, pcall error handling
+- [x] 4.3 Create `tests/rpc_spec.lua` — test dispatch routing, unknown method error, pcall error handling
 - [x] 4.4 Create `protocol.json` with method catalog and version
 
 ## 5. neph CLI — Core
@@ -58,9 +58,9 @@
 
 - [x] 7.1 Create `FakeTransport` implementing `NvimTransport` — records calls, returns scripted responses
 - [x] 7.2 Create `tests/commands.test.ts` — test each command's transport calls and stdout output
-- [ ] 7.3 Test review command: request_id generation, notification handling, envelope output
+- [x] 7.3 Test review command: request_id generation, notification handling, envelope output
 - [x] 7.4 Test dry-run/offline path: auto-accept without transport
-- [ ] 7.5 Test error cases: transport failure, timeout, malformed response
+- [x] 7.5 Test error cases: transport failure, timeout, malformed response
 - [ ] 7.6 Create `tests/integration/rpc.test.ts` — spawn headless nvim, test end-to-end review
 - [ ] 7.7 Integration test: verify `neph status` connects and returns JSON
 - [ ] 7.8 Integration test: verify `neph set`/`unset` modifies vim.g
@@ -68,8 +68,8 @@
 ## 8. Contract Tests
 
 - [x] 8.1 Create `tests/contract_spec.lua` — load `protocol.json`, assert every method exists in `rpc.lua` dispatch
-- [ ] 8.2 Create `tests/contract.test.ts` — load `protocol.json`, assert every CLI command references a known method
-- [ ] 8.3 Validate protocol version field matches between Lua and TS
+- [x] 8.2 Create `tests/contract.test.ts` — load `protocol.json`, assert every CLI command references a known method
+- [x] 8.3 Validate protocol version field matches between Lua and TS
 
 ## 9. Pi Adapter Refactor
 
@@ -81,9 +81,9 @@
 
 ## 10. CI Pipeline Migration
 
-- [ ] 10.1 Update `.fluentci/ci.ts` — use `nix develop --no-write-lock-file -c` instead of `nix-shell`
-- [ ] 10.2 Add `NIX_CONFIG="experimental-features = nix-command flakes"` to container env
-- [ ] 10.3 Add `npm ci` step for `tools/neph-cli/` in Dagger pipeline
+- [x] 10.1 Update `.fluentci/ci.ts` — use `nix develop --no-write-lock-file -c` instead of `nix-shell`
+- [x] 10.2 Add `NIX_CONFIG="experimental-features = nix-command flakes"` to container env
+- [x] 10.3 Add `npm ci` step for `tools/neph-cli/` in Dagger pipeline
 - [x] 10.4 Update `Taskfile.yml` — add `test:cli` target for neph-cli vitest
 - [x] 10.5 Update `tools/Taskfile.yml` — replace `test:core` (pytest) with `test:neph` (vitest)
 - [x] 10.6 Update `tools/Taskfile.yml` — replace `lint:core` (flake8) with `lint:neph` (eslint or deno lint)
@@ -101,9 +101,9 @@
 ## 12. Documentation
 
 - [x] 12.1 Add `mini.doc` to `flake.nix` devShell
-- [ ] 12.2 Add EmmyLua annotations to all new `lua/neph/api/` modules
-- [ ] 12.3 Create `scripts/docgen.lua` — generate `doc/neph.txt` via mini.doc
-- [ ] 12.4 Add `task docs` target to Taskfile.yml
+- [x] 12.2 Add EmmyLua annotations to all new `lua/neph/api/` modules
+- [x] 12.3 Create `scripts/docgen.lua` — generate `doc/neph.txt` via mini.doc
+- [x] 12.4 Add `task docs` target to Taskfile.yml
 - [x] 12.5 Write `docs/architecture.md` — module boundaries, data flow diagram
 - [x] 12.6 Write `docs/rpc-protocol.md` — method catalog, payload shapes, versioning
 - [x] 12.7 Write `docs/testing.md` — test structure, how to run, CI pipeline

@@ -1,3 +1,10 @@
+---@mod neph.api.review Review orchestration
+---@brief [[
+--- Orchestrates diff review sessions. Opens a vimdiff tab with the
+--- proposed content, runs the hunk-by-hunk review via engine + UI,
+--- and writes the result envelope to a temp file for the neph CLI.
+---@brief ]]
+
 local M = {}
 
 local engine = require("neph.api.review.engine")

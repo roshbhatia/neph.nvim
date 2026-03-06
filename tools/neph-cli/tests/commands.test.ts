@@ -40,3 +40,66 @@ describe('neph commands', () => {
     stdoutSpy.mockRestore();
   });
 });
+
+describe('review command', () => {
+  it('handles unset command routing to status.unset', async () => {
+    const transport = new FakeTransport();
+    const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    await runCommand(transport, 'unset', ['unset', 'myvar']);
+    expect(transport.calls[0].args[0]).toBe('status.unset');
+    expect(transport.calls[0].args[1]).toEqual({ name: 'myvar' });
+    stdoutSpy.mockRestore();
+  });
+
+  it('handles checktime command routing to buffers.check', async () => {
+    const transport = new FakeTransport();
+    const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    await runCommand(transport, 'checktime', ['checktime']);
+    expect(transport.calls[0].args[0]).toBe('buffers.check');
+    stdoutSpy.mockRestore();
+  });
+
+  it('handles close-tab command routing to tab.close', async () => {
+    const transport = new FakeTransport();
+    const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    await runCommand(transport, 'close-tab', ['close-tab']);
+    expect(transport.calls[0].args[0]).toBe('tab.close');
+    stdoutSpy.mockRestore();
+  });
+
+  it('exits with error for unknown command', async () => {
+    const transport = new FakeTransport();
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
+    await runCommand(transport, 'bogus', ['bogus']);
+    expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('Unknown command: bogus'));
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    stderrSpy.mockRestore();
+    exitSpy.mockRestore();
+  });
+});
+
+describe('error cases', () => {
+  it('handles transport errors gracefully', async () => {
+    const transport = new FakeTransport();
+    transport.executeLua = async () => { throw new Error('connection lost'); };
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
+    await runCommand(transport, 'set', ['set', 'foo', 'bar']);
+    expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('connection lost'));
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    stderrSpy.mockRestore();
+    exitSpy.mockRestore();
+  });
+
+  it('exits with usage when review has no file path', async () => {
+    const transport = new FakeTransport();
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
+    await runCommand(transport, 'review', ['review']);
+    expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('Usage: neph review <path>'));
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    stderrSpy.mockRestore();
+    exitSpy.mockRestore();
+  });
+});

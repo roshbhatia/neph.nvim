@@ -102,4 +102,128 @@ describe("neph.api.review.engine", function()
       assert.are.equal("reason", envelope.reason)
     end)
   end)
+
+  describe("build_envelope", function()
+    it("all accepted → decision=accept, content preserved, no reason", function()
+      local decisions = {
+        { index = 1, decision = "accept" },
+        { index = 2, decision = "accept" },
+      }
+      local envelope = engine.build_envelope(decisions, "new content")
+      assert.are.equal("accept", envelope.decision)
+      assert.are.equal("new content", envelope.content)
+      assert.is_nil(envelope.reason)
+      assert.are.equal("review/v1", envelope.schema)
+    end)
+
+    it("all rejected → decision=reject, content='', reason collected", function()
+      local decisions = {
+        { index = 1, decision = "reject", reason = "bad style" },
+        { index = 2, decision = "reject", reason = "wrong logic" },
+      }
+      local envelope = engine.build_envelope(decisions, "new content")
+      assert.are.equal("reject", envelope.decision)
+      assert.are.equal("", envelope.content)
+      assert.are.equal("bad style; wrong logic", envelope.reason)
+    end)
+
+    it("mixed decisions → decision=partial, content preserved, reasons from rejects", function()
+      local decisions = {
+        { index = 1, decision = "accept" },
+        { index = 2, decision = "reject", reason = "nope" },
+      }
+      local envelope = engine.build_envelope(decisions, "partial content")
+      assert.are.equal("partial", envelope.decision)
+      assert.are.equal("partial content", envelope.content)
+      assert.are.equal("nope", envelope.reason)
+    end)
+
+    it("empty decisions list → decision=accept", function()
+      local envelope = engine.build_envelope({}, "unchanged")
+      assert.are.equal("accept", envelope.decision)
+      assert.are.equal("unchanged", envelope.content)
+      assert.is_nil(envelope.reason)
+    end)
+
+    it("rejected with empty/nil reasons → reason is nil", function()
+      local decisions = {
+        { index = 1, decision = "reject", reason = "" },
+        { index = 2, decision = "reject" },
+      }
+      local envelope = engine.build_envelope(decisions, "content")
+      assert.are.equal("reject", envelope.decision)
+      assert.is_nil(envelope.reason)
+    end)
+  end)
+
+  describe("state machine edge cases", function()
+    it("no hunks (identical input) → is_done immediately, finalize gives accept", function()
+      local lines = {"same", "lines"}
+      local session = engine.create_session(lines, lines)
+      assert.is_true(session.is_done())
+      assert.are.equal(0, session.get_total_hunks())
+      local envelope = session.finalize()
+      assert.are.equal("accept", envelope.decision)
+    end)
+
+    it("single hunk accept → decision=accept", function()
+      local old = {"A"}
+      local new = {"B"}
+      local session = engine.create_session(old, new)
+      session.accept()
+      assert.is_true(session.is_done())
+      local envelope = session.finalize()
+      assert.are.equal("accept", envelope.decision)
+      assert.are.equal("B", envelope.content)
+    end)
+
+    it("single hunk reject → decision=reject, content=''", function()
+      local old = {"A"}
+      local new = {"B"}
+      local session = engine.create_session(old, new)
+      session.reject("no thanks")
+      assert.is_true(session.is_done())
+      local envelope = session.finalize()
+      assert.are.equal("reject", envelope.decision)
+      assert.are.equal("", envelope.content)
+    end)
+
+    it("accept() past end returns false", function()
+      local old = {"A"}
+      local new = {"B"}
+      local session = engine.create_session(old, new)
+      session.accept()
+      assert.is_true(session.is_done())
+      assert.is_false(session.accept())
+    end)
+
+    it("reject() past end returns false", function()
+      local old = {"A"}
+      local new = {"B"}
+      local session = engine.create_session(old, new)
+      session.reject("reason")
+      assert.is_true(session.is_done())
+      assert.is_false(session.reject("another"))
+    end)
+
+    it("reject_all with reason only applies reason to first hunk", function()
+      local old = {"A", "B", "C"}
+      local new = {"X", "Y", "Z"}
+      local session = engine.create_session(old, new)
+      session.reject_all("first reason")
+      assert.is_true(session.is_done())
+      local envelope = session.finalize()
+      assert.are.equal("reject", envelope.decision)
+      -- Only the first hunk gets the reason; subsequent hunks get nil
+      assert.are.equal("first reason", envelope.reason)
+      -- Verify the underlying decisions: only the first has a reason
+      local found_reasons = 0
+      for _, h in ipairs(envelope.hunks) do
+        if h.reason and h.reason ~= "" then
+          found_reasons = found_reasons + 1
+        end
+      end
+      assert.are.equal(1, found_reasons)
+    end)
+  end)
 end)

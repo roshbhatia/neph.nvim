@@ -1,3 +1,10 @@
+---@mod neph.rpc RPC dispatch facade
+---@brief [[
+--- Single entry point for all external RPC calls into neph.nvim.
+--- External code calls `require("neph.rpc").request(method, params)`.
+--- Routes to the appropriate `lua/neph/api/` module.
+---@brief ]]
+
 local M = {}
 
 local dispatch = {
