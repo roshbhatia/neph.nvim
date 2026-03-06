@@ -2,7 +2,7 @@
  * Integration tests — spawn a real headless Neovim instance with neph.nvim
  * on the runtimepath, exercise SocketTransport against it.
  *
- * Requires `nvim` on PATH. Skipped if nvim is unavailable.
+ * Requires `nvim` on PATH. Tests fail if nvim is not available.
  *
  * NOTE: We test at the transport layer rather than through runCommand because
  * runCommand → SocketTransport.close() calls client.quit() which kills nvim.
@@ -10,7 +10,7 @@
  * RPC contract works end-to-end.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { spawn, ChildProcess, execSync } from 'node:child_process';
+import { spawn, ChildProcess } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
@@ -21,15 +21,6 @@ const SOCKET_PATH = path.join(os.tmpdir(), `neph-test-${process.pid}.sock`);
 const RPC_CALL = 'return require("neph.rpc").request(...)';
 
 let nvimProc: ChildProcess | null = null;
-
-function nvimAvailable(): boolean {
-  try {
-    execSync('nvim --version', { stdio: 'ignore' });
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 function waitForSocket(sockPath: string, timeoutMs = 5000): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -48,9 +39,7 @@ function connect(): SocketTransport {
   return new SocketTransport(SOCKET_PATH);
 }
 
-const HAS_NVIM = nvimAvailable();
-
-describe.runIf(HAS_NVIM)('integration: headless nvim', () => {
+describe('integration: headless nvim', () => {
   beforeAll(async () => {
     try { fs.unlinkSync(SOCKET_PATH); } catch {}
 
@@ -84,7 +73,6 @@ describe.runIf(HAS_NVIM)('integration: headless nvim', () => {
     const t = connect();
     const channelId = await t.getChannelId();
     expect(channelId).toBeGreaterThan(0);
-    // Don't call t.close() — it quits nvim. The socket stays open.
   }, 10000);
 
   it('status.set writes to vim.g', async () => {
@@ -92,14 +80,12 @@ describe.runIf(HAS_NVIM)('integration: headless nvim', () => {
     const result = await t.executeLua(RPC_CALL, ['status.set', { name: 'neph_integ_test', value: 'hello' }]);
     expect(result).toEqual({ ok: true, result: { ok: true } });
 
-    // Read back
     const val = await t.executeLua('return vim.g.neph_integ_test', []);
     expect(val).toBe('hello');
   }, 10000);
 
   it('status.unset clears vim.g', async () => {
     const t = connect();
-    // Pre-set
     await t.executeLua('vim.g.neph_integ_unset = "exists"', []);
 
     const result = await t.executeLua(RPC_CALL, ['status.unset', { name: 'neph_integ_unset' }]);

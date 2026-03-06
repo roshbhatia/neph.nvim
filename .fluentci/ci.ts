@@ -3,7 +3,7 @@ import process from "node:process";
 
 connect(async (client: Client) => {
   const src = client.host().directory(".", {
-    exclude: [".git", "node_modules", ".fluentci", ".direnv"],
+    exclude: ["node_modules", ".fluentci", ".direnv"],
   });
 
   const base = client
@@ -13,13 +13,8 @@ connect(async (client: Client) => {
       "NIX_CONFIG",
       "experimental-features = nix-command flakes",
     )
-    // git is required for nix flake evaluation of local sources
-    .withExec(["nix-env", "-iA", "nixpkgs.git", "-f", "<nixpkgs>"])
     .withDirectory("/app", src)
     .withWorkdir("/app")
-    // Initialize a git repo so nix can evaluate the flake
-    .withExec(["git", "init"])
-    .withExec(["git", "add", "-A"])
     // Install npm deps for CLI tools
     .withExec([
       "nix", "develop", "--no-write-lock-file", "-c",
