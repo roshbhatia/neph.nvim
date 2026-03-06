@@ -48,7 +48,11 @@ export default function (pi: ExtensionAPI) {
 
   // Run the neph CLI and await exit. stdin is optional; stdout is returned.
   // timeoutMs: kill the child and reject after this many ms. Omit for interactive calls.
-  function nephRun(args: string[], stdin?: string, timeoutMs?: number): Promise<string> {
+  function nephRun(
+    args: string[],
+    stdin?: string,
+    timeoutMs?: number,
+  ): Promise<string> {
     return new Promise((res, rej) => {
       const child = spawn("neph", args, {
         stdio: ["pipe", "pipe", "pipe"],
@@ -65,7 +69,11 @@ export default function (pi: ExtensionAPI) {
       if (timeoutMs !== undefined && isFinite(timeoutMs)) {
         timer = setTimeout(() => {
           child.kill("SIGTERM");
-          rej(new Error(`neph timed out after ${timeoutMs}ms (args: ${args.join(" ")})`));
+          rej(
+            new Error(
+              `neph timed out after ${timeoutMs}ms (args: ${args.join(" ")})`,
+            ),
+          );
         }, timeoutMs);
       }
 
@@ -75,7 +83,12 @@ export default function (pi: ExtensionAPI) {
       });
       child.on("close", (code) => {
         if (timer !== undefined) clearTimeout(timer);
-        if (code !== 0) rej(new Error(Buffer.concat(err).toString().trim() || `neph exited ${code}`));
+        if (code !== 0)
+          rej(
+            new Error(
+              Buffer.concat(err).toString().trim() || `neph exited ${code}`,
+            ),
+          );
         else res(Buffer.concat(out).toString());
       });
     });
@@ -85,7 +98,9 @@ export default function (pi: ExtensionAPI) {
   // Commands are executed serially in dispatch order.
   function neph(...args: string[]): void {
     _nephQueue = _nephQueue.then(() => {
-      nephRun(args, undefined, NEPH_TIMEOUT_MS).catch(() => { /* nvim may have closed */ });
+      nephRun(args, undefined, NEPH_TIMEOUT_MS).catch(() => {
+        /* nvim may have closed */
+      });
     });
   }
 
@@ -100,12 +115,12 @@ export default function (pi: ExtensionAPI) {
       const json = await nephRun(["review", filePath], content);
       return JSON.parse(json) as ReviewEnvelope;
     } catch {
-      return { 
-        schema: "review/v1", 
-        decision: "reject", 
-        content: "", 
-        hunks: [], 
-        reason: "Review failed or timed out" 
+      return {
+        schema: "review/v1",
+        decision: "reject",
+        content: "",
+        hunks: [],
+        reason: "Review failed or timed out",
       };
     }
   }
@@ -130,7 +145,9 @@ export default function (pi: ExtensionAPI) {
         if (result.decision === "reject") {
           const reason = result.reason ? `: ${result.reason}` : "";
           return {
-            content: [{ type: "text" as const, text: `Write rejected${reason}` }],
+            content: [
+              { type: "text" as const, text: `Write rejected${reason}` },
+            ],
             details: {},
           };
         }
@@ -149,7 +166,8 @@ export default function (pi: ExtensionAPI) {
         if (notes.length > 0) {
           return {
             content: [
-              ...(writeResult as { content: { type: "text"; text: string }[] }).content,
+              ...(writeResult as { content: { type: "text"; text: string }[] })
+                .content,
               { type: "text" as const, text: `Note: ${notes.join(" — ")}` },
             ],
             details: (writeResult as { details: unknown }).details,
@@ -176,14 +194,24 @@ export default function (pi: ExtensionAPI) {
           currentContent = readFileSync(filePath, "utf-8");
         } catch {
           return {
-            content: [{ type: "text" as const, text: `Cannot read ${params.path as string}` }],
+            content: [
+              {
+                type: "text" as const,
+                text: `Cannot read ${params.path as string}`,
+              },
+            ],
             details: {},
           };
         }
 
         if (!currentContent.includes(oldText)) {
           return {
-            content: [{ type: "text" as const, text: `Edit failed: oldText not found in ${params.path as string}` }],
+            content: [
+              {
+                type: "text" as const,
+                text: `Edit failed: oldText not found in ${params.path as string}`,
+              },
+            ],
             details: {},
           };
         }
@@ -194,7 +222,9 @@ export default function (pi: ExtensionAPI) {
         if (result.decision === "reject") {
           const reason = result.reason ? `: ${result.reason}` : "";
           return {
-            content: [{ type: "text" as const, text: `Edit rejected${reason}` }],
+            content: [
+              { type: "text" as const, text: `Edit rejected${reason}` },
+            ],
             details: {},
           };
         }
@@ -213,7 +243,8 @@ export default function (pi: ExtensionAPI) {
         if (notes.length > 0) {
           return {
             content: [
-              ...(writeResult as { content: { type: "text"; text: string }[] }).content,
+              ...(writeResult as { content: { type: "text"; text: string }[] })
+                .content,
               { type: "text" as const, text: `Note: ${notes.join(" — ")}` },
             ],
             details: (writeResult as { details: unknown }).details,
@@ -227,7 +258,7 @@ export default function (pi: ExtensionAPI) {
   // --- Session lifecycle: activate only when nvim socket is present ---
 
   pi.on("session_start", (_event, ctx) => {
-    ctx.ui.setStatus("nvim", " nvim-connected");
+    ctx.ui.setStatus("nvim", " >> ");
     neph("set", "pi_active", "true");
     registerTools();
   });
@@ -257,7 +288,7 @@ export default function (pi: ExtensionAPI) {
         const rel = relative(ctx.cwd, abs);
         const shortPath = rel.startsWith("..") ? basename(abs) : rel;
         neph("set", "pi_reading", JSON.stringify(shortPath));
-        ctx.ui.setStatus("nvim-reading", `📖 ${shortPath}`);
+        ctx.ui.setStatus("nvim-reading", ` >> 󰍉 >> ${shortPath}`);
       }
     }
   });

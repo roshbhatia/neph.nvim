@@ -6,7 +6,7 @@
 ---       accept = "+",   -- default: ✓
 ---       reject = "-",   -- default: ✗
 ---       current = ">",  -- default: →
----       commented = "*" -- default: 💬
+---       commented = "*" -- default: 󰟶
 ---     }
 ---   })
 
@@ -27,7 +27,7 @@ local M = {}
 ---@field accept?    string  Icon for accepted hunk (default: ✓)
 ---@field reject?    string  Icon for rejected hunk (default: ✗)
 ---@field current?   string  Icon for current hunk (default: →)
----@field commented? string  Icon for rejected hunk with comment (default: 💬)
+---@field commented? string  Icon for rejected hunk with comment (default: 󰟶)
 
 ---@type neph.Config
 M.defaults = {
@@ -42,7 +42,7 @@ M.defaults = {
     accept = "✓",
     reject = "✗",
     current = "→",
-    commented = "💬",
+    commented = "󰟶",
   },
 }
 
