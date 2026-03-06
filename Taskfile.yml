@@ -23,9 +23,15 @@ tasks:
       - task tools:test
 
   ci:
-    desc: Run the Dagger CI pipeline locally
+    desc: Run lint + test
     cmds:
-      - nix develop --no-write-lock-file -c deno run -A .fluentci/ci.ts
+      - task lint
+      - task test
+
+  dagger:
+    desc: Run the Dagger CI pipeline in a container
+    cmds:
+      - deno run -A .fluentci/ci.ts
 
   docs:
     desc: Generate vimdoc from EmmyLua annotations
