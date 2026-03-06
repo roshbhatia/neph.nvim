@@ -2,7 +2,7 @@
  * pi.test.ts — unit tests for tools/pi/pi.ts
  *
  * Strategy:
- *  - vi.mock("node:child_process") controls spawn so no real shim is invoked
+ *  - vi.mock("node:child_process") controls spawn so no real neph is invoked
  *  - vi.mock("node:fs") controls readFileSync for edit-tool tests
  *  - vi.mock("@mariozechner/pi-coding-agent") stubs createWriteTool + createEditTool
  *  - A hand-rolled `pi` stub satisfies ExtensionAPI: records registerTool calls
@@ -26,7 +26,7 @@ vi.mock("@mariozechner/pi-coding-agent", () => ({
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { createWriteTool, createEditTool } from "@mariozechner/pi-coding-agent";
-import piExtension, { SHIM_TIMEOUT_MS } from "../pi.ts";
+import piExtension, { NEPH_TIMEOUT_MS } from "../pi.ts";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -111,27 +111,25 @@ beforeEach(() => {
 afterEach(() => {
   // Always restore real timers in case a test used fake timers
   vi.useRealTimers();
-  delete process.env.NVIM_SOCKET_PATH;
 });
 
-// Helper: activate the extension by firing session_start with socket set
+// Helper: activate the extension by firing session_start
 async function activate(): Promise<void> {
-  process.env.NVIM_SOCKET_PATH = "/tmp/nvim.sock";
   await pi.emit("session_start", {}, { ui: pi.ui });
   await drainQueue(2);
 }
 
-// ── SHIM_TIMEOUT_MS export ───────────────────────────────────────────────────
+// ── NEPH_TIMEOUT_MS export ───────────────────────────────────────────────────
 
-describe("SHIM_TIMEOUT_MS", () => {
+describe("NEPH_TIMEOUT_MS", () => {
   it("is exported and equals 5000", () => {
-    expect(SHIM_TIMEOUT_MS).toBe(5_000);
+    expect(NEPH_TIMEOUT_MS).toBe(5_000);
   });
 });
 
-// ── shimRun timeout tests ─────────────────────────────────────────────────────
+// ── nephRun timeout tests ─────────────────────────────────────────────────────
 
-describe("shimRun timeout", () => {
+describe("nephRun timeout", () => {
   it("kills child when timeout expires before close", async () => {
     // Use a child that takes longer than our mini-timeout to close
     const hangingChild = makeChild({ stdout: "", delayMs: 5000 });
@@ -140,12 +138,12 @@ describe("shimRun timeout", () => {
     await activate();
     spawnMock.mockClear();
 
-    // Re-activate with a tiny-timeout-override: we can't override SHIM_TIMEOUT_MS
+    // Re-activate with a tiny-timeout-override: we can't override NEPH_TIMEOUT_MS
     // directly, but we can verify the kill path by checking that kill is a spy
     // and the child delay is longer than we'd wait.
     // Instead: mock a child that takes 200ms; set timeout to 50ms by spawning
-    // a mini-timeout shimRun internally. Since we can't override SHIM_TIMEOUT_MS,
-    // we test the path indirectly: shimRun with a standard timeout kills if hung.
+    // a mini-timeout nephRun internally. Since we can't override NEPH_TIMEOUT_MS,
+    // we test the path indirectly: nephRun with a standard timeout kills if hung.
     //
     // This test verifies kill is wired up correctly by using a short-lived fake.
     const killedChild = new EventEmitter() as ChildProcess;
@@ -162,13 +160,13 @@ describe("shimRun timeout", () => {
 
   it("resolves normally when child exits before timeout", async () => {
     await activate();
-    // If we got here without timeout, shimRun resolved before SHIM_TIMEOUT_MS
+    // If we got here without timeout, nephRun resolved before NEPH_TIMEOUT_MS
     expect(spawnMock).toHaveBeenCalled();
   });
 
-  it("SHIM_TIMEOUT_MS is a reasonable value (>5s, <60s)", () => {
-    expect(SHIM_TIMEOUT_MS).toBeGreaterThan(1_000);
-    expect(SHIM_TIMEOUT_MS).toBeLessThan(30_000);
+  it("NEPH_TIMEOUT_MS is a reasonable value (>5s, <60s)", () => {
+    expect(NEPH_TIMEOUT_MS).toBeGreaterThan(1_000);
+    expect(NEPH_TIMEOUT_MS).toBeLessThan(30_000);
   });
 });
 
@@ -177,7 +175,7 @@ describe("shimRun timeout", () => {
 describe("review()", () => {
   beforeEach(async () => { await activate(); });
 
-  it("returns accept decision from shim stdout", async () => {
+  it("returns accept decision from neph stdout", async () => {
     const accepted = { decision: "accept", content: "final" };
     spawnMock.mockImplementation((cmd: string, args: string[]) => {
       if (args[0] === "review") return makeChild({ stdout: JSON.stringify(accepted) });
@@ -193,7 +191,7 @@ describe("review()", () => {
     expect(result.content[0].text).toBe("written");
   });
 
-  it("returns reject decision on reject from shim", async () => {
+  it("returns reject decision on reject from neph", async () => {
     const rejected = { decision: "reject", reason: "too noisy" };
     spawnMock.mockImplementation((cmd: string, args: string[]) => {
       if (args[0] === "review") return makeChild({ stdout: JSON.stringify(rejected) });
@@ -205,7 +203,7 @@ describe("review()", () => {
     expect(result.content[0].text).toMatch(/rejected.*too noisy/i);
   });
 
-  it("returns reject with fallback message when shimRun throws", async () => {
+  it("returns reject with fallback message when nephRun throws", async () => {
     spawnMock.mockImplementation((cmd: string, args: string[]) => {
       if (args[0] === "review") return makeChild({ stderr: "crash", exitCode: 1 });
       return makeChild({ stdout: "" });
@@ -216,7 +214,7 @@ describe("review()", () => {
     expect(result.content[0].text).toMatch(/rejected/i);
   });
 
-  it("review spawns shim with 'review' as first arg and sends stdin", async () => {
+  it("review spawns neph with 'review' as first arg and sends stdin", async () => {
     spawnMock.mockImplementation((cmd: string, args: string[]) => {
       if (args[0] === "review") return makeChild({ stdout: JSON.stringify({ decision: "accept", content: "ok" }) });
       return makeChild({ stdout: "" });
@@ -255,7 +253,7 @@ describe("write tool override", () => {
     expect(mockExecute).toHaveBeenCalledWith("id", expect.objectContaining({ content: "accepted!" }), null, expect.any(Function));
   });
 
-  it("does not call execute when rejected, queues revert", async () => {
+  it("does not call execute when rejected", async () => {
     const mockExecute = vi.fn();
     createWriteToolMock.mockReturnValue({ parameters: {}, execute: mockExecute });
 
@@ -269,8 +267,6 @@ describe("write tool override", () => {
     await drainQueue();
 
     expect(mockExecute).not.toHaveBeenCalled();
-    const revertCall = spawnMock.mock.calls.find(([, a]: [string, string[]]) => a[0] === "revert");
-    expect(revertCall).toBeDefined();
     expect(result.content[0].text).toMatch(/rejected.*nope/i);
   });
 
@@ -332,7 +328,7 @@ describe("edit tool override", () => {
     expect(result.content[0].text).toBe("edited");
   });
 
-  it("calls revert and returns rejection text when preview rejects", async () => {
+  it("returns rejection text when preview rejects", async () => {
     readFileSyncMock.mockReturnValue("hello world");
     createEditToolMock.mockReturnValue({ parameters: {}, execute: vi.fn() });
 
@@ -344,8 +340,6 @@ describe("edit tool override", () => {
     const editTool = pi.tools["edit"];
     const result = await editTool.execute("id", { path: "/f.ts", oldText: "world", newText: "x" }, null, vi.fn(), { cwd: "/" });
     await drainQueue();
-    const revertCall = spawnMock.mock.calls.find(([, a]: [string, string[]]) => a[0] === "revert");
-    expect(revertCall).toBeDefined();
     expect(result.content[0].text).toMatch(/rejected.*bad change/i);
   });
 });
@@ -353,15 +347,6 @@ describe("edit tool override", () => {
 // ── Lifecycle event tests ─────────────────────────────────────────────────────
 
 describe("lifecycle events", () => {
-  it("session_start is a no-op when NVIM_SOCKET_PATH is absent", async () => {
-    delete process.env.NVIM_SOCKET_PATH;
-    spawnMock.mockClear();
-    await pi.emit("session_start", {}, { ui: pi.ui });
-    await drainQueue();
-    expect(spawnMock).not.toHaveBeenCalled();
-    expect(Object.keys(pi.tools)).toHaveLength(0);
-  });
-
   it("session_start sets pi_active and registers write+edit tools", async () => {
     await activate();
     const setCall = spawnMock.mock.calls.find(([, a]: [string, string[]]) => a[0] === "set" && a[1] === "pi_active");
@@ -418,7 +403,7 @@ describe("lifecycle events", () => {
     expect(pi.ui.setStatus).toHaveBeenCalledWith("nvim-reading", "");
   });
 
-  it("tool_call with read calls shim set pi_reading (not shim open)", async () => {
+  it("tool_call with read calls neph set pi_reading", async () => {
     await activate();
     spawnMock.mockClear();
 
@@ -427,7 +412,6 @@ describe("lifecycle events", () => {
 
     const calls = spawnMock.mock.calls.map(([, a]: [string, string[]]) => a);
     expect(calls.some((a: string[]) => a[0] === "set" && a[1] === "pi_reading")).toBe(true);
-    expect(calls.some((a: string[]) => a[0] === "open")).toBe(false);
   });
 
   it("tool_call with read calls ctx.ui.setStatus with the short path", async () => {
@@ -451,7 +435,7 @@ describe("lifecycle events", () => {
 
 // ── Serial queue tests ────────────────────────────────────────────────────────
 
-describe("serial shim queue", () => {
+describe("serial neph queue", () => {
   it("errors in queued calls do not prevent subsequent calls from running", async () => {
     await activate();
     spawnMock.mockClear();
@@ -464,7 +448,7 @@ describe("serial shim queue", () => {
       return makeChild({ stdout: "" });
     });
 
-    // Dispatch two events that each enqueue multiple shim calls
+    // Dispatch two events that each enqueue multiple neph calls
     await pi.emit("agent_start");
     await pi.emit("agent_end", {}, { ui: pi.ui });
     await drainQueue(15);

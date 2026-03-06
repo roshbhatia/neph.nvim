@@ -1,0 +1,25 @@
+{
+  "name": "neph-cli",
+  "version": "1.0.0",
+  "description": "Universal Neovim bridge CLI for neph.nvim",
+  "main": "dist/index.js",
+  "bin": {
+    "neph": "dist/index.js"
+  },
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --platform=node --outfile=dist/index.js --external:@neovim/node-client",
+    "test": "vitest",
+    "lint": "eslint src/**/*.ts"
+  },
+  "dependencies": {
+    "neovim": "^5.2.0",
+    "glob": "^10.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/glob": "^8.0.0",
+    "esbuild": "^0.19.0",
+    "typescript": "^5.0.0",
+    "vitest": "^1.0.0"
+  }
+}

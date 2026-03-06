@@ -5,8 +5,8 @@
 --- Called once from neph.setup(). Safe to call multiple times (uses ln -sf).
 ---
 --- Symlinks created:
----   tools/core/shim.py  → ~/.local/bin/shim
----   tools/pi/pi.ts      → ~/.pi/agent/extensions/nvim.ts
+---   tools/neph-cli/dist/index.js → ~/.local/bin/neph
+---   tools/pi/pi.ts               → ~/.pi/agent/extensions/nvim.ts
 ---@brief ]]
 
 local M = {}
@@ -26,7 +26,7 @@ end
 
 ---@type neph.ToolSpec[]
 local TOOLS = {
-  { src = "core/shim.py", dst = "~/.local/bin/shim" },
+  { src = "neph-cli/dist/index.js", dst = "~/.local/bin/neph" },
   { src = "pi/pi.ts", dst = "~/.pi/agent/extensions/nvim.ts" },
 }
 

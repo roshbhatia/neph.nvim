@@ -8,19 +8,12 @@ import { Buffer } from "node:buffer";
 
 // Neovim integration for pi.
 //
-// Requires `shim` in PATH (installed via home-manager as a uv Python script).
-// Only activates when NVIM_SOCKET_PATH is set — Neovim exports it on startup
-// and terminal panes spawned from within Neovim inherit it automatically.
-// When absent the extension is a complete no-op.
+// Uses the `neph` CLI as the universal Neovim bridge.
 //
 // write / edit tools are overridden to open a non-blocking vimdiff review in
-// Neovim before any disk write. The shim writes proposed content to a temp
-// file, opens a diff tab via exec_lua (returns immediately), then waits for
-// a pynvim notification fired by the user's keymap decision. This avoids
-// calling interactive Lua (getcharstr) inside an RPC call, which deadlocks
-// when the shim runs inside a Neovim :terminal buffer.
+// Neovim before any disk write.
 //
-// Per-hunk choices: y accept / n reject (+ reason) / a accept-all / d reject-all
+// Per-hunk choices: Accept / Reject / Accept all / Reject all
 // decision: "accept" | "reject" | "partial" (some hunks accepted, some rejected)
 //
 // vim.g globals for statusline integration:
@@ -35,31 +28,29 @@ interface HunkResult {
 }
 
 interface ReviewEnvelope {
-  schema?: string;
+  schema: "review/v1";
   decision: "accept" | "reject" | "partial";
-  content?: string;
-  hunks?: HunkResult[];
+  content: string;
+  hunks: HunkResult[];
   reason?: string;
-  verification_error?: string;
-  verification_skipped?: boolean;
 }
 
-// Timeout for fire-and-forget shim calls (ms). Interactive preview has no timeout.
-export const SHIM_TIMEOUT_MS = 5_000;
+// Timeout for fire-and-forget neph calls (ms). Interactive preview has no timeout.
+export const NEPH_TIMEOUT_MS = 5_000;
 
 export default function (pi: ExtensionAPI) {
   let toolsRegistered = false;
 
-  // Serial queue for fire-and-forget shim calls. Each call is appended via
+  // Serial queue for fire-and-forget neph calls. Each call is appended via
   // .then() so commands reach nvim in the order they were dispatched, and a
   // single hung call cannot starve subsequent ones beyond its own timeout.
-  let _shimQueue: Promise<void> = Promise.resolve();
+  let _nephQueue: Promise<void> = Promise.resolve();
 
-  // Run the shim and await exit. stdin is optional; stdout is returned.
+  // Run the neph CLI and await exit. stdin is optional; stdout is returned.
   // timeoutMs: kill the child and reject after this many ms. Omit for interactive calls.
-  function shimRun(args: string[], stdin?: string, timeoutMs?: number): Promise<string> {
+  function nephRun(args: string[], stdin?: string, timeoutMs?: number): Promise<string> {
     return new Promise((res, rej) => {
-      const child = spawn("shim", args, {
+      const child = spawn("neph", args, {
         stdio: ["pipe", "pipe", "pipe"],
         env: process.env,
       });
@@ -74,7 +65,7 @@ export default function (pi: ExtensionAPI) {
       if (timeoutMs !== undefined && isFinite(timeoutMs)) {
         timer = setTimeout(() => {
           child.kill("SIGTERM");
-          rej(new Error(`shim timed out after ${timeoutMs}ms (args: ${args.join(" ")})`));
+          rej(new Error(`neph timed out after ${timeoutMs}ms (args: ${args.join(" ")})`));
         }, timeoutMs);
       }
 
@@ -84,17 +75,17 @@ export default function (pi: ExtensionAPI) {
       });
       child.on("close", (code) => {
         if (timer !== undefined) clearTimeout(timer);
-        if (code !== 0) rej(new Error(Buffer.concat(err).toString().trim() || `shim exited ${code}`));
+        if (code !== 0) rej(new Error(Buffer.concat(err).toString().trim() || `neph exited ${code}`));
         else res(Buffer.concat(out).toString());
       });
     });
   }
 
-  // Fire-and-forget: enqueue a shim command, swallow errors.
+  // Fire-and-forget: enqueue a neph command, swallow errors.
   // Commands are executed serially in dispatch order.
-  function shim(...args: string[]): void {
-    _shimQueue = _shimQueue.then(() => {
-      shimRun(args, undefined, SHIM_TIMEOUT_MS).catch(() => { /* nvim may have closed */ });
+  function neph(...args: string[]): void {
+    _nephQueue = _nephQueue.then(() => {
+      nephRun(args, undefined, NEPH_TIMEOUT_MS).catch(() => { /* nvim may have closed */ });
     });
   }
 
@@ -106,10 +97,16 @@ export default function (pi: ExtensionAPI) {
     content: string,
   ): Promise<ReviewEnvelope> {
     try {
-      const json = await shimRun(["review", filePath], content);
+      const json = await nephRun(["review", filePath], content);
       return JSON.parse(json) as ReviewEnvelope;
     } catch {
-      return { decision: "reject", reason: "Review failed or timed out" };
+      return { 
+        schema: "review/v1", 
+        decision: "reject", 
+        content: "", 
+        hunks: [], 
+        reason: "Review failed or timed out" 
+      };
     }
   }
 
@@ -131,7 +128,6 @@ export default function (pi: ExtensionAPI) {
         const result = await review(filePath, newContent);
 
         if (result.decision === "reject") {
-          shim("revert", filePath);
           const reason = result.reason ? `: ${result.reason}` : "";
           return {
             content: [{ type: "text" as const, text: `Write rejected${reason}` }],
@@ -150,7 +146,6 @@ export default function (pi: ExtensionAPI) {
         const notes: string[] = [];
         if (result.decision === "partial") notes.push("partial accept");
         if (result.reason) notes.push(result.reason);
-        if (result.verification_error) notes.push(`buffer mismatch: ${result.verification_error}`);
         if (notes.length > 0) {
           return {
             content: [
@@ -169,7 +164,6 @@ export default function (pi: ExtensionAPI) {
       label: "edit",
       description:
         "Edit a file by replacing exact text. The oldText must match exactly (including whitespace). Use this for precise, surgical edits.",
-      // Use createEditTool schema: { path, oldText, newText }
       parameters: createEditTool(process.cwd()).parameters,
 
       async execute(toolCallId, params, signal, onUpdate, ctx) {
@@ -198,7 +192,6 @@ export default function (pi: ExtensionAPI) {
         const result = await review(filePath, newContent);
 
         if (result.decision === "reject") {
-          shim("revert", filePath);
           const reason = result.reason ? `: ${result.reason}` : "";
           return {
             content: [{ type: "text" as const, text: `Edit rejected${reason}` }],
@@ -217,7 +210,6 @@ export default function (pi: ExtensionAPI) {
         const notes: string[] = [];
         if (result.decision === "partial") notes.push("partial accept");
         if (result.reason) notes.push(result.reason);
-        if (result.verification_error) notes.push(`buffer mismatch: ${result.verification_error}`);
         if (notes.length > 0) {
           return {
             content: [
@@ -235,55 +227,44 @@ export default function (pi: ExtensionAPI) {
   // --- Session lifecycle: activate only when nvim socket is present ---
 
   pi.on("session_start", (_event, ctx) => {
-    if (!process.env.NVIM_SOCKET_PATH) return;
     ctx.ui.setStatus("nvim", " nvim-connected");
-    shim("set", "pi_active", "true");
+    neph("set", "pi_active", "true");
     registerTools();
   });
 
   pi.on("session_shutdown", () => {
-    if (!process.env.NVIM_SOCKET_PATH) return;
-    shim("close-tab");
-    shim("unset", "pi_active");
-    shim("unset", "pi_running");
+    neph("close-tab");
+    neph("unset", "pi_active");
+    neph("unset", "pi_running");
   });
 
   pi.on("agent_start", () => {
-    if (!process.env.NVIM_SOCKET_PATH) return;
-    shim("set", "pi_running", "true");
+    neph("set", "pi_running", "true");
   });
 
   pi.on("agent_end", (_event, ctx) => {
-    if (!process.env.NVIM_SOCKET_PATH) return;
-    shim("unset", "pi_running");
-    shim("unset", "pi_reading");
-    shim("checktime");
-    // Note: close-tab is intentionally NOT called here — the agent tab
-    // persists across turns and is only closed at session_shutdown.
+    neph("unset", "pi_running");
+    neph("unset", "pi_reading");
+    neph("checktime");
     ctx.ui.setStatus("nvim-reading", "");
   });
 
   pi.on("tool_call", (event, ctx) => {
-    if (!process.env.NVIM_SOCKET_PATH) return;
     if (event.toolName === "read") {
       const path = event.input.path as string | undefined;
       if (path) {
-        // Compute a short display path (relative to cwd when possible, otherwise basename)
         const abs = resolve(ctx.cwd, path);
         const rel = relative(ctx.cwd, abs);
         const shortPath = rel.startsWith("..") ? basename(abs) : rel;
-        // Set vim.g.pi_reading so users can surface it in their statusline.
-        // JSON.stringify produces a valid Lua double-quoted string literal.
-        shim("set", "pi_reading", JSON.stringify(shortPath));
+        neph("set", "pi_reading", JSON.stringify(shortPath));
         ctx.ui.setStatus("nvim-reading", `📖 ${shortPath}`);
       }
     }
   });
 
   pi.on("tool_result", (event) => {
-    if (!process.env.NVIM_SOCKET_PATH) return;
     if (event.toolName === "write" || event.toolName === "edit") {
-      shim("checktime");
+      neph("checktime");
     }
   });
 }

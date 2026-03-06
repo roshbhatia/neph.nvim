@@ -1,0 +1,25 @@
+{
+  "version": "neph-rpc/v1",
+  "methods": {
+    "review.open": {
+      "params": ["request_id", "result_path", "channel_id", "path", "content"],
+      "async": true
+    },
+    "status.set": {
+      "params": ["name", "value"],
+      "async": false
+    },
+    "status.unset": {
+      "params": ["name"],
+      "async": false
+    },
+    "buffers.check": {
+      "params": [],
+      "async": false
+    },
+    "tab.close": {
+      "params": [],
+      "async": false
+    }
+  }
+}

@@ -2,12 +2,12 @@ version: "3"
 
 tasks:
   test:
-    deps: [test:core, test:pi]
+    deps: [test:neph, test:pi]
 
-  test:core:
-    dir: core
+  test:neph:
+    dir: neph-cli
     cmds:
-      - uv run pytest tests/ -v
+      - npm test -- --run
 
   test:pi:
     dir: pi
@@ -15,12 +15,14 @@ tasks:
       - npm test
 
   lint:
-    deps: [lint:core, lint:pi]
+    deps: [lint:neph, lint:pi]
 
-  lint:core:
+  lint:neph:
+    dir: neph-cli
     cmds:
-      - flake8 core/shim.py
+      - npm run lint
 
   lint:pi:
+    dir: pi
     cmds:
       - deno lint pi/pi.ts
