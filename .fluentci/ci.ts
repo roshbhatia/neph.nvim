@@ -2,6 +2,10 @@ import Client, { connect } from "npm:@dagger.io/dagger";
 import process from "node:process";
 
 connect(async (client: Client) => {
+  const src = client.host().directory(".", {
+    exclude: [".git", "node_modules", ".fluentci", ".direnv"],
+  });
+
   const base = client
     .container()
     .from("nixos/nix")
@@ -9,12 +13,18 @@ connect(async (client: Client) => {
       "NIX_CONFIG",
       "experimental-features = nix-command flakes",
     )
-    .withDirectory("/app", client.host().directory("."), {
-      exclude: [".git", "node_modules", ".fluentci"],
-    })
+    // git is required for nix flake evaluation of local sources
+    .withExec(["nix-env", "-iA", "nixpkgs.git", "-f", "<nixpkgs>"])
+    .withDirectory("/app", src)
     .withWorkdir("/app")
-    .withExec(["nix", "develop", "--no-write-lock-file", "-c", "npm", "ci", "--prefix", "tools/neph-cli"])
-    .withExec(["nix", "develop", "--no-write-lock-file", "-c", "npm", "ci", "--prefix", "tools/pi"]);
+    // Initialize a git repo so nix can evaluate the flake
+    .withExec(["git", "init"])
+    .withExec(["git", "add", "-A"])
+    // Install npm deps for CLI tools
+    .withExec([
+      "nix", "develop", "--no-write-lock-file", "-c",
+      "sh", "-c", "npm ci --prefix tools/neph-cli && npm ci --prefix tools/pi",
+    ]);
 
   const lint = base.withExec([
     "nix", "develop", "--no-write-lock-file", "-c",

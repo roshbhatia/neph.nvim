@@ -61,9 +61,9 @@
 - [x] 7.3 Test review command: request_id generation, notification handling, envelope output
 - [x] 7.4 Test dry-run/offline path: auto-accept without transport
 - [x] 7.5 Test error cases: transport failure, timeout, malformed response
-- [ ] 7.6 Create `tests/integration/rpc.test.ts` — spawn headless nvim, test end-to-end review
-- [ ] 7.7 Integration test: verify `neph status` connects and returns JSON
-- [ ] 7.8 Integration test: verify `neph set`/`unset` modifies vim.g
+- [x] 7.6 Create `tests/integration/rpc.test.ts` — spawn headless nvim, test end-to-end review
+- [x] 7.7 Integration test: verify `neph status` connects and returns JSON
+- [x] 7.8 Integration test: verify `neph set`/`unset` modifies vim.g
 
 ## 8. Contract Tests
 
