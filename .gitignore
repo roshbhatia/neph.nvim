@@ -194,3 +194,4 @@ luac.out
 
 # Un-ignore openspec (tracked in repo)
 !openspec/
+.claude/
