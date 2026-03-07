@@ -5,12 +5,13 @@ neph.nvim's `M.setup()` SHALL install all bundled tool files to their expected l
 - `tools/neph-cli/dist/index.js` to `~/.local/bin/neph` (symlink)
 - `tools/pi/package.json` to `~/.pi/agent/extensions/nvim/package.json` (symlink)
 - `tools/pi/dist` to `~/.pi/agent/extensions/nvim/dist` (symlink)
-- `tools/copilot/hooks.json` to appropriate copilot hooks location (symlink)
+- `tools/copilot/hooks.json` — NOT auto-installed (Copilot requires project-level `.github/hooks/hooks.json` committed to default branch; documented for manual copy)
 - `tools/cursor/hooks.json` to `~/.cursor/hooks.json` (symlink)
 - `tools/claude/settings.json` to `~/.claude/settings.json` (JSON merge — hooks key only)
 - `tools/gemini/settings.json` to `~/.gemini/settings.json` (JSON merge — hooks key only)
-- `tools/amp/neph-plugin.ts` to `~/.config/amp/plugins/neph/` (symlink)
-- `tools/opencode/neph-write.ts` to `.opencode/tools/` or `~/.config/opencode/tools/` (symlink)
+- `tools/amp/neph-plugin.ts` to `~/.config/amp/plugins/neph-plugin.ts` (symlink)
+- `tools/opencode/write.ts` to `~/.config/opencode/tools/write.ts` (symlink)
+- `tools/opencode/edit.ts` to `~/.config/opencode/tools/edit.ts` (symlink)
 
 #### Scenario: Symlinks created on first setup
 - **WHEN** `require("neph").setup()` is called and the tool files exist

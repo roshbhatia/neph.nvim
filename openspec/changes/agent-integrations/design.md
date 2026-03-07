@@ -143,7 +143,8 @@ tools/
   amp/
     neph-plugin.ts       ← imports { nephRun, review, neph } from '../lib/neph-run'
   opencode/
-    neph-write.ts        ← imports { nephRun, review, neph } from '../lib/neph-run'
+    write.ts             ← imports { nephRun, review, neph } from '../lib/neph-run'
+    edit.ts              ← imports { nephRun, review, neph } from '../lib/neph-run'
 ```
 
 **Why extract vs duplicate:**
@@ -152,6 +153,55 @@ tools/
 - Pi.ts refactor is mechanical — import instead of inline
 
 **Alternative considered:** Keep nephRun inline in each adapter. Rejected because it creates N copies of the same timeout/error/queue logic.
+
+### 2a. Amp plugin API details
+
+Amp plugins use a `PluginAPI` interface with event handlers. The key API:
+
+```typescript
+// @i-know-the-amp-plugin-api-is-wip-and-very-experimental-right-now
+import type { PluginAPI } from '@ampcode/plugin'
+
+export default function (amp: PluginAPI) {
+  amp.on('tool.call', async (event, ctx) => {
+    // event.tool = "edit_file" | "create_file" | ...
+    // event.input = { file path + content fields }
+    // Return: { action: 'allow' } | { action: 'reject-and-continue', message: string }
+    // Also available: { action: 'modify', input: {...} } | { action: 'synthesize', result: {...} }
+  })
+}
+```
+
+Helper `filesModifiedByToolCall()` extracts file URIs from edit/create/apply_patch tools.
+
+**Important:** Amp plugin API is experimental (WIP). Requires `PLUGINS=all amp` env var. No package.json needed (Bun-based). Plugins go in `.amp/plugins/` (project) or `~/.config/amp/plugins/` (global).
+
+### 2b. OpenCode custom tool API details
+
+OpenCode tools use a `tool()` helper with Zod schemas. Built-in tool names: `write`, `edit`, `read`, `bash`, etc. Override by matching filename:
+
+```typescript
+// .opencode/tools/write.ts — overrides the built-in write tool
+import { tool } from "@opencode-ai/plugin"
+
+export default tool({
+  description: "Neph-gated file write",
+  args: {
+    file_path: tool.schema.string().describe("File path"),
+    content: tool.schema.string().describe("File content"),
+  },
+  async execute(args, context) {
+    // context.directory = session working directory
+    // context.worktree = git worktree root
+    const result = await review(args.file_path, args.content)
+    if (result.decision === 'reject') return `Write rejected: ${result.reason}`
+    // write file with result.content
+    return `File written: ${args.file_path}`
+  }
+})
+```
+
+**Key:** File name determines tool name. `write.ts` overrides `write`, `edit.ts` overrides `edit`. No package.json needed. Tools go in `.opencode/tools/` (project) or `~/.config/opencode/tools/` (global).
 
 ### 3. Agent capability metadata in agents.lua
 
@@ -247,8 +297,8 @@ For agents with user-level settings files (claude, gemini), we can't overwrite t
 ## Open Questions (Resolved)
 
 - **Cursor `afterFileEdit` is post-write only** — RESOLVED: Cursor's hook is informational. It cannot block writes. Cursor's gate handler will call `checktime` and manage statusline state only. No review gating possible. This is documented and accepted.
-- **Copilot hooks location** — `.github/hooks/hooks.json` must be on the default branch. This means it's effectively project-level, not user-level. For user-level install, we'll document this limitation. Users who want copilot integration need to commit the hooks file (or use a local git hook workaround).
+- **Copilot hooks location** — For Copilot Coding Agent, `.github/hooks/hooks.json` must be committed to the default branch (project-level). For Copilot CLI, hooks are loaded from the current working directory. No documented user-level location exists. `tools.lua` cannot auto-install this globally. We'll provide the file at `tools/copilot/hooks.json` and document that users must copy/commit it into their projects. This is a known limitation of Copilot's hook system.
 - **Copilot toolArgs is a JSON string** — RESOLVED: `toolArgs` is a JSON-formatted string, not an object. The gate parser must call `JSON.parse(toolArgs)` before extracting fields.
 - **Claude uses `old_str`/`new_str`** — RESOLVED: NOT `old_string`/`new_string`. The Edit tool fields are `old_str` and `new_str`.
 - **Gemini uses `filepath`** — RESOLVED: NOT `file_path`. The field name is `filepath` (no underscore).
-- **OpenCode custom tool naming** — Still needs verification: what are the exact built-in tool names to override?
+- **OpenCode custom tool naming** — RESOLVED: Built-in tools are `write`, `edit`, `read`, `bash`, etc. Override by creating `.opencode/tools/write.ts` and `.opencode/tools/edit.ts`. File name determines tool name.

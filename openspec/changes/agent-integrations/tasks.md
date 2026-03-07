@@ -42,27 +42,26 @@
 
 ## 8. Amp Plugin Adapter
 
-- [ ] 8.1 Create `tools/amp/neph-plugin.ts` — plugin with tool.call event handler intercepting edit_file/create_file, using `review()` from lib/neph-run, managing vim.g state
-- [ ] 8.2 Create `tools/amp/package.json` with dependencies
-- [ ] 8.3 Write vitest tests — mock nephRun, test accept/reject/partial flows, state management
+- [ ] 8.1 Create `tools/amp/neph-plugin.ts` — Amp plugin with `@i-know-the-amp-plugin-api-is-wip-and-very-experimental-right-now` comment, `tool.call` handler intercepting file write tools, returns `{ action: 'allow' }` or `{ action: 'reject-and-continue', message }`, using `review()` from lib/neph-run
+- [ ] 8.2 Write vitest tests — mock nephRun, test allow/reject-and-continue flows, statusline state management (no package.json needed — Bun-based)
 
-## 9. OpenCode Custom Tool Adapter
+## 9. OpenCode Custom Tool Adapters
 
-- [ ] 9.1 Create `tools/opencode/neph-write.ts` — custom tool overriding write/edit, using `review()` from lib/neph-run, managing vim.g state
-- [ ] 9.2 Create `tools/opencode/package.json` with dependencies
-- [ ] 9.3 Write vitest tests — mock nephRun, test accept/reject flows, state management
+- [ ] 9.1 Create `tools/opencode/write.ts` — overrides built-in `write` tool using `tool()` helper from `@opencode-ai/plugin`, routes through `review()` from lib/neph-run, manages vim.g state
+- [ ] 9.2 Create `tools/opencode/edit.ts` — overrides built-in `edit` tool, reads current file, applies edit, routes full content through `review()`, manages vim.g state
+- [ ] 9.3 Write vitest tests — mock nephRun, test accept/reject flows (no package.json needed — standalone files)
 
 ## 10. tools.lua Install Updates
 
 - [ ] 10.1 Add JSON merge helper to `tools.lua` — reads existing settings file, merges `hooks` key, writes back. Falls back to full write if no existing file.
 - [ ] 10.2 Add install entries for hook configs: claude (merge), gemini (merge), copilot (symlink), cursor (symlink)
-- [ ] 10.3 Add install entries for TS adapters: amp (symlink to ~/.config/amp/plugins/neph/), opencode (symlink)
+- [ ] 10.3 Add install entries for TS adapters: amp (symlink neph-plugin.ts to ~/.config/amp/plugins/), opencode (symlink write.ts + edit.ts to ~/.config/opencode/tools/)
 - [ ] 10.4 Verify existing pi and neph-cli install entries are unchanged
 
 ## 11. Taskfile & CI
 
 - [ ] 11.1 Update `tools/Taskfile.yml` — add test tasks for lib, amp, opencode; add lint tasks for new TS files
-- [ ] 11.2 Update `.fluentci/ci.ts` — add `npm ci` for tools/lib, tools/amp, tools/opencode
+- [ ] 11.2 Update `.fluentci/ci.ts` — add `npm ci` for tools/lib (amp and opencode are standalone files, no npm ci needed)
 - [ ] 11.3 Verify `task ci` passes locally with all new tests
 - [ ] 11.4 Verify `task dagger` passes locally
 - [ ] 11.5 Update `tools/README.md` to document all agent integrations and the neph gate command

@@ -23,8 +23,8 @@ The Dagger pipeline SHALL complete successfully in both local (`task dagger`) an
 All `npm ci` commands SHALL succeed for every tool directory with a package.json.
 
 #### Scenario: Clean install in container
-- **WHEN** the Dagger pipeline runs `npm ci` for neph-cli, pi, amp, opencode, and lib directories
-- **THEN** dependencies SHALL install without errors
+- **WHEN** the Dagger pipeline runs `npm ci` for neph-cli, pi, and lib directories
+- **THEN** dependencies SHALL install without errors (amp and opencode are standalone files, no npm ci needed)
 
 ### Requirement: New tests included in CI
 All new vitest test files SHALL be automatically picked up by the task runner.
