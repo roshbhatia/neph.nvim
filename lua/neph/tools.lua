@@ -6,7 +6,7 @@
 ---
 --- Symlinks created:
 ---   tools/neph-cli/dist/index.js → ~/.local/bin/neph
----   tools/pi/pi.ts               → ~/.pi/agent/extensions/nvim.ts
+---   tools/pi/dist/pi.js          → ~/.pi/agent/extensions/nvim.js
 ---@brief ]]
 
 local M = {}
@@ -27,7 +27,7 @@ end
 ---@type neph.ToolSpec[]
 local TOOLS = {
   { src = "neph-cli/dist/index.js", dst = "~/.local/bin/neph" },
-  { src = "pi/pi.ts", dst = "~/.pi/agent/extensions/nvim.ts" },
+  { src = "pi/dist/pi.js", dst = "~/.pi/agent/extensions/nvim.js" },
 }
 
 --- Install (symlink) all bundled tools to their canonical locations.
