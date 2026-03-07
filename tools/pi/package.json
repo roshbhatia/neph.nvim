@@ -1,23 +1,9 @@
 {
-  "name": "neph.nvim",
+  "name": "pi-nvim-extension",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "build": "tsc"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "dependencies": {
-    "@mariozechner/pi-coding-agent": "^0.56.0"
-  },
-  "devDependencies": {
-    "@types/node": "^20.11.25",
-    "@vitest/coverage-v8": "^2.0.0",
-    "typescript": "^5.4.2",
-    "vitest": "^2.0.0"
+  "type": "module",
+  "main": "dist/pi.js",
+  "exports": {
+    ".": "./dist/pi.js"
   }
 }
