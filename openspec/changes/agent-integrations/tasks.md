@@ -8,7 +8,7 @@
 ## 2. Gate Subcommand
 
 - [ ] 2.1 Add `gate` command to `tools/neph-cli/src/index.ts` — read stdin JSON, accept `--agent <name>` flag, normalize to `{ filePath, content }`
-- [ ] 2.2 Implement agent format normalizers: claude (tool_input.file_path + content/old_string+new_string), copilot, cursor (file_path + old_content/new_content), gemini
+- [ ] 2.2 Implement agent format normalizers: claude (tool_input.file_path + content or old_str/new_str), copilot (JSON.parse toolArgs string, extract filepath + content), gemini (tool_input.filepath [no underscore] + content), cursor (post-write only: file_path + edits array — no review, just checktime + state)
 - [ ] 2.3 Gate calls review flow internally (reuse existing runCommand logic), manages vim.g state (status.set/unset around review)
 - [ ] 2.4 Handle edge cases: no socket (exit 0), dry-run (exit 0), unknown agent (exit 0 + warning), review timeout (exit 2)
 - [ ] 2.5 Write vitest tests for gate command — FakeTransport, test each agent normalizer, test accept/reject exit codes, test edge cases
@@ -32,7 +32,7 @@
 
 ## 6. Cursor Hook Config
 
-- [ ] 6.1 Create `tools/cursor/hooks.json` — hook for file edits, command `"neph gate --agent cursor"`
+- [ ] 6.1 Create `tools/cursor/hooks.json` — afterFileEdit hook (informational only, cannot block), command `"neph gate --agent cursor"` — triggers checktime + statusline state, NOT review gating
 - [ ] 6.2 Write vitest test validating hooks.json structure
 
 ## 7. Gemini Hook Config
