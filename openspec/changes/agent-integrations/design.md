@@ -2,29 +2,32 @@
 
 Neph's pi integration is the gold standard: it overrides built-in `write` and `edit` tools so every file mutation goes through `neph review`. The user sees a vimdiff, makes per-hunk accept/reject decisions, and the agent receives structured feedback. This is deterministic — no file write can bypass the gate.
 
-Research shows 6 other agents support file write interception:
+Research shows 6 other agents support file write interception, but with important caveats:
 
 ```
-┌──────────────┬─────────────────────┬─────────────────────────────┐
-│ Agent        │ Hook Mechanism      │ Config Location             │
-├──────────────┼─────────────────────┼─────────────────────────────┤
-│ pi           │ Tool override (TS)  │ ~/.pi/agent/extensions/     │
-│ amp          │ Plugin tool.call    │ ~/.config/amp/plugins/      │
-│ opencode     │ Custom tool (TS)    │ .opencode/tools/            │
-│ claude       │ PreToolUse hook     │ .claude/settings.json       │
-│ copilot      │ preToolUse hook     │ .github/hooks/hooks.json    │
-│ cursor       │ afterFileEdit hook  │ .cursor/hooks.json          │
-│ gemini       │ BeforeTool hook     │ .gemini/settings.json       │
-├──────────────┼─────────────────────┼─────────────────────────────┤
-│ goose        │ NONE                │ N/A (terminal only)         │
-│ codex        │ NONE (MCP only)     │ N/A (terminal only)         │
-│ crush        │ UNKNOWN             │ N/A (terminal only)         │
-└──────────────┴─────────────────────┴─────────────────────────────┘
+┌──────────────┬─────────────────────┬──────────┬───────────────────────────┐
+│ Agent        │ Hook Mechanism      │ Can Block│ Config Location           │
+├──────────────┼─────────────────────┼──────────┼───────────────────────────┤
+│ pi           │ Tool override (TS)  │ YES      │ ~/.pi/agent/extensions/   │
+│ amp          │ Plugin tool.call    │ YES      │ ~/.config/amp/plugins/    │
+│ opencode     │ Custom tool (TS)    │ YES      │ .opencode/tools/          │
+│ claude       │ PreToolUse hook     │ YES      │ .claude/settings.json     │
+│ copilot      │ preToolUse hook     │ YES      │ .github/hooks/hooks.json  │
+│ gemini       │ BeforeTool hook     │ YES      │ .gemini/settings.json     │
+│ cursor       │ afterFileEdit hook  │ NO ⚠️    │ .cursor/hooks.json        │
+├──────────────┼─────────────────────┼──────────┼───────────────────────────┤
+│ goose        │ NONE                │ N/A      │ N/A (terminal only)       │
+│ codex        │ NONE (MCP only)     │ N/A      │ N/A (terminal only)       │
+│ crush        │ UNKNOWN             │ N/A      │ N/A (terminal only)       │
+└──────────────┴─────────────────────┴──────────┴───────────────────────────┘
 ```
 
-These fall into two categories:
-- **Shell-hook agents** (claude, copilot, cursor, gemini): run a shell command, receive JSON on stdin, exit code controls allow/block
+**Critical finding:** Cursor's `afterFileEdit` hook is **informational only** — it fires after the file is already written and cannot block the operation. This means Cursor cannot participate in the review-gating pattern. It can still trigger a post-write `checktime` and statusline update, but not deterministic review.
+
+These fall into three categories:
+- **Shell-hook agents** (claude, copilot, gemini): run a command, receive JSON on stdin, exit code controls allow/block
 - **Plugin-API agents** (amp, opencode): TypeScript plugin/tool override, programmatic API like pi
+- **Post-write only** (cursor): informational hook, can observe but not gate writes
 
 ## Goals / Non-Goals
 
@@ -71,16 +74,59 @@ Agent CLI ──stdin──▶ neph gate --agent claude
 - One test infrastructure — vitest for everything
 - Handles agent format normalization in TypeScript (clean, type-safe)
 
-**Agent format normalization:** Each agent sends slightly different JSON to stdin. The `--agent` flag tells `neph gate` which parser to use:
+**Agent format normalization:** Each agent sends a different JSON stdin schema. The `--agent` flag selects the parser. Exact schemas from upstream documentation:
 
-```typescript
-// Claude: { tool_input: { file_path, content } } or { tool_input: { file_path, old_string, new_string } }
-// Copilot: { tool_input: { path, content } } or { tool_input: { path, old_text, new_text } }
-// Cursor: { file_path, old_content, new_content }
-// Gemini: { tool_input: { file_path, content } }
+**Claude Code** (PreToolUse):
+```json
+{
+  "session_id": "abc123",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Write",                        // or "Edit"
+  "tool_input": {
+    "file_path": "/path/to/file.txt",
+    "content": "full file content"              // Write tool
+    // OR for Edit tool:
+    // "old_str": "text to find",
+    // "new_str": "replacement text"            // NOTE: old_str/new_str, NOT old_string/new_string
+  }
+}
 ```
 
-Each normalizes to `{ filePath: string, content: string }` before calling the review flow.
+**Copilot CLI** (preToolUse):
+```json
+{
+  "timestamp": 1704614400000,
+  "cwd": "/path/to/project",
+  "toolName": "edit",                           // or "create"
+  "toolArgs": "{\"filepath\":\"/path/to/file.txt\",\"content\":\"file content\"}"
+  // NOTE: toolArgs is a JSON-FORMATTED STRING, requires double-parsing
+}
+```
+
+**Gemini CLI** (BeforeTool):
+```json
+{
+  "session_id": "string",
+  "hook_event_name": "BeforeTool",
+  "tool_name": "write_file",
+  "tool_input": {
+    "filepath": "/path/to/file",                // NOTE: "filepath" not "file_path"
+    "content": "file content"
+    // OR: "new_string" for edit operations
+  }
+}
+```
+
+**Cursor** (afterFileEdit — informational only, CANNOT block):
+```json
+{
+  "file_path": "/absolute/path/to/file.txt",
+  "edits": [{ "old_string": "original", "new_string": "replacement" }],
+  "hook_event_name": "afterFileEdit"
+}
+```
+
+Each normalizes to `{ filePath: string, content: string }` before calling the review flow. Cursor is the exception — since it cannot block writes, its gate handler only calls `checktime` and manages statusline state (no review).
 
 **Alternative considered:** Separate POSIX shell script with jq. Rejected because it adds a runtime dependency, requires separate test infrastructure, and can't share code with the neph CLI.
 
@@ -198,8 +244,11 @@ For agents with user-level settings files (claude, gemini), we can't overwrite t
 
 - **[Gate command adds CLI surface area]** More commands = more to maintain. → Mitigation: Gate is just a stdin normalizer + existing review call. Most of the logic already exists.
 
-## Open Questions
+## Open Questions (Resolved)
 
-- **Cursor `afterFileEdit` vs `beforeFileEdit`**: Cursor's hook fires AFTER the edit. Can neph gate revert the file if the review rejects? Or is there a `beforeFileEdit` hook that blocks? Need to verify.
-- **Copilot hooks location**: `.github/hooks/hooks.json` must be on the default branch. Does this work for local-only installs, or does it need to be committed? If committed, it becomes project-level, not user-level.
-- **OpenCode custom tool naming**: If we override `write` and `edit` by name, does OpenCode use those exact names? Need to verify tool names.
+- **Cursor `afterFileEdit` is post-write only** — RESOLVED: Cursor's hook is informational. It cannot block writes. Cursor's gate handler will call `checktime` and manage statusline state only. No review gating possible. This is documented and accepted.
+- **Copilot hooks location** — `.github/hooks/hooks.json` must be on the default branch. This means it's effectively project-level, not user-level. For user-level install, we'll document this limitation. Users who want copilot integration need to commit the hooks file (or use a local git hook workaround).
+- **Copilot toolArgs is a JSON string** — RESOLVED: `toolArgs` is a JSON-formatted string, not an object. The gate parser must call `JSON.parse(toolArgs)` before extracting fields.
+- **Claude uses `old_str`/`new_str`** — RESOLVED: NOT `old_string`/`new_string`. The Edit tool fields are `old_str` and `new_str`.
+- **Gemini uses `filepath`** — RESOLVED: NOT `file_path`. The field name is `filepath` (no underscore).
+- **OpenCode custom tool naming** — Still needs verification: what are the exact built-in tool names to override?

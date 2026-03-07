@@ -3,9 +3,13 @@
 ### Requirement: Integration field on agent definitions
 Each agent definition in `agents.lua` SHALL support an optional `integration` field with `type` and `capabilities` properties.
 
-#### Scenario: Hook agent has integration metadata
+#### Scenario: Hook agent with review gating has integration metadata
 - **WHEN** the claude agent definition is inspected
 - **THEN** it SHALL have `integration = { type = "hook", capabilities = { "review", "status", "checktime" } }`
+
+#### Scenario: Post-write-only hook agent has limited capabilities
+- **WHEN** the cursor agent definition is inspected
+- **THEN** it SHALL have `integration = { type = "hook", capabilities = { "status", "checktime" } }` (no "review" — cursor hooks are informational only)
 
 #### Scenario: Extension agent has integration metadata
 - **WHEN** the pi agent definition is inspected

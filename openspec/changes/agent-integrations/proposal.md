@@ -8,7 +8,8 @@ The integration must be composable (shared building blocks, not per-agent monoli
 
 - **New**: `neph gate` subcommand — reads agent hook stdin JSON, normalizes to file_path + content, runs the existing review flow internally, exits 0 (accept) or 2 (reject). Also manages `vim.g` state for passive autoattach. No separate shell script, no jq dependency.
 - **New**: `tools/lib/neph-run.ts` — shared TypeScript module extracted from pi.ts containing `nephRun()`, `review()`, and fire-and-forget `neph()` helpers. Used by pi, amp, and opencode adapters.
-- **New**: Hook configs for shell-hook agents (claude, copilot, cursor, gemini) — JSON files pointing to `neph gate --agent <name>`
+- **New**: Hook configs for shell-hook agents (claude, copilot, gemini) — JSON files pointing to `neph gate --agent <name>` for pre-write review gating
+- **New**: Cursor post-write hook config — `afterFileEdit` is informational only (cannot block), used for checktime + statusline state
 - **New**: TypeScript adapters for plugin-API agents (amp, opencode) — thin wrappers importing from `lib/neph-run.ts`
 - **New**: `integration` field on agent definitions in `agents.lua` — declares `type` (hook/extension/nil) and `capabilities` per agent
 - **New**: session.lua uses capability metadata to manage `vim.g` state for terminal-only agents, defer to hooks/extensions for others

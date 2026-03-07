@@ -22,16 +22,21 @@ neph.nvim SHALL include a Copilot hook configuration file at `tools/copilot/hook
 - **WHEN** `tools/copilot/hooks.json` is parsed by the test suite
 - **THEN** it SHALL parse without errors
 
-### Requirement: Cursor hook config
-neph.nvim SHALL include a Cursor hook configuration file at `tools/cursor/hooks.json` that intercepts file edits, pointing to `neph gate --agent cursor`.
+### Requirement: Cursor post-write hook config
+neph.nvim SHALL include a Cursor hook configuration file at `tools/cursor/hooks.json` that observes file edits via the `afterFileEdit` event, pointing to `neph gate --agent cursor`. Because Cursor's hook is **informational only** (cannot block writes), this integration SHALL call `checktime` and manage statusline state only — NOT gate writes through review.
 
 #### Scenario: Hook config has correct structure
 - **WHEN** `tools/cursor/hooks.json` is parsed
-- **THEN** it SHALL contain a hook entry with command `"neph gate --agent cursor"`
+- **THEN** it SHALL contain an `afterFileEdit` hook entry with command `"neph gate --agent cursor"`
 
 #### Scenario: Hook config is valid JSON
 - **WHEN** `tools/cursor/hooks.json` is parsed by the test suite
 - **THEN** it SHALL parse without errors
+
+#### Scenario: Cursor gate does NOT run review
+- **WHEN** `neph gate --agent cursor` receives an afterFileEdit event
+- **THEN** it SHALL call `checktime` and update statusline state
+- **AND** it SHALL NOT attempt a review (exit 0 immediately)
 
 ### Requirement: Gemini BeforeTool hook config
 neph.nvim SHALL include a Gemini hook configuration file at `tools/gemini/settings.json` that intercepts file write tool calls via the `BeforeTool` event, pointing to `neph gate --agent gemini`.

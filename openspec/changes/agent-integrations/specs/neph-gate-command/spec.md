@@ -29,15 +29,28 @@ When the review decision is "reject", `neph gate` SHALL exit with code 2 (block 
 ### Requirement: Gate normalizes agent-specific stdin formats
 The `--agent` flag SHALL select a parser that normalizes the agent-specific JSON stdin format to `{ filePath, content }` before calling the review flow.
 
-#### Scenario: Claude stdin normalized
-- **WHEN** `neph gate --agent claude` receives stdin with `{ tool_input: { file_path: "/a.ts", content: "new" } }`
+#### Scenario: Claude Write stdin normalized
+- **WHEN** `neph gate --agent claude` receives stdin with `{ tool_input: { file_path: "/a.ts", content: "new" }, tool_name: "Write" }`
 - **THEN** it SHALL normalize to `filePath="/a.ts"` and `content="new"`
 
-#### Scenario: Claude edit stdin normalized
-- **WHEN** `neph gate --agent claude` receives stdin with `{ tool_input: { file_path: "/a.ts", old_string: "old", new_string: "new" } }`
-- **THEN** it SHALL read the current file at `/a.ts`, apply the replacement, and use the full resulting content
+#### Scenario: Claude Edit stdin normalized
+- **WHEN** `neph gate --agent claude` receives stdin with `{ tool_input: { file_path: "/a.ts", old_str: "old", new_str: "new" }, tool_name: "Edit" }`
+- **THEN** it SHALL read the current file at `/a.ts`, apply the replacement of `old_str` with `new_str`, and use the full resulting content
 
-#### Scenario: Unknown agent rejected
+#### Scenario: Copilot stdin double-parsed
+- **WHEN** `neph gate --agent copilot` receives stdin with `{ toolName: "edit", toolArgs: "{\"filepath\":\"/a.ts\",\"content\":\"new\"}" }`
+- **THEN** it SHALL JSON.parse the `toolArgs` string and normalize to `filePath="/a.ts"` and `content="new"`
+
+#### Scenario: Gemini stdin normalized
+- **WHEN** `neph gate --agent gemini` receives stdin with `{ tool_input: { filepath: "/a.ts", content: "new" }, tool_name: "write_file" }`
+- **THEN** it SHALL normalize `filepath` (no underscore) to `filePath="/a.ts"` and `content="new"`
+
+#### Scenario: Cursor gate skips review
+- **WHEN** `neph gate --agent cursor` receives stdin with `{ file_path: "/a.ts", edits: [...], hook_event_name: "afterFileEdit" }`
+- **THEN** it SHALL NOT run a review (cursor hooks are post-write, informational only)
+- **AND** it SHALL call `checktime` and exit 0
+
+#### Scenario: Unknown agent auto-accepts
 - **WHEN** `neph gate --agent unknown` is invoked
 - **THEN** it SHALL exit with code 0 (auto-accept) and write a warning to stderr
 
