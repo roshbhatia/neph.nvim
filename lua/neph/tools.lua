@@ -6,7 +6,11 @@
 ---
 --- Symlinks created:
 ---   tools/neph-cli/dist/index.js → ~/.local/bin/neph
----   tools/pi                      → ~/.pi/agent/extensions/nvim
+---   tools/pi/package.json        → ~/.pi/agent/extensions/nvim/package.json
+---   tools/pi/dist                → ~/.pi/agent/extensions/nvim/dist
+---
+--- Files created:
+---   ~/.pi/agent/extensions/nvim/index.ts (wrapper)
 ---@brief ]]
 
 local M = {}
@@ -27,7 +31,8 @@ end
 ---@type neph.ToolSpec[]
 local TOOLS = {
   { src = "neph-cli/dist/index.js", dst = "~/.local/bin/neph" },
-  { src = "pi", dst = "~/.pi/agent/extensions/nvim" },
+  { src = "pi/package.json", dst = "~/.pi/agent/extensions/nvim/package.json" },
+  { src = "pi/dist", dst = "~/.pi/agent/extensions/nvim/dist" },
 }
 
 --- Install (symlink) all bundled tools to their canonical locations.
@@ -38,12 +43,21 @@ function M.install()
     local src = root .. "/tools/" .. tool.src
     local dst = vim.fn.expand(tool.dst)
 
-    if vim.fn.filereadable(src) == 0 then
+    -- Check if src exists (file or directory)
+    local exists = vim.fn.filereadable(src) == 1 or vim.fn.isdirectory(src) == 1
+    if not exists then
       vim.notify(string.format("Neph: tool not found, skipping symlink: %s", src), vim.log.levels.WARN)
     else
       vim.fn.mkdir(vim.fn.fnamemodify(dst, ":h"), "p")
       vim.fn.system({ "ln", "-sf", src, dst })
     end
+  end
+
+  -- Create pi extension index.ts wrapper
+  local pi_ext_dir = vim.fn.expand("~/.pi/agent/extensions/nvim")
+  local pi_index = pi_ext_dir .. "/index.ts"
+  if vim.fn.isdirectory(pi_ext_dir) == 1 and vim.fn.filereadable(pi_index) == 0 then
+    vim.fn.writefile({ 'export { default } from "./dist/pi.js";' }, pi_index)
   end
 end
 
