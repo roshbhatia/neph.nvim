@@ -264,7 +264,6 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("session_shutdown", () => {
-    neph("close-tab");
     neph("unset", "pi_active");
     neph("unset", "pi_running");
   });
