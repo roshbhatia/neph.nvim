@@ -189,7 +189,7 @@ local function build_install_script(root, manifests)
         lines,
         string.format(
           "    if [ -n \"$(find '%s/%s' -name '*.ts' -newer \"$CHECK\""
-            .. " 2>/dev/null | head -1)\" ]; then NEEDS_BUILD=1; fi",
+            .. ' 2>/dev/null | head -1)" ]; then NEEDS_BUILD=1; fi',
           tool_dir,
           sd
         )
