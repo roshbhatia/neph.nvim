@@ -1,6 +1,21 @@
 version: "3"
 
 tasks:
+  build:
+    deps: [build:neph, build:pi]
+
+  build:neph:
+    dir: neph-cli
+    cmds:
+      - npm install --ignore-scripts
+      - npm run build
+
+  build:pi:
+    dir: pi
+    cmds:
+      - npm install --ignore-scripts
+      - npm run build
+
   test:
     deps: [test:neph, test:lib]
 

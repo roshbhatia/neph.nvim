@@ -85,9 +85,32 @@ local function json_merge(src_path, dst_path, key)
   vim.fn.writefile({ vim.json.encode(dst_json) }, dst_path)
 end
 
+--- Build TypeScript tools that require bundling (only if dist is missing).
+---@param root string  Plugin root path
+local function build_if_needed(root)
+  local builds = {
+    { dir = "neph-cli", check = "dist/index.js" },
+    { dir = "pi", check = "dist/pi.js" },
+  }
+  for _, b in ipairs(builds) do
+    local tool_dir = root .. "/tools/" .. b.dir
+    local check_file = tool_dir .. "/" .. b.check
+    local pkg = tool_dir .. "/package.json"
+    if vim.fn.filereadable(pkg) == 1 and vim.fn.filereadable(check_file) == 0 then
+      local cmd = "cd " .. vim.fn.shellescape(tool_dir) .. " && npm install --ignore-scripts && npm run build"
+      local result = vim.fn.system({ "sh", "-c", cmd })
+      if vim.v.shell_error ~= 0 then
+        vim.notify("Neph: build failed for " .. b.dir .. ": " .. result, vim.log.levels.WARN)
+      end
+    end
+  end
+end
+
 --- Install (symlink) all bundled tools to their canonical locations.
 function M.install()
   local root = plugin_root()
+
+  build_if_needed(root)
 
   for _, tool in ipairs(TOOLS) do
     local src = root .. "/tools/" .. tool.src
