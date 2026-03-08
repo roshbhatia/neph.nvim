@@ -3,12 +3,13 @@ import { createWriteTool, createEditTool } from "@mariozechner/pi-coding-agent";
 import { readFileSync } from "node:fs";
 import { resolve, relative, basename } from "node:path";
 import process from "node:process";
-import { createNephQueue, nephRun, NEPH_TIMEOUT_MS, review } from "../lib/neph-run";
+import { NephClient } from "../lib/neph-client";
 import { debug as log } from "../lib/log";
 
 // Neovim integration for pi.
 //
-// Uses the `neph` CLI as the universal Neovim bridge.
+// Uses a persistent socket connection to Neovim via NephClient.
+// Prompts are received via neph:prompt notifications (push, no polling).
 //
 // write / edit tools are overridden to open a non-blocking vimdiff review in
 // Neovim before any disk write.
@@ -17,49 +18,13 @@ import { debug as log } from "../lib/log";
 // decision: "accept" | "reject" | "partial" (some hunks accepted, some rejected)
 //
 // vim.g globals for statusline integration:
-//   vim.g.pi_active   — set while a pi session is live
+//   vim.g.pi_active   — set by bus registration while a pi session is live
 //   vim.g.pi_running  — set while the agent is processing a turn
 //   vim.g.pi_reading  — path of file currently being read by the agent (nil otherwise)
 
 export default function (pi: ExtensionAPI) {
   let toolsRegistered = false;
-  const neph = createNephQueue();
-  let promptPollTimer: ReturnType<typeof setInterval> | undefined;
-
-  /** Poll vim.g.neph_pending_prompt and deliver via pi.sendUserMessage(). */
-  function startPromptPoll() {
-    if (promptPollTimer) return;
-    let polling = false;
-    promptPollTimer = setInterval(async () => {
-      if (polling) return; // skip if previous poll is still in-flight
-      polling = true;
-      try {
-        const raw = await nephRun(["get", "neph_pending_prompt"], undefined, NEPH_TIMEOUT_MS);
-        const res = JSON.parse(raw);
-        if (res?.ok && res?.result?.value) {
-          const prompt = res.result.value;
-          log("pi-poll", `prompt found (len=${String(prompt).length}): ${String(prompt).slice(0, 80)}`);
-          // Clear the global before sending to avoid re-delivery
-          await nephRun(["unset", "neph_pending_prompt"], undefined, NEPH_TIMEOUT_MS);
-          pi.sendUserMessage(typeof prompt === "string" ? prompt : String(prompt));
-          log("pi-poll", "sendUserMessage called");
-        } else {
-          log("pi-poll", "poll: no prompt");
-        }
-      } catch (e) {
-        log("pi-poll", `poll error: ${e instanceof Error ? e.message : String(e)}`);
-      } finally {
-        polling = false;
-      }
-    }, 500);
-  }
-
-  function stopPromptPoll() {
-    if (promptPollTimer) {
-      clearInterval(promptPollTimer);
-      promptPollTimer = undefined;
-    }
-  }
+  const neph = new NephClient();
 
   function registerTools() {
     if (toolsRegistered) return;
@@ -76,7 +41,7 @@ export default function (pi: ExtensionAPI) {
         const filePath = resolve(ctx.cwd, params.path as string);
         const newContent = params.content as string;
 
-        const result = await review(filePath, newContent);
+        const result = await neph.review(filePath, newContent);
 
         if (result.decision === "reject") {
           const reason = result.reason ? `: ${result.reason}` : "";
@@ -95,7 +60,6 @@ export default function (pi: ExtensionAPI) {
           signal,
           onUpdate,
         );
-        // Surface partial / rejection notes back to the agent
         const notes: string[] = [];
         if (result.decision === "partial") notes.push("partial accept");
         if (result.reason) notes.push(result.reason);
@@ -153,7 +117,7 @@ export default function (pi: ExtensionAPI) {
         }
 
         const newContent = currentContent.replace(oldText, newText);
-        const result = await review(filePath, newContent);
+        const result = await neph.review(filePath, newContent);
 
         if (result.decision === "reject") {
           const reason = result.reason ? `: ${result.reason}` : "";
@@ -166,7 +130,6 @@ export default function (pi: ExtensionAPI) {
         }
 
         const finalContent = result.content ?? newContent;
-        // Write the full reconstructed content (not a partial edit replacement)
         const writeResult = await createWriteTool(ctx.cwd).execute(
           toolCallId,
           { path: params.path as string, content: finalContent },
@@ -191,49 +154,57 @@ export default function (pi: ExtensionAPI) {
     });
   }
 
-  // --- Session lifecycle: activate only when nvim socket is present ---
+  // --- Session lifecycle ---
 
-  pi.on("session_start", (_event, ctx) => {
-    ctx.ui.setStatus("nvim", " >> ");
-    neph("set", "pi_active", "true");
+  pi.on("session_start", async (_event, ctx) => {
+    ctx.ui.setStatus("nvim", " >> ");
+    try {
+      await neph.connect();
+      await neph.register("pi");
+      log("pi", "connected and registered with bus");
+    } catch (e) {
+      log("pi", `connection failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
     registerTools();
-    startPromptPoll();
+
+    // Listen for prompts from Neovim
+    neph.onPrompt((text) => {
+      log("pi", `received prompt (len=${text.length})`);
+      pi.sendUserMessage(text);
+    });
   });
 
   pi.on("session_shutdown", () => {
-    stopPromptPoll();
-    neph("unset", "neph_pending_prompt");
-    neph("unset", "pi_active");
-    neph("unset", "pi_running");
+    neph.disconnect();
   });
 
-  pi.on("agent_start", () => {
-    neph("set", "pi_running", "true");
+  pi.on("agent_start", async () => {
+    await neph.setStatus("pi_running", "true");
   });
 
-  pi.on("agent_end", (_event, ctx) => {
-    neph("unset", "pi_running");
-    neph("unset", "pi_reading");
-    neph("checktime");
+  pi.on("agent_end", async (_event, ctx) => {
+    await neph.unsetStatus("pi_running");
+    await neph.unsetStatus("pi_reading");
+    await neph.checktime();
     ctx.ui.setStatus("nvim-reading", "");
   });
 
-  pi.on("tool_call", (event, ctx) => {
+  pi.on("tool_call", async (event, ctx) => {
     if (event.toolName === "read") {
       const path = event.input.path as string | undefined;
       if (path) {
         const abs = resolve(ctx.cwd, path);
         const rel = relative(ctx.cwd, abs);
         const shortPath = rel.startsWith("..") ? basename(abs) : rel;
-        neph("set", "pi_reading", JSON.stringify(shortPath));
-        ctx.ui.setStatus("nvim-reading", ` >> 󰍉 >> ${shortPath}`);
+        await neph.setStatus("pi_reading", shortPath);
+        ctx.ui.setStatus("nvim-reading", ` >> 󰍉 >> ${shortPath}`);
       }
     }
   });
 
-  pi.on("tool_result", (event) => {
+  pi.on("tool_result", async (event) => {
     if (event.toolName === "write" || event.toolName === "edit") {
-      neph("checktime");
+      await neph.checktime();
     }
   });
 }

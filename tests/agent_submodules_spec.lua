@@ -13,10 +13,29 @@ describe("neph.agents submodules", function()
     end)
   end
 
-  it("pi includes a send_adapter function", function()
-    local pi = require("neph.agents.pi")
-    assert.is_function(pi.send_adapter)
-  end)
+  local extension_agents = { "amp", "opencode", "pi" }
+  for _, name in ipairs(extension_agents) do
+    it(name .. " has type = extension", function()
+      local def = require("neph.agents." .. name)
+      assert.are.equal("extension", def.type)
+    end)
+  end
+
+  local hook_agents = { "claude", "copilot", "cursor", "gemini" }
+  for _, name in ipairs(hook_agents) do
+    it(name .. " has type = hook", function()
+      local def = require("neph.agents." .. name)
+      assert.are.equal("hook", def.type)
+    end)
+  end
+
+  local terminal_agents = { "codex", "crush", "goose" }
+  for _, name in ipairs(terminal_agents) do
+    it(name .. " has no type field", function()
+      local def = require("neph.agents." .. name)
+      assert.is_nil(def.type)
+    end)
+  end
 
   local agents_with_tools = { "amp", "claude", "cursor", "gemini", "opencode", "pi" }
   for _, name in ipairs(agents_with_tools) do
@@ -37,43 +56,14 @@ describe("neph.agents submodules", function()
     end)
   end
 
-  describe("pi send_adapter", function()
-    local pi
-
-    before_each(function()
-      pi = require("neph.agents.pi")
-      vim.g.neph_pending_prompt = nil
-      vim.g.pi_active = nil
+  -- No agent should have removed fields
+  for _, name in ipairs(agent_names) do
+    it(name .. " has no send_adapter or integration field", function()
+      local def = require("neph.agents." .. name)
+      assert.is_nil(def.send_adapter)
+      assert.is_nil(def.integration)
     end)
-
-    after_each(function()
-      vim.g.neph_pending_prompt = nil
-      vim.g.pi_active = nil
-    end)
-
-    it("always returns true regardless of pi_active", function()
-      -- pi_active is nil (pi still initializing)
-      local result = pi.send_adapter({}, "hello", { submit = true })
-      assert.is_true(result)
-    end)
-
-    it("sets neph_pending_prompt with submit newline", function()
-      pi.send_adapter({}, "hello", { submit = true })
-      assert.are.equal("hello\n", vim.g.neph_pending_prompt)
-    end)
-
-    it("sets neph_pending_prompt without newline when no submit", function()
-      pi.send_adapter({}, "hello", {})
-      assert.are.equal("hello", vim.g.neph_pending_prompt)
-    end)
-
-    it("works when pi_active is already set", function()
-      vim.g.pi_active = true
-      local result = pi.send_adapter({}, "test prompt", { submit = true })
-      assert.is_true(result)
-      assert.are.equal("test prompt\n", vim.g.neph_pending_prompt)
-    end)
-  end)
+  end
 
   it("all.lua returns all 10 agents", function()
     local all = require("neph.agents.all")

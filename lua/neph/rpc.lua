@@ -28,6 +28,9 @@ local dispatch = {
   ["tab.close"] = function(p)
     return require("neph.api.buffers").close_tab(p)
   end,
+  ["bus.register"] = function(p)
+    return require("neph.internal.bus").register(p)
+  end,
 }
 
 function M.request(method, params)

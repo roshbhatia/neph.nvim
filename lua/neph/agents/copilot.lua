@@ -5,8 +5,5 @@ return {
   icon = "",
   cmd = "copilot",
   args = { "--allow-all-paths" },
-  integration = {
-    type = "hook",
-    capabilities = { "review", "status", "checktime" },
-  },
+  type = "hook",
 }

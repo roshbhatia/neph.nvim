@@ -5,10 +5,7 @@ return {
   icon = "",
   cmd = "opencode",
   args = { "--continue" },
-  integration = {
-    type = "extension",
-    capabilities = { "review", "status" },
-  },
+  type = "extension",
   tools = {
     symlinks = {
       { src = "opencode/write.ts", dst = "~/.config/opencode/tools/write.ts" },

@@ -8,7 +8,7 @@ describe("neph.contracts", function()
       end)
     end)
 
-    it("accepts a valid agent with all optional fields", function()
+    it("accepts a valid agent with type = extension", function()
       assert.has_no.errors(function()
         contracts.validate_agent({
           name = "pi",
@@ -16,9 +16,26 @@ describe("neph.contracts", function()
           icon = " ",
           cmd = "pi",
           args = { "--continue" },
-          send_adapter = function() end,
-          integration = { type = "extension", capabilities = { "review" } },
+          type = "extension",
         })
+      end)
+    end)
+
+    it("accepts a valid agent with type = hook", function()
+      assert.has_no.errors(function()
+        contracts.validate_agent({
+          name = "claude",
+          label = "Claude",
+          icon = " ",
+          cmd = "claude",
+          type = "hook",
+        })
+      end)
+    end)
+
+    it("throws on invalid type value", function()
+      assert.has_error(function()
+        contracts.validate_agent({ name = "test", label = "Test", icon = " ", cmd = "test", type = "invalid" })
       end)
     end)
 
@@ -46,10 +63,28 @@ describe("neph.contracts", function()
       end, "neph: agent 'test' field 'args' must be table, got string")
     end)
 
-    it("throws on wrong type for optional field 'send_adapter'", function()
+    it("throws on removed field 'send_adapter' with helpful message", function()
       assert.has_error(function()
-        contracts.validate_agent({ name = "test", label = "Test", icon = " ", cmd = "test", send_adapter = "bad" })
-      end, "neph: agent 'test' field 'send_adapter' must be function, got string")
+        contracts.validate_agent({
+          name = "test",
+          label = "Test",
+          icon = " ",
+          cmd = "test",
+          send_adapter = function() end,
+        })
+      end)
+    end)
+
+    it("throws on removed field 'integration' with helpful message", function()
+      assert.has_error(function()
+        contracts.validate_agent({
+          name = "test",
+          label = "Test",
+          icon = " ",
+          cmd = "test",
+          integration = { type = "extension" },
+        })
+      end)
     end)
 
     it("ignores unknown fields", function()

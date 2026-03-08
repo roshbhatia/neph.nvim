@@ -86,7 +86,7 @@ lua/neph/
 │   ├── all.lua           # Re-exports all 10 agents
 │   ├── claude.lua        # Claude agent definition
 │   ├── goose.lua         # Goose agent definition
-│   ├── pi.lua            # Pi agent (with send_adapter + tools manifest)
+│   ├── pi.lua            # Pi agent (type=extension, with tools manifest)
 │   └── ...               # amp, codex, copilot, crush, cursor, gemini, opencode
 ├── backends/             # Backend modules (injected via setup)
 │   ├── snacks.lua        # snacks.nvim terminal backend
@@ -100,12 +100,14 @@ lua/neph/
 │       └── ui.lua        # Neovim UI layer (signs, picker)
 └── internal/             # Private implementation
     ├── agents.lua        # Agent accessor (thin wrapper over injected defs)
+    ├── bus.lua           # Agent bus (persistent msgpack-rpc channel registry)
     ├── contracts.lua     # Contract validation (agents, backends, tools)
     ├── completion.lua    # Cmdline completion
     ├── context.lua       # Editor state helpers
     ├── file_refresh.lua  # Auto-reload changed files
     ├── history.lua       # Prompt history
     ├── input.lua         # Input popup
+    ├── log.lua           # Debug logger (writes to /tmp/neph-debug.log)
     ├── picker.lua        # Agent picker (Snacks.nvim)
     ├── placeholders.lua  # +token expansion
     ├── session.lua       # Terminal session management
@@ -125,10 +127,20 @@ tests/
 └── fake_transport.ts # Mock Neovim transport
 ```
 
+### Shared Library (`tools/lib/`)
+
+```
+neph-client.ts        # NephClient SDK (persistent socket connection to Neovim)
+log.ts                # Debug logger (writes to /tmp/neph-debug.log when NEPH_DEBUG=1)
+tests/
+├── neph-client.test.ts  # NephClient tests
+└── log.test.ts          # Logger tests
+```
+
 ### Pi Extension (`tools/pi/`)
 
 ```
-pi.ts                 # Pi extension that spawns neph CLI
+pi.ts                 # Pi extension using NephClient (persistent connection)
 tests/pi.test.ts      # Extension tests
 ```
 
@@ -161,18 +173,25 @@ const result = await transport.request(
 
 ### 2. Review Protocol (Async, Request-Correlated)
 
-The diff review system is asynchronous and uses temp files + notifications:
+The diff review system is asynchronous. Extension agents call `review.open` directly via RPC; CLI-based agents use temp files + notifications:
 
-1. **CLI** calls `review.open` with `request_id`, `result_path`, `channel_id`
-2. **Neovim** opens diff UI, user makes per-hunk decisions
-3. **Neovim** writes `ReviewEnvelope` JSON to `result_path`
-4. **Neovim** fires `rpcnotify` to `channel_id` to signal completion
-5. **CLI** reads result from `result_path`, prints to stdout
+**Extension agents (via NephClient):**
+1. Agent calls `neph.review(filePath, content)` which invokes `review.open` RPC
+2. Neovim opens diff UI, user makes per-hunk decisions
+3. RPC returns `ReviewEnvelope` directly to the caller
+
+**CLI agents (via neph CLI):**
+1. CLI calls `review.open` with `request_id`, `result_path`, `channel_id`
+2. Neovim opens diff UI, user makes per-hunk decisions
+3. Neovim writes `ReviewEnvelope` JSON to `result_path`
+4. Neovim fires `rpcnotify` to `channel_id` to signal completion
+5. CLI reads result from `result_path`, prints to stdout
 
 **Key files:**
 - `lua/neph/api/review/engine.lua` – Pure hunk computation logic
 - `lua/neph/api/review/ui.lua` – Snacks.picker integration
-- `tools/neph-cli/src/index.ts:runCommand('review')` – CLI orchestration
+- `tools/lib/neph-client.ts:review()` – Extension agent review path
+- `tools/neph-cli/src/index.ts:runCommand('review')` – CLI review path
 
 ### 3. Review Engine vs. UI Split
 
@@ -198,10 +217,7 @@ return {
   icon = "",
   cmd = "claude",
   args = { "--permission-mode", "plan" },
-  integration = {
-    type = "hook",
-    capabilities = { "review", "status", "checktime" },
-  },
+  type = "hook",
   tools = {
     merges = {
       { src = "claude/settings.json", dst = "~/.claude/settings.json", key = "hooks" },
@@ -210,11 +226,17 @@ return {
 }
 ```
 
+**Agent types:**
+- **`"extension"`** — Agents with persistent socket connections via the bus (pi, amp, opencode). Prompts are pushed via `vim.rpcnotify`.
+- **`"hook"`** — Agents integrated via config file hooks (claude, gemini, cursor, copilot). No persistent connection.
+- **(no type)** — Terminal-only agents (codex, crush, goose). Prompts are sent directly to the terminal.
+
 **Key points:**
 - Agents are injected via `setup({ agents = { ... } })` — no hardcoded list
 - `contracts.validate_agent()` runs at setup time — invalid agents fail loud
 - `full_cmd` is computed lazily by `internal/agents.lua` only for installed agents
 - `all.lua` re-exports all 10 built-in agents as a convenience
+- The `type` field determines send routing: extension agents use the bus, others use the terminal
 
 ### 5. Context Placeholders
 
@@ -238,9 +260,29 @@ end
 - `+diff` – `git diff` for current file
 - `+buffers`, `+quickfix`, `+loclist`, `+folder`, `+marks`, `+search` – Neovim state
 
-### 6. Socket Integration
+### 6. Agent Bus (Persistent Connections)
 
-Neph forwards `$NVIM_SOCKET_PATH` to every agent terminal. The `neph` CLI uses this to discover and connect back to Neovim.
+Extension agents (type `"extension"`) maintain persistent msgpack-rpc connections to Neovim via the agent bus (`lua/neph/internal/bus.lua`).
+
+**Architecture:**
+1. Agent process starts and calls `attach({ socket: NVIM_SOCKET_PATH })` using the `neovim` npm package
+2. Agent calls `nvim_get_api_info()` to get its channel ID
+3. Agent registers with the bus via `executeLua('return require("neph.rpc").request(...)', ["bus.register", { name, channel }])`
+4. Neovim pushes prompts to the agent via `vim.rpcnotify(channel, "neph:prompt", text)`
+5. Agent sends status updates and reviews via direct RPC calls (no CLI spawning)
+
+**Health monitoring:** A 1-second timer detects dead channels via `pcall(vim.rpcnotify, ch, "neph:ping")`. Dead channels are automatically unregistered.
+
+**NephClient SDK:** `tools/lib/neph-client.ts` provides the TypeScript client with auto-reconnect (exponential backoff, 100ms → 5s cap).
+
+**Key files:**
+- `lua/neph/internal/bus.lua` – Channel registry and health monitoring
+- `tools/lib/neph-client.ts` – TypeScript client SDK
+- `tools/pi/pi.ts` – Reference extension agent implementation
+
+### 7. Socket Integration
+
+Neph forwards `$NVIM_SOCKET_PATH` to every agent terminal. Extension agents use this to establish persistent connections via the bus. The `neph` CLI also uses this for one-off RPC calls.
 
 **Discovery:** `tools/neph-cli/src/transport.ts:discoverNvimSocket()`
 
@@ -251,7 +293,7 @@ Neph forwards `$NVIM_SOCKET_PATH` to every agent terminal. The `neph` CLI uses t
 // 3. Glob search in /tmp/nvim.*/0
 ```
 
-### 7. Dry-Run Mode
+### 8. Dry-Run Mode
 
 Set `NEPH_DRY_RUN=1` to auto-accept all review hunks (for non-interactive CI/testing).
 
@@ -702,19 +744,21 @@ npm test -- tests/commands.test.ts
 
 ### Debugging RPC Calls
 
-**Enable logging in CLI:**
+**Built-in debug logging:** Neph has a unified debug log at `/tmp/neph-debug.log`.
 
 ```bash
-# Add to tools/neph-cli/src/index.ts
-console.error(`[DEBUG] Calling ${method} with params:`, params);
+# Enable Lua-side logging
+:NephDebug on
+
+# Enable TypeScript-side logging
+export NEPH_DEBUG=1
+
+# Tail the log
+:NephDebug tail
+# or: tail -f /tmp/neph-debug.log
 ```
 
-**Enable logging in Lua:**
-
-```lua
--- Add to lua/neph/rpc.lua
-vim.notify(vim.inspect({ method = method, params = params }), vim.log.levels.DEBUG)
-```
+Both Lua (`lua/neph/internal/log.lua`) and TypeScript (`tools/lib/log.ts`) write timestamped entries to the same file. Entries include module name and `[lua]`/`[ts]` tag for filtering.
 
 ### Testing Review Flow Manually
 

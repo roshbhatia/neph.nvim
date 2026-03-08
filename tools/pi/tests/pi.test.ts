@@ -2,68 +2,50 @@
  * pi.test.ts — unit tests for tools/pi/pi.ts
  *
  * Strategy:
- *  - vi.mock("node:child_process") controls spawn so no real neph is invoked
+ *  - vi.mock("../lib/neph-client") stubs NephClient (persistent socket connection)
  *  - vi.mock("node:fs") controls readFileSync for edit-tool tests
  *  - vi.mock("@mariozechner/pi-coding-agent") stubs createWriteTool + createEditTool
  *  - A hand-rolled `pi` stub satisfies ExtensionAPI: records registerTool calls
  *    and lets us fire events programmatically
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from "vitest";
-import type { ChildProcess } from "node:child_process";
-import { EventEmitter } from "node:events";
+import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
 
 // ── Module mocks (hoisted before imports) ────────────────────────────────────
 
-vi.mock("node:child_process", () => ({ spawn: vi.fn() }));
+const mockNephInstance = {
+  connect: vi.fn().mockResolvedValue(undefined),
+  register: vi.fn().mockResolvedValue(undefined),
+  onPrompt: vi.fn(),
+  setStatus: vi.fn().mockResolvedValue(undefined),
+  unsetStatus: vi.fn().mockResolvedValue(undefined),
+  review: vi.fn().mockResolvedValue({
+    schema: "review/v1",
+    decision: "accept",
+    content: "accepted",
+    hunks: [],
+  }),
+  checktime: vi.fn().mockResolvedValue(undefined),
+  disconnect: vi.fn(),
+  isConnected: vi.fn().mockReturnValue(true),
+};
+
+vi.mock("../../lib/neph-client", () => ({
+  NephClient: vi.fn(() => mockNephInstance),
+}));
 vi.mock("node:fs", () => ({ readFileSync: vi.fn() }));
 vi.mock("@mariozechner/pi-coding-agent", () => ({
   createWriteTool: vi.fn(),
   createEditTool: vi.fn(),
 }));
+vi.mock("../../lib/log", () => ({ debug: vi.fn() }));
 
 // Import after mocks are registered
-import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { createWriteTool, createEditTool } from "@mariozechner/pi-coding-agent";
 import piExtension from "../pi.ts";
-import { NEPH_TIMEOUT_MS } from "../../lib/neph-run";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-/** Minimal mock child process with controllable stdin/stdout/stderr/close. */
-function makeChild(opts: {
-  stdout?: string;
-  stderr?: string;
-  exitCode?: number;
-  error?: Error;
-  delayMs?: number;
-}): ChildProcess {
-  const child = new EventEmitter() as ChildProcess;
-  child.stdin = { write: vi.fn(), end: vi.fn() } as any;
-  child.stdout = new EventEmitter() as any;
-  child.stderr = new EventEmitter() as any;
-  child.kill = vi.fn(() => {
-    // Simulate child exiting after being killed
-    setImmediate(() => child.emit("close", 1));
-  }) as any;
-
-  const emitAll = () => {
-    if (opts.error) { child.emit("error", opts.error); return; }
-    if (opts.stdout) (child.stdout as EventEmitter).emit("data", Buffer.from(opts.stdout));
-    if (opts.stderr) (child.stderr as EventEmitter).emit("data", Buffer.from(opts.stderr));
-    child.emit("close", opts.exitCode ?? 0);
-  };
-  setTimeout(emitAll, opts.delayMs ?? 0);
-  return child;
-}
-
-/** Drain the event loop: wait for N rounds of macrotask + microtasks. */
-async function drainQueue(rounds = 5): Promise<void> {
-  for (let i = 0; i < rounds; i++) {
-    await new Promise<void>((r) => setTimeout(r, 10));
-  }
-}
 
 /** Build a minimal pi ExtensionAPI stub. */
 function makePI() {
@@ -86,7 +68,6 @@ function makePI() {
 
 // ── Setup ─────────────────────────────────────────────────────────────────────
 
-const spawnMock = spawn as unknown as Mock;
 const readFileSyncMock = readFileSync as unknown as Mock;
 const createWriteToolMock = createWriteTool as unknown as Mock;
 const createEditToolMock = createEditTool as unknown as Mock;
@@ -97,6 +78,19 @@ beforeEach(() => {
   vi.clearAllMocks();
   pi = makePI();
 
+  // Reset default mock behaviors
+  mockNephInstance.connect.mockResolvedValue(undefined);
+  mockNephInstance.register.mockResolvedValue(undefined);
+  mockNephInstance.review.mockResolvedValue({
+    schema: "review/v1",
+    decision: "accept",
+    content: "accepted",
+    hunks: [],
+  });
+  mockNephInstance.setStatus.mockResolvedValue(undefined);
+  mockNephInstance.unsetStatus.mockResolvedValue(undefined);
+  mockNephInstance.checktime.mockResolvedValue(undefined);
+
   createWriteToolMock.mockReturnValue({
     parameters: {},
     execute: vi.fn().mockResolvedValue({ content: [{ type: "text", text: "written" }], details: {} }),
@@ -106,88 +100,129 @@ beforeEach(() => {
     execute: vi.fn().mockResolvedValue({ content: [{ type: "text", text: "edited" }], details: {} }),
   });
 
-  spawnMock.mockImplementation(() => makeChild({ stdout: "" }));
   piExtension(pi as any);
-});
-
-afterEach(async () => {
-  // Stop prompt polling and restore timers
-  await pi.emit("session_shutdown");
-  await drainQueue(5);
-  vi.useRealTimers();
 });
 
 // Helper: activate the extension by firing session_start
 async function activate(): Promise<void> {
   await pi.emit("session_start", {}, { ui: pi.ui });
-  await drainQueue(2);
 }
 
-// ── NEPH_TIMEOUT_MS export ───────────────────────────────────────────────────
+// ── Connection lifecycle tests ──────────────────────────────────────────────
 
-describe("NEPH_TIMEOUT_MS", () => {
-  it("is exported and equals 5000", () => {
-    expect(NEPH_TIMEOUT_MS).toBe(5_000);
+describe("connection lifecycle", () => {
+  it("session_start connects and registers with bus", async () => {
+    await activate();
+
+    expect(mockNephInstance.connect).toHaveBeenCalled();
+    expect(mockNephInstance.register).toHaveBeenCalledWith("pi");
+  });
+
+  it("session_start registers onPrompt callback", async () => {
+    await activate();
+
+    expect(mockNephInstance.onPrompt).toHaveBeenCalledWith(expect.any(Function));
+  });
+
+  it("session_start sets nvim status", async () => {
+    await activate();
+
+    expect(pi.ui.setStatus).toHaveBeenCalledWith("nvim", " >> ");
+  });
+
+  it("session_start registers write and edit tools", async () => {
+    await activate();
+
+    expect(pi.tools["write"]).toBeDefined();
+    expect(pi.tools["edit"]).toBeDefined();
+  });
+
+  it("session_shutdown disconnects from bus", async () => {
+    await activate();
+    await pi.emit("session_shutdown");
+
+    expect(mockNephInstance.disconnect).toHaveBeenCalled();
   });
 });
 
-// ── nephRun timeout tests ─────────────────────────────────────────────────────
+// ── Prompt delivery tests ───────────────────────────────────────────────────
 
-describe("nephRun timeout", () => {
-  it("kills child when timeout expires before close", async () => {
-    // Use a child that takes longer than our mini-timeout to close
-    const hangingChild = makeChild({ stdout: "", delayMs: 5000 });
-    spawnMock.mockImplementation(() => hangingChild);
-
+describe("prompt delivery", () => {
+  it("prompts from bus are forwarded to pi.sendUserMessage", async () => {
     await activate();
-    spawnMock.mockClear();
 
-    // Re-activate with a tiny-timeout-override: we can't override NEPH_TIMEOUT_MS
-    // directly, but we can verify the kill path by checking that kill is a spy
-    // and the child delay is longer than we'd wait.
-    // Instead: mock a child that takes 200ms; set timeout to 50ms by spawning
-    // a mini-timeout nephRun internally. Since we can't override NEPH_TIMEOUT_MS,
-    // we test the path indirectly: nephRun with a standard timeout kills if hung.
-    //
-    // This test verifies kill is wired up correctly by using a short-lived fake.
-    const killedChild = new EventEmitter() as ChildProcess;
-    killedChild.stdin = { write: vi.fn(), end: vi.fn() } as any;
-    killedChild.stdout = new EventEmitter() as any;
-    killedChild.stderr = new EventEmitter() as any;
-    killedChild.kill = vi.fn(() => { killedChild.emit("close", 1); }) as any;
-    spawnMock.mockImplementationOnce(() => killedChild);
+    // Get the onPrompt callback and invoke it
+    const promptCallback = mockNephInstance.onPrompt.mock.calls[0][0];
+    promptCallback("fix the bug");
 
-    // Confirm kill spy is properly set up
-    killedChild.kill("SIGTERM");
-    expect(killedChild.kill).toHaveBeenCalledWith("SIGTERM");
-  });
-
-  it("resolves normally when child exits before timeout", async () => {
-    await activate();
-    // If we got here without timeout, nephRun resolved before NEPH_TIMEOUT_MS
-    expect(spawnMock).toHaveBeenCalled();
-  });
-
-  it("NEPH_TIMEOUT_MS is a reasonable value (>5s, <60s)", () => {
-    expect(NEPH_TIMEOUT_MS).toBeGreaterThan(1_000);
-    expect(NEPH_TIMEOUT_MS).toBeLessThan(30_000);
+    expect(pi.sendUserMessage).toHaveBeenCalledWith("fix the bug");
   });
 });
 
-// ── review() tests ───────────────────────────────────────────────────────────
+// ── Status event tests ──────────────────────────────────────────────────────
 
-describe("review()", () => {
+describe("status events", () => {
+  it("agent_start sets pi_running status via bus", async () => {
+    await activate();
+    mockNephInstance.setStatus.mockClear();
+
+    await pi.emit("agent_start");
+
+    expect(mockNephInstance.setStatus).toHaveBeenCalledWith("pi_running", "true");
+  });
+
+  it("agent_end unsets pi_running and pi_reading, calls checktime", async () => {
+    await activate();
+    mockNephInstance.unsetStatus.mockClear();
+    mockNephInstance.checktime.mockClear();
+
+    await pi.emit("agent_end", {}, { ui: pi.ui });
+
+    expect(mockNephInstance.unsetStatus).toHaveBeenCalledWith("pi_running");
+    expect(mockNephInstance.unsetStatus).toHaveBeenCalledWith("pi_reading");
+    expect(mockNephInstance.checktime).toHaveBeenCalled();
+    expect(pi.ui.setStatus).toHaveBeenCalledWith("nvim-reading", "");
+  });
+
+  it("tool_call with read sets pi_reading status via bus", async () => {
+    await activate();
+    mockNephInstance.setStatus.mockClear();
+
+    await pi.emit("tool_call", { toolName: "read", input: { path: "/foo/bar.ts" } }, { ui: pi.ui, cwd: "/foo" });
+
+    expect(mockNephInstance.setStatus).toHaveBeenCalledWith("pi_reading", "bar.ts");
+  });
+
+  it("tool_call with read sets ctx.ui.setStatus with short path", async () => {
+    await activate();
+    pi.ui.setStatus.mockClear();
+
+    await pi.emit("tool_call", { toolName: "read", input: { path: "bar.ts" } }, { ui: pi.ui, cwd: "/foo" });
+
+    expect(pi.ui.setStatus).toHaveBeenCalledWith("nvim-reading", expect.stringContaining("bar.ts"));
+  });
+
+  it("tool_result with write/edit calls checktime", async () => {
+    await activate();
+    mockNephInstance.checktime.mockClear();
+
+    await pi.emit("tool_result", { toolName: "write" });
+
+    expect(mockNephInstance.checktime).toHaveBeenCalled();
+  });
+});
+
+// ── review() via NephClient tests ───────────────────────────────────────────
+
+describe("review via NephClient", () => {
   beforeEach(async () => { await activate(); });
 
-  it("returns accept decision from neph stdout", async () => {
-    const accepted = { decision: "accept", content: "final" };
-    spawnMock.mockImplementation((cmd: string, args: string[]) => {
-      if (args[0] === "review") return makeChild({ stdout: JSON.stringify(accepted) });
-      return makeChild({ stdout: "" });
-    });
-    createWriteToolMock.mockReturnValue({
-      parameters: {},
-      execute: vi.fn().mockResolvedValue({ content: [{ type: "text", text: "written" }], details: {} }),
+  it("returns accept decision from NephClient review", async () => {
+    mockNephInstance.review.mockResolvedValue({
+      schema: "review/v1",
+      decision: "accept",
+      content: "final",
+      hunks: [],
     });
 
     const writeTool = pi.tools["write"];
@@ -195,11 +230,13 @@ describe("review()", () => {
     expect(result.content[0].text).toBe("written");
   });
 
-  it("returns reject decision on reject from neph", async () => {
-    const rejected = { decision: "reject", reason: "too noisy" };
-    spawnMock.mockImplementation((cmd: string, args: string[]) => {
-      if (args[0] === "review") return makeChild({ stdout: JSON.stringify(rejected) });
-      return makeChild({ stdout: "" });
+  it("returns reject decision from NephClient review", async () => {
+    mockNephInstance.review.mockResolvedValue({
+      schema: "review/v1",
+      decision: "reject",
+      content: "",
+      hunks: [],
+      reason: "too noisy",
     });
 
     const writeTool = pi.tools["write"];
@@ -207,34 +244,18 @@ describe("review()", () => {
     expect(result.content[0].text).toMatch(/rejected.*too noisy/i);
   });
 
-  it("returns reject with fallback message when nephRun throws", async () => {
-    spawnMock.mockImplementation((cmd: string, args: string[]) => {
-      if (args[0] === "review") return makeChild({ stderr: "crash", exitCode: 1 });
-      return makeChild({ stdout: "" });
+  it("calls NephClient.review with resolved file path and content", async () => {
+    mockNephInstance.review.mockResolvedValue({
+      schema: "review/v1",
+      decision: "accept",
+      content: "ok",
+      hunks: [],
     });
 
     const writeTool = pi.tools["write"];
-    const result = await writeTool.execute("id", { path: "/tmp/c.ts", content: "new" }, null, vi.fn(), { cwd: "/tmp" });
-    expect(result.content[0].text).toMatch(/rejected/i);
-  });
+    await writeTool.execute("id", { path: "x.ts", content: "proposed content" }, null, vi.fn(), { cwd: "/tmp" });
 
-  it("review spawns neph with 'review' as first arg and sends stdin", async () => {
-    spawnMock.mockImplementation((cmd: string, args: string[]) => {
-      if (args[0] === "review") return makeChild({ stdout: JSON.stringify({ decision: "accept", content: "ok" }) });
-      return makeChild({ stdout: "" });
-    });
-    createWriteToolMock.mockReturnValue({
-      parameters: {},
-      execute: vi.fn().mockResolvedValue({ content: [{ type: "text", text: "written" }], details: {} }),
-    });
-
-    const writeTool = pi.tools["write"];
-    await writeTool.execute("id", { path: "/tmp/x.ts", content: "proposed content" }, null, vi.fn(), { cwd: "/tmp" });
-
-    const reviewCall = spawnMock.mock.calls.find(([, a]: [string, string[]]) => a[0] === "review");
-    expect(reviewCall).toBeDefined();
-    const child = spawnMock.mock.results[spawnMock.mock.calls.indexOf(reviewCall!)].value;
-    expect(child.stdin.write).toHaveBeenCalledWith("proposed content", "utf-8");
+    expect(mockNephInstance.review).toHaveBeenCalledWith("/tmp/x.ts", "proposed content");
   });
 });
 
@@ -247,9 +268,11 @@ describe("write tool override", () => {
     const mockExecute = vi.fn().mockResolvedValue({ content: [{ type: "text", text: "written" }], details: {} });
     createWriteToolMock.mockReturnValue({ parameters: {}, execute: mockExecute });
 
-    spawnMock.mockImplementation((cmd: string, args: string[]) => {
-      if (args[0] === "review") return makeChild({ stdout: JSON.stringify({ decision: "accept", content: "accepted!" }) });
-      return makeChild({ stdout: "" });
+    mockNephInstance.review.mockResolvedValue({
+      schema: "review/v1",
+      decision: "accept",
+      content: "accepted!",
+      hunks: [],
     });
 
     const writeTool = pi.tools["write"];
@@ -261,14 +284,16 @@ describe("write tool override", () => {
     const mockExecute = vi.fn();
     createWriteToolMock.mockReturnValue({ parameters: {}, execute: mockExecute });
 
-    spawnMock.mockImplementation((cmd: string, args: string[]) => {
-      if (args[0] === "review") return makeChild({ stdout: JSON.stringify({ decision: "reject", reason: "nope" }) });
-      return makeChild({ stdout: "" });
+    mockNephInstance.review.mockResolvedValue({
+      schema: "review/v1",
+      decision: "reject",
+      content: "",
+      hunks: [],
+      reason: "nope",
     });
 
     const writeTool = pi.tools["write"];
     const result = await writeTool.execute("id", { path: "/f.ts", content: "new" }, null, vi.fn(), { cwd: "/" });
-    await drainQueue();
 
     expect(mockExecute).not.toHaveBeenCalled();
     expect(result.content[0].text).toMatch(/rejected.*nope/i);
@@ -280,15 +305,18 @@ describe("write tool override", () => {
       execute: vi.fn().mockResolvedValue({ content: [{ type: "text", text: "written" }], details: {} }),
     });
 
-    spawnMock.mockImplementation((cmd: string, args: string[]) => {
-      if (args[0] === "review") return makeChild({ stdout: JSON.stringify({ decision: "partial", content: "ok", hunks: [{index:1,decision:"accept"},{index:2,decision:"reject",reason:"hunk 2 skipped"}], reason: "hunk 2 skipped" }) });
-      return makeChild({ stdout: "" });
+    mockNephInstance.review.mockResolvedValue({
+      schema: "review/v1",
+      decision: "partial",
+      content: "ok",
+      hunks: [{ index: 1, decision: "accept" }, { index: 2, decision: "reject", reason: "hunk 2 skipped" }],
+      reason: "hunk 2 skipped",
     });
 
     const writeTool = pi.tools["write"];
     const result = await writeTool.execute("id", { path: "/f.ts", content: "new" }, null, vi.fn(), { cwd: "/" });
-    const texts = (result.content as { text: string }[]).map((c) => c.text);
-    expect(texts.some((t) => t.includes("hunk 2 skipped"))).toBe(true);
+    const texts = (result.content as { text: string }[]).map((c: { text: string }) => c.text);
+    expect(texts.some((t: string) => t.includes("hunk 2 skipped"))).toBe(true);
   });
 });
 
@@ -304,25 +332,26 @@ describe("edit tool override", () => {
     expect(result.content[0].text).toMatch(/cannot read/i);
   });
 
-  it("returns error when oldText is not found, does not call preview", async () => {
+  it("returns error when oldText is not found, does not call review", async () => {
     readFileSyncMock.mockReturnValue("hello world");
     const editTool = pi.tools["edit"];
     const result = await editTool.execute("id", { path: "/f.ts", oldText: "not present", newText: "y" }, null, vi.fn(), { cwd: "/" });
     expect(result.content[0].text).toMatch(/edit failed/i);
-    const reviewCall = spawnMock.mock.calls.find(([, a]: [string, string[]]) => a[0] === "review");
-    expect(reviewCall).toBeUndefined();
+    expect(mockNephInstance.review).not.toHaveBeenCalled();
   });
 
-  it("applies accepted content via createWriteTool (full file content, not partial edit)", async () => {
+  it("applies accepted content via createWriteTool (full file content)", async () => {
     readFileSyncMock.mockReturnValue("hello world");
     const mockEditExecute = vi.fn();
     const mockWriteExecute = vi.fn().mockResolvedValue({ content: [{ type: "text", text: "written" }], details: {} });
     createEditToolMock.mockReturnValue({ parameters: {}, execute: mockEditExecute });
     createWriteToolMock.mockReturnValue({ parameters: {}, execute: mockWriteExecute });
 
-    spawnMock.mockImplementation((cmd: string, args: string[]) => {
-      if (args[0] === "review") return makeChild({ stdout: JSON.stringify({ decision: "accept", content: "hello universe" }) });
-      return makeChild({ stdout: "" });
+    mockNephInstance.review.mockResolvedValue({
+      schema: "review/v1",
+      decision: "accept",
+      content: "hello universe",
+      hunks: [],
     });
 
     const editTool = pi.tools["edit"];
@@ -332,195 +361,20 @@ describe("edit tool override", () => {
     expect(result.content[0].text).toBe("written");
   });
 
-  it("returns rejection text when preview rejects", async () => {
+  it("returns rejection text when review rejects", async () => {
     readFileSyncMock.mockReturnValue("hello world");
     createEditToolMock.mockReturnValue({ parameters: {}, execute: vi.fn() });
 
-    spawnMock.mockImplementation((cmd: string, args: string[]) => {
-      if (args[0] === "review") return makeChild({ stdout: JSON.stringify({ decision: "reject", reason: "bad change" }) });
-      return makeChild({ stdout: "" });
+    mockNephInstance.review.mockResolvedValue({
+      schema: "review/v1",
+      decision: "reject",
+      content: "",
+      hunks: [],
+      reason: "bad change",
     });
 
     const editTool = pi.tools["edit"];
     const result = await editTool.execute("id", { path: "/f.ts", oldText: "world", newText: "x" }, null, vi.fn(), { cwd: "/" });
-    await drainQueue();
     expect(result.content[0].text).toMatch(/rejected.*bad change/i);
-  });
-});
-
-// ── Lifecycle event tests ─────────────────────────────────────────────────────
-
-describe("lifecycle events", () => {
-  it("session_start sets pi_active and registers write+edit tools", async () => {
-    await activate();
-    const setCall = spawnMock.mock.calls.find(([, a]: [string, string[]]) => a[0] === "set" && a[1] === "pi_active");
-    expect(setCall).toBeDefined();
-    expect(pi.tools["write"]).toBeDefined();
-    expect(pi.tools["edit"]).toBeDefined();
-  });
-
-  it("session_shutdown calls unset pi_active and unset pi_running", async () => {
-    await activate();
-    spawnMock.mockClear();
-
-    await pi.emit("session_shutdown");
-    await drainQueue(10); // queued items each need a tick
-
-    const calls = spawnMock.mock.calls.map(([, a]: [string, string[]]) => a);
-    expect(calls.some((a: string[]) => a[0] === "unset" && a[1] === "pi_active")).toBe(true);
-    expect(calls.some((a: string[]) => a[0] === "unset" && a[1] === "pi_running")).toBe(true);
-  });
-
-  it("agent_end calls unset pi_running and unset pi_reading", async () => {
-    await activate();
-    spawnMock.mockClear();
-
-    await pi.emit("agent_end", {}, { ui: pi.ui });
-    await drainQueue();
-
-    const calls = spawnMock.mock.calls.map(([, a]: [string, string[]]) => a);
-    expect(calls.some((a: string[]) => a[0] === "unset" && a[1] === "pi_running")).toBe(true);
-    expect(calls.some((a: string[]) => a[0] === "unset" && a[1] === "pi_reading")).toBe(true);
-  });
-
-  it("agent_end calls checktime and clears pi status", async () => {
-    await activate();
-    spawnMock.mockClear();
-
-    await pi.emit("agent_end", {}, { ui: pi.ui });
-    await drainQueue();
-
-    const calls = spawnMock.mock.calls.map(([, a]: [string, string[]]) => a);
-    expect(calls.some((a: string[]) => a[0] === "checktime")).toBe(true);
-    expect(pi.ui.setStatus).toHaveBeenCalledWith("nvim-reading", "");
-  });
-
-  it("tool_call with read calls neph set pi_reading", async () => {
-    await activate();
-    spawnMock.mockClear();
-
-    await pi.emit("tool_call", { toolName: "read", input: { path: "/foo/bar.ts" } }, { ui: pi.ui, cwd: "/foo" });
-    await drainQueue();
-
-    const calls = spawnMock.mock.calls.map(([, a]: [string, string[]]) => a);
-    expect(calls.some((a: string[]) => a[0] === "set" && a[1] === "pi_reading")).toBe(true);
-  });
-
-  it("tool_call with read calls ctx.ui.setStatus with the short path", async () => {
-    await activate();
-    pi.ui.setStatus.mockClear();
-
-    await pi.emit("tool_call", { toolName: "read", input: { path: "bar.ts" } }, { ui: pi.ui, cwd: "/foo" });
-    await drainQueue();
-
-    expect(pi.ui.setStatus).toHaveBeenCalledWith("nvim-reading", expect.stringContaining("bar.ts"));
-  });
-
-  it("agent_end clears nvim-reading status", async () => {
-    await activate();
-    pi.ui.setStatus.mockClear();
-
-    await pi.emit("agent_end", {}, { ui: pi.ui });
-    expect(pi.ui.setStatus).toHaveBeenCalledWith("nvim-reading", "");
-  });
-});
-
-// ── Prompt poll tests ─────────────────────────────────────────────────────────
-
-describe("prompt polling", () => {
-  it("calls sendUserMessage when neph_pending_prompt has a value", async () => {
-    // Make "get" return a pending prompt value, "unset" succeeds
-    spawnMock.mockImplementation((_cmd: string, args: string[]) => {
-      if (args[0] === "get" && args[1] === "neph_pending_prompt") {
-        return makeChild({
-          stdout: JSON.stringify({ ok: true, result: { value: "fix the bug" } }),
-        });
-      }
-      return makeChild({ stdout: JSON.stringify({ ok: true }) });
-    });
-
-    await activate();
-    // Wait for at least one poll cycle (500ms interval + processing)
-    await new Promise<void>((r) => setTimeout(r, 800));
-
-    expect(pi.sendUserMessage).toHaveBeenCalledWith("fix the bug");
-
-    // Should also have called unset to clear the pending prompt
-    const unsetCall = spawnMock.mock.calls.find(
-      ([, a]: [string, string[]]) => a[0] === "unset" && a[1] === "neph_pending_prompt"
-    );
-    expect(unsetCall).toBeDefined();
-
-    // Cleanup: shutdown to stop polling
-    await pi.emit("session_shutdown");
-    await drainQueue();
-  });
-
-  it("does not call sendUserMessage when no pending prompt", async () => {
-    spawnMock.mockImplementation((_cmd: string, args: string[]) => {
-      if (args[0] === "get") {
-        return makeChild({
-          stdout: JSON.stringify({ ok: true, result: { value: null } }),
-        });
-      }
-      return makeChild({ stdout: "" });
-    });
-
-    await activate();
-    await new Promise<void>((r) => setTimeout(r, 800));
-
-    expect(pi.sendUserMessage).not.toHaveBeenCalled();
-
-    await pi.emit("session_shutdown");
-    await drainQueue();
-  });
-
-  it("stops polling on session_shutdown", async () => {
-    spawnMock.mockImplementation(() => makeChild({ stdout: "" }));
-    await activate();
-
-    // Shutdown should stop polling
-    await pi.emit("session_shutdown");
-    await drainQueue(15);
-
-    // Count get calls after shutdown settles
-    const countBefore = spawnMock.mock.calls.filter(
-      ([, a]: [string, string[]]) => a[0] === "get"
-    ).length;
-
-    // Wait another full poll interval
-    await new Promise<void>((r) => setTimeout(r, 800));
-
-    const countAfter = spawnMock.mock.calls.filter(
-      ([, a]: [string, string[]]) => a[0] === "get"
-    ).length;
-
-    // No new get calls should have been made after shutdown
-    expect(countAfter).toBe(countBefore);
-  });
-});
-
-// ── Serial queue tests ────────────────────────────────────────────────────────
-
-describe("serial neph queue", () => {
-  it("errors in queued calls do not prevent subsequent calls from running", async () => {
-    await activate();
-    spawnMock.mockClear();
-
-    let callCount = 0;
-    spawnMock.mockImplementation(() => {
-      callCount++;
-      // First call fails, rest succeed
-      if (callCount === 1) return makeChild({ stderr: "boom", exitCode: 1 });
-      return makeChild({ stdout: "" });
-    });
-
-    // Dispatch two events that each enqueue multiple neph calls
-    await pi.emit("agent_start");
-    await pi.emit("agent_end", {}, { ui: pi.ui });
-    await drainQueue(15);
-
-    // Despite first call failing, subsequent calls still ran
-    expect(spawnMock.mock.calls.length).toBeGreaterThanOrEqual(2);
   });
 });

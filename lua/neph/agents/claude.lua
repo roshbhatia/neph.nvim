@@ -5,10 +5,7 @@ return {
   icon = "",
   cmd = "claude",
   args = { "--permission-mode", "plan" },
-  integration = {
-    type = "hook",
-    capabilities = { "review", "status", "checktime" },
-  },
+  type = "hook",
   tools = {
     merges = {
       { src = "claude/settings.json", dst = "~/.claude/settings.json", key = "hooks" },

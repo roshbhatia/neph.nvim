@@ -59,13 +59,17 @@ function M.setup(opts, backend_mod)
     vim.api.nvim_create_autocmd("VimLeavePre", {
       group = augroup,
       callback = function()
-        -- Clear vim.g state for terminal-only agents
+        -- Clear vim.g state for terminal-only agents (extension agents are managed by bus)
         for name in pairs(terminals) do
           local agent = require("neph.internal.agents").get_by_name(name)
-          if agent and not agent.integration then
+          if agent and not agent.type then
             vim.g[name .. "_active"] = nil
           end
         end
+        -- Clean up the agent bus
+        pcall(function()
+          require("neph.internal.bus").cleanup_all()
+        end)
         backend.cleanup_all(terminals)
         -- Clean up all pending timers
         for name, pt in pairs(pending_timers) do
@@ -112,8 +116,8 @@ function M.open(termname)
   if td then
     terminals[termname] = td
     active_terminal = termname
-    -- Terminal-only agents: set vim.g state (hook/extension agents manage their own)
-    if not agent.integration then
+    -- Terminal-only agents: set vim.g state (extension agents are managed by bus)
+    if not agent.type then
       vim.g[termname .. "_active"] = true
     end
   end
@@ -192,12 +196,12 @@ function M.kill_session(termname)
   end
   -- Terminal-only agents: clear vim.g state
   local agent = require("neph.internal.agents").get_by_name(termname)
-  if agent and not agent.integration then
+  if agent and not agent.type then
     vim.g[termname .. "_active"] = nil
   end
-  -- Extension agents with send_adapter: clear pending prompt
-  if agent and agent.send_adapter then
-    vim.g.neph_pending_prompt = nil
+  -- Extension agents: unregister from bus
+  if agent and agent.type == "extension" then
+    require("neph.internal.bus").unregister(termname)
   end
 end
 
@@ -208,18 +212,18 @@ function M.send(termname, text, opts)
     return
   end
 
-  -- Check for agent-specific send adapter
+  -- Extension agents: route through bus if connected
   local agent = require("neph.internal.agents").get_by_name(termname)
-  local adapter = agent and agent.send_adapter
-  if adapter then
-    log.debug("session", "send: %s via adapter (len=%d, submit=%s)", termname, #text, tostring(opts.submit or false))
-    local sent = adapter(td, text, opts)
-    if sent then
+  if agent and agent.type == "extension" then
+    local bus = require("neph.internal.bus")
+    if bus.is_connected(termname) then
+      log.debug("session", "send: %s via bus (len=%d, submit=%s)", termname, #text, tostring(opts.submit or false))
+      bus.send_prompt(termname, text, opts)
       return
     end
-    log.debug("session", "send: %s adapter returned false, falling through", termname)
+    log.debug("session", "send: %s extension not connected, falling through to terminal", termname)
   else
-    log.debug("session", "send: %s via default (len=%d, submit=%s)", termname, #text, tostring(opts.submit or false))
+    log.debug("session", "send: %s via terminal (len=%d, submit=%s)", termname, #text, tostring(opts.submit or false))
   end
 
   -- Default send: WezTerm pane or native terminal via chansend

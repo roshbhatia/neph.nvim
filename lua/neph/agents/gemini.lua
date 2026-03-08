@@ -5,10 +5,7 @@ return {
   icon = "󰊭",
   cmd = "gemini",
   args = {},
-  integration = {
-    type = "hook",
-    capabilities = { "review", "status", "checktime" },
-  },
+  type = "hook",
   tools = {
     merges = {
       { src = "gemini/settings.json", dst = "~/.gemini/settings.json", key = "hooks" },

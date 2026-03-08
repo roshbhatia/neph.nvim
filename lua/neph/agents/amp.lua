@@ -5,10 +5,7 @@ return {
   icon = "󰫤",
   cmd = "amp",
   args = { "--ide" },
-  integration = {
-    type = "extension",
-    capabilities = { "review", "status" },
-  },
+  type = "extension",
   tools = {
     symlinks = {
       { src = "amp/neph-plugin.ts", dst = "~/.config/amp/plugins/neph-plugin.ts" },

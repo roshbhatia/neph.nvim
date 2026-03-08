@@ -17,8 +17,15 @@ local AGENT_REQUIRED_FIELDS = {
 ---@type table<string, string>
 local AGENT_OPTIONAL_FIELDS = {
   args = "table",
-  send_adapter = "function",
-  integration = "table",
+  type = "string",
+}
+
+local VALID_AGENT_TYPES = { extension = true, hook = true }
+
+---@type table<string, string>
+local REMOVED_FIELDS = {
+  send_adapter = "send_adapter is no longer supported; extension agents use the bus for prompt delivery (set type = 'extension' instead)",
+  integration = "integration is no longer supported; use type = 'extension' or type = 'hook' instead",
 }
 
 local BACKEND_REQUIRED_METHODS = { "setup", "open", "focus", "hide", "is_visible", "kill", "cleanup_all" }
@@ -26,6 +33,13 @@ local BACKEND_REQUIRED_METHODS = { "setup", "open", "focus", "hide", "is_visible
 ---@param def table
 function M.validate_agent(def)
   local name = type(def.name) == "string" and def.name or tostring(def.name or "?")
+
+  -- Check for removed fields with helpful errors
+  for field, msg in pairs(REMOVED_FIELDS) do
+    if def[field] ~= nil then
+      error(string.format("neph: agent '%s' — %s", name, msg))
+    end
+  end
 
   for field, expected_type in pairs(AGENT_REQUIRED_FIELDS) do
     if def[field] == nil then
@@ -44,6 +58,13 @@ function M.validate_agent(def)
         string.format("neph: agent '%s' field '%s' must be %s, got %s", name, field, expected_type, type(def[field]))
       )
     end
+  end
+
+  -- Validate type value if present
+  if def.type ~= nil and not VALID_AGENT_TYPES[def.type] then
+    error(
+      string.format("neph: agent '%s' field 'type' must be one of: extension, hook (got '%s')", name, def.type)
+    )
   end
 
   if def.tools ~= nil then
