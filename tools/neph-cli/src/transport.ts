@@ -102,6 +102,6 @@ export class SocketTransport implements NvimTransport {
   }
 
   async close(): Promise<void> {
-    this.client.disconnect();
+    (this.client as any).disconnect();
   }
 }
