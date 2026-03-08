@@ -6,13 +6,18 @@
 
 local M = {}
 
+---@class neph.AgentIntegration
+---@field type     "hook"|"extension"  Integration mechanism
+---@field capabilities string[]         Supported capabilities (e.g. "review", "status", "checktime")
+
 ---@class neph.AgentDef
----@field name     string   Unique identifier (used as terminal key)
----@field label    string   Display name
----@field icon     string   Nerd-font icon
----@field cmd      string   Executable name (looked up via vim.fn.executable)
----@field args     string[] Command-line arguments
----@field full_cmd string   Computed full command string (set at runtime)
+---@field name        string                Unique identifier (used as terminal key)
+---@field label       string                Display name
+---@field icon        string                Nerd-font icon
+---@field cmd         string                Executable name (looked up via vim.fn.executable)
+---@field args        string[]              Command-line arguments
+---@field full_cmd    string                Computed full command string (set at runtime)
+---@field integration neph.AgentIntegration|nil  Hook/extension integration metadata (nil = terminal-only)
 
 ---@type neph.AgentDef[]
 local agents = {
@@ -22,6 +27,7 @@ local agents = {
     icon = "  ",
     cmd = "crush",
     args = {},
+    -- no integration: terminal-only
   },
   {
     name = "opencode",
@@ -31,6 +37,10 @@ local agents = {
     args = {
       "--continue",
     },
+    integration = {
+      type = "extension",
+      capabilities = { "review", "status" },
+    },
   },
   {
     name = "goose",
@@ -38,6 +48,7 @@ local agents = {
     icon = "  ",
     cmd = "goose",
     args = {},
+    -- no integration: terminal-only
   },
   {
     name = "claude",
@@ -45,6 +56,10 @@ local agents = {
     icon = "  ",
     cmd = "claude",
     args = { "--permission-mode", "plan" },
+    integration = {
+      type = "hook",
+      capabilities = { "review", "status", "checktime" },
+    },
   },
   {
     name = "amp",
@@ -52,6 +67,10 @@ local agents = {
     icon = " 󰫤 ",
     cmd = "amp",
     args = { "--ide" },
+    integration = {
+      type = "extension",
+      capabilities = { "review", "status" },
+    },
   },
   {
     name = "cursor",
@@ -59,6 +78,10 @@ local agents = {
     icon = "  ",
     cmd = "cursor-agent",
     args = {},
+    integration = {
+      type = "hook",
+      capabilities = { "status", "checktime" },
+    },
   },
   {
     name = "copilot",
@@ -66,6 +89,10 @@ local agents = {
     icon = "  ",
     cmd = "copilot",
     args = { "--allow-all-paths" },
+    integration = {
+      type = "hook",
+      capabilities = { "review", "status", "checktime" },
+    },
   },
   {
     name = "gemini",
@@ -73,6 +100,10 @@ local agents = {
     icon = " 󰊭 ",
     cmd = "gemini",
     args = {},
+    integration = {
+      type = "hook",
+      capabilities = { "review", "status", "checktime" },
+    },
   },
   {
     name = "codex",
@@ -80,6 +111,7 @@ local agents = {
     icon = " 󱗿 ",
     cmd = "codex",
     args = {},
+    -- no integration: terminal-only
   },
   {
     name = "pi",
@@ -87,6 +119,10 @@ local agents = {
     icon = "  ",
     cmd = "pi",
     args = { "--continue" },
+    integration = {
+      type = "extension",
+      capabilities = { "review", "status", "checktime" },
+    },
   },
 }
 

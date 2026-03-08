@@ -1,0 +1,11 @@
+{
+  "hooks": [
+    {
+      "event": "preToolUse",
+      "filter": {
+        "toolNames": ["edit", "create"]
+      },
+      "command": "neph gate --agent copilot"
+    }
+  ]
+}

@@ -28,12 +28,58 @@ end
 ---@field src  string  Path relative to tools/ inside the plugin root
 ---@field dst  string  Absolute destination path (may use ~)
 
+---@class neph.MergeSpec
+---@field src     string  Path relative to tools/ inside the plugin root
+---@field dst     string  Absolute destination path (may use ~)
+---@field key     string  JSON key to merge
+
 ---@type neph.ToolSpec[]
 local TOOLS = {
   { src = "neph-cli/dist/index.js", dst = "~/.local/bin/neph" },
   { src = "pi/package.json", dst = "~/.pi/agent/extensions/nvim/package.json" },
   { src = "pi/dist", dst = "~/.pi/agent/extensions/nvim/dist" },
+  -- Cursor hooks (symlink — standalone file)
+  { src = "cursor/hooks.json", dst = "~/.cursor/hooks.json" },
+  -- Amp plugin (symlink — single TS file, Bun-based)
+  { src = "amp/neph-plugin.ts", dst = "~/.config/amp/plugins/neph-plugin.ts" },
+  -- OpenCode custom tools (symlink — standalone files)
+  { src = "opencode/write.ts", dst = "~/.config/opencode/tools/write.ts" },
+  { src = "opencode/edit.ts", dst = "~/.config/opencode/tools/edit.ts" },
 }
+
+--- Settings files that need JSON merge (not symlink)
+---@type neph.MergeSpec[]
+local MERGE_TOOLS = {
+  { src = "claude/settings.json", dst = "~/.claude/settings.json", key = "hooks" },
+  { src = "gemini/settings.json", dst = "~/.gemini/settings.json", key = "hooks" },
+}
+
+--- Merge a single key from source JSON into destination JSON file.
+--- If destination doesn't exist, writes the full source content.
+---@param src_path string  Absolute path to source JSON
+---@param dst_path string  Absolute path to destination JSON
+---@param key      string  JSON key to merge
+local function json_merge(src_path, dst_path, key)
+  local src_content = vim.fn.readfile(src_path)
+  if not src_content or #src_content == 0 then return end
+  local src_json = vim.json.decode(table.concat(src_content, "\n"))
+  if not src_json or not src_json[key] then return end
+
+  local dst_json = {}
+  if vim.fn.filereadable(dst_path) == 1 then
+    local dst_content = vim.fn.readfile(dst_path)
+    if dst_content and #dst_content > 0 then
+      local ok, parsed = pcall(vim.json.decode, table.concat(dst_content, "\n"))
+      if ok and parsed then
+        dst_json = parsed
+      end
+    end
+  end
+
+  dst_json[key] = src_json[key]
+  vim.fn.mkdir(vim.fn.fnamemodify(dst_path, ":h"), "p")
+  vim.fn.writefile({ vim.json.encode(dst_json) }, dst_path)
+end
 
 --- Install (symlink) all bundled tools to their canonical locations.
 function M.install()
@@ -50,6 +96,17 @@ function M.install()
     else
       vim.fn.mkdir(vim.fn.fnamemodify(dst, ":h"), "p")
       vim.fn.system({ "ln", "-sf", src, dst })
+    end
+  end
+
+  -- JSON merge installs (claude, gemini settings)
+  for _, spec in ipairs(MERGE_TOOLS) do
+    local src = root .. "/tools/" .. spec.src
+    local dst = vim.fn.expand(spec.dst)
+    if vim.fn.filereadable(src) == 1 then
+      json_merge(src, dst, spec.key)
+    else
+      vim.notify(string.format("Neph: tool not found, skipping merge: %s", src), vim.log.levels.WARN)
     end
   end
 

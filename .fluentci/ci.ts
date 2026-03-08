@@ -18,7 +18,7 @@ connect(async (client: Client) => {
     // Install npm deps for CLI tools
     .withExec([
       "nix", "develop", "--no-write-lock-file", "-c",
-      "sh", "-c", "npm ci --prefix tools/neph-cli && npm ci --prefix tools/pi",
+      "sh", "-c", "npm ci --prefix tools/neph-cli && npm ci --prefix tools/pi && npm ci --prefix tools/lib",
     ]);
 
   try {

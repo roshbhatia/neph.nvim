@@ -1,0 +1,9 @@
+{
+  "hooks": {
+    "afterFileEdit": [
+      {
+        "command": "neph gate --agent cursor"
+      }
+    ]
+  }
+}
