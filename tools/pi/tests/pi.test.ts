@@ -26,7 +26,8 @@ vi.mock("@mariozechner/pi-coding-agent", () => ({
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { createWriteTool, createEditTool } from "@mariozechner/pi-coding-agent";
-import piExtension, { NEPH_TIMEOUT_MS } from "../pi.ts";
+import piExtension from "../pi.ts";
+import { NEPH_TIMEOUT_MS } from "../../lib/neph-run";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -355,28 +356,16 @@ describe("lifecycle events", () => {
     expect(pi.tools["edit"]).toBeDefined();
   });
 
-  it("session_shutdown calls close-tab, unset pi_active, unset pi_running", async () => {
+  it("session_shutdown calls unset pi_active and unset pi_running", async () => {
     await activate();
     spawnMock.mockClear();
 
     await pi.emit("session_shutdown");
-    await drainQueue(10); // 3 queued items each need a tick
+    await drainQueue(10); // queued items each need a tick
 
     const calls = spawnMock.mock.calls.map(([, a]: [string, string[]]) => a);
-    expect(calls.some((a: string[]) => a[0] === "close-tab")).toBe(true);
     expect(calls.some((a: string[]) => a[0] === "unset" && a[1] === "pi_active")).toBe(true);
     expect(calls.some((a: string[]) => a[0] === "unset" && a[1] === "pi_running")).toBe(true);
-  });
-
-  it("agent_end does NOT call close-tab", async () => {
-    await activate();
-    spawnMock.mockClear();
-
-    await pi.emit("agent_end", {}, { ui: pi.ui });
-    await drainQueue();
-
-    const calls = spawnMock.mock.calls.map(([, a]: [string, string[]]) => a);
-    expect(calls.some((a: string[]) => a[0] === "close-tab")).toBe(false);
   });
 
   it("agent_end calls unset pi_running and unset pi_reading", async () => {

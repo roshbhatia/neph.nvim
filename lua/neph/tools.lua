@@ -169,7 +169,7 @@ function M.install()
       vim.notify(string.format("Neph: tool not found, skipping symlink: %s", src), vim.log.levels.WARN)
     else
       vim.fn.mkdir(vim.fn.fnamemodify(dst, ":h"), "p")
-      vim.fn.system({ "ln", "-sf", src, dst })
+      vim.fn.system({ "ln", "-sfn", src, dst })
     end
   end
 
