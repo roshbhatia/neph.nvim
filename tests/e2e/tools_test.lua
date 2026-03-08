@@ -22,6 +22,10 @@ return function(t)
     end)
 
     t.it("merges claude settings hooks key", function()
+      if vim.fn.executable("claude") ~= 1 then
+        t.skip("claude merge check", "claude not on PATH")
+        return
+      end
       require("neph.tools").install()
       local plugin_root = vim.fn.getcwd()
       local src = plugin_root .. "/tools/claude/settings.json"
