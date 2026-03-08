@@ -29,10 +29,19 @@ The review system is split into two layers:
 ### 5. Send Adapters & Prompt Delivery
 Prompt delivery is decoupled using agent-specific **send adapters**. For example, the `pi` adapter sets `vim.g.neph_pending_prompt` for programmatic delivery. Extensions then poll these state variables using the `neph get` CLI command to retrieve and process pending prompts asynchronously.
 
+### 6. Dependency Injection (DI)
+Agents and backends are standalone submodules passed directly into `setup()` via constructor injection. This replaces the hardcoded agent list and multiplexer string enum, enabling greater composability and testability.
+
 ## Architecture
 
 ```mermaid
 graph TD
+    Config[setup() Configuration] -->|injects| InjectedAgents[Agent Submodules]
+    Config -->|injects| InjectedBackend[Backend Submodule]
+
+    InjectedAgents --> Agent
+    InjectedBackend --> UI
+
     Agent[AI Agent / PATH Tool] -->|spawns| CLI[Neph CLI]
     Ext[Agent Extension e.g., Pi] -.->|polls neph get| CLI
 
@@ -75,5 +84,6 @@ graph TD
 
 ## Changelog
 
+- **[2026-03-08 16:07:55]** Introduced a composable DI architecture. Replaced hardcoded agent lists and multiplexer enums with standalone agent and backend submodules passed directly into `setup()` via constructor injection.
 - **[2026-03-08 10:15:00]** Decoupled prompt delivery by introducing send adapters. Agent extensions like `pi` can now poll `vim.g.neph_pending_prompt` via the new `neph get` CLI tool and `status.get` RPC.
-- **[Last Known Hash]:** 238259516fd71885148ff1018566e6a35ae432a3
+- **[Last Known Hash]:** bfd35b36487d9e039de893655761528f344cf1af
