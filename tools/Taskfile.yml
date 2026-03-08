@@ -2,17 +2,17 @@ version: "3"
 
 tasks:
   test:
-    deps: [test:neph, test:pi]
+    deps: [test:neph, test:lib]
 
   test:neph:
     dir: neph-cli
     cmds:
       - npm test -- --run
 
-  test:pi:
-    dir: pi
+  test:lib:
+    dir: lib
     cmds:
-      - npm test
+      - npx vitest --run
 
   lint:
     deps: [lint:neph, lint:pi]

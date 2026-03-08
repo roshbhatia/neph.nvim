@@ -79,6 +79,13 @@ function M.setup(opts)
     vim.api.nvim_create_autocmd("VimLeavePre", {
       group = augroup,
       callback = function()
+        -- Clear vim.g state for terminal-only agents
+        for name in pairs(terminals) do
+          local agent = require("neph.internal.agents").get_by_name(name)
+          if agent and not agent.integration then
+            vim.g[name .. "_active"] = nil
+          end
+        end
         backend.cleanup_all(terminals)
       end,
     })
@@ -114,6 +121,10 @@ function M.open(termname)
   if td then
     terminals[termname] = td
     active_terminal = termname
+    -- Terminal-only agents: set vim.g state (hook/extension agents manage their own)
+    if not agent.integration then
+      vim.g[termname .. "_active"] = true
+    end
   end
 end
 
@@ -176,6 +187,11 @@ function M.kill_session(termname)
   terminals[termname] = nil
   if active_terminal == termname then
     active_terminal = nil
+  end
+  -- Terminal-only agents: clear vim.g state
+  local agent = require("neph.internal.agents").get_by_name(termname)
+  if agent and not agent.integration then
+    vim.g[termname .. "_active"] = nil
   end
 end
 

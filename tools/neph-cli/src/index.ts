@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import * as crypto from 'node:crypto';
 import { discoverNvimSocket, SocketTransport, NvimTransport } from './transport';
+import { runGate } from './gate';
 
 const RPC_CALL = 'return require("neph.rpc").request(...)';
 
@@ -73,6 +74,17 @@ export async function runCommand(transport: NvimTransport | null, command: strin
     };
     process.stdout.write(JSON.stringify(spec, null, 2) + '\n');
     return;
+  }
+
+  if (command === 'gate') {
+    const agentIdx = args.indexOf('--agent');
+    const agent = agentIdx >= 0 ? args[agentIdx + 1] : undefined;
+    if (!agent) {
+      process.stderr.write('Usage: neph gate --agent <name>\n');
+      process.exit(1);
+    }
+    const exitCode = await runGate(transport, agent, stdin);
+    process.exit(exitCode);
   }
 
   const dryRun = process.env.NEPH_DRY_RUN === '1' || (!transport && command === 'review');
