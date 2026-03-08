@@ -189,19 +189,23 @@ function M.start_review(session, ui_state, on_done)
       end,
       confirm = function(picker, item)
         picker:close()
-        if item then
-          handle_choice(item.action)
-        else
-          -- Cancelled — reject all remaining
-          vim.ui.input({ prompt = "Reject all remaining hunks - reason: " }, function(reason)
-            if reason == nil then
+        -- Defer to next event loop tick so the picker fully closes
+        -- before we open the next one or vim.ui.input
+        vim.schedule(function()
+          if item then
+            handle_choice(item.action)
+          else
+            -- Cancelled — reject all remaining
+            vim.ui.input({ prompt = "Reject all remaining hunks - reason: " }, function(reason)
+              if reason == nil then
+                prompt_next()
+                return
+              end
+              session.reject_all(reason or "User cancelled review")
               prompt_next()
-              return
-            end
-            session.reject_all(reason or "User cancelled review")
-            prompt_next()
-          end)
-        end
+            end)
+          end
+        end)
       end,
     })
   end
