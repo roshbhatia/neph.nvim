@@ -41,6 +41,87 @@ function M.validate_agent(def)
       error(string.format("neph: agent '%s' field '%s' must be %s, got %s", name, field, expected_type, type(def[field])))
     end
   end
+
+  if def.tools ~= nil then
+    M.validate_tools(def)
+  end
+end
+
+local VALID_FILE_MODES = { create_only = true, overwrite = true }
+
+---@param def table  AgentDef with a tools field
+function M.validate_tools(def)
+  local name = type(def.name) == "string" and def.name or "?"
+  local tools = def.tools
+  if type(tools) ~= "table" then
+    error(string.format("neph: agent '%s' field 'tools' must be table, got %s", name, type(tools)))
+  end
+
+  if tools.symlinks ~= nil then
+    if type(tools.symlinks) ~= "table" then
+      error(string.format("neph: agent '%s' tools.symlinks must be table", name))
+    end
+    for i, s in ipairs(tools.symlinks) do
+      if type(s.src) ~= "string" then
+        error(string.format("neph: agent '%s' tools.symlinks[%d] missing 'src' string", name, i))
+      end
+      if type(s.dst) ~= "string" then
+        error(string.format("neph: agent '%s' tools.symlinks[%d] missing 'dst' string", name, i))
+      end
+    end
+  end
+
+  if tools.merges ~= nil then
+    if type(tools.merges) ~= "table" then
+      error(string.format("neph: agent '%s' tools.merges must be table", name))
+    end
+    for i, m in ipairs(tools.merges) do
+      if type(m.src) ~= "string" then
+        error(string.format("neph: agent '%s' tools.merges[%d] missing 'src' string", name, i))
+      end
+      if type(m.dst) ~= "string" then
+        error(string.format("neph: agent '%s' tools.merges[%d] missing 'dst' string", name, i))
+      end
+      if type(m.key) ~= "string" then
+        error(string.format("neph: agent '%s' tools.merges[%d] missing 'key' string", name, i))
+      end
+    end
+  end
+
+  if tools.builds ~= nil then
+    if type(tools.builds) ~= "table" then
+      error(string.format("neph: agent '%s' tools.builds must be table", name))
+    end
+    for i, b in ipairs(tools.builds) do
+      if type(b.dir) ~= "string" then
+        error(string.format("neph: agent '%s' tools.builds[%d] missing 'dir' string", name, i))
+      end
+      if type(b.src_dirs) ~= "table" then
+        error(string.format("neph: agent '%s' tools.builds[%d] missing 'src_dirs' table", name, i))
+      end
+      if type(b.check) ~= "string" then
+        error(string.format("neph: agent '%s' tools.builds[%d] missing 'check' string", name, i))
+      end
+    end
+  end
+
+  if tools.files ~= nil then
+    if type(tools.files) ~= "table" then
+      error(string.format("neph: agent '%s' tools.files must be table", name))
+    end
+    for i, f in ipairs(tools.files) do
+      if type(f.dst) ~= "string" then
+        error(string.format("neph: agent '%s' tools.files[%d] missing 'dst' string", name, i))
+      end
+      if type(f.content) ~= "string" then
+        error(string.format("neph: agent '%s' tools.files[%d] missing 'content' string", name, i))
+      end
+      local mode = f.mode or "create_only"
+      if not VALID_FILE_MODES[mode] then
+        error(string.format("neph: agent '%s' tools.files[%d] invalid mode '%s' (expected create_only or overwrite)", name, i, mode))
+      end
+    end
+  end
 end
 
 ---@param mod table

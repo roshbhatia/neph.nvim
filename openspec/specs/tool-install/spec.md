@@ -1,32 +1,43 @@
 ## MODIFIED Requirements
 
 ### Requirement: Tools bundled in repo
-neph.nvim SHALL include `tools/core/shim.py` (Python) and `tools/pi/pi.ts` (TypeScript) as checked-in files in the repository `tools/` directory. `tools/core/nvim-shim` (bash) is no longer part of the documented or bundled tool set.
+neph.nvim SHALL include agent-specific tool files in the `tools/` directory. Each agent's tool manifest references paths relative to this directory. The `tools/neph-cli/` directory contains the universal neph CLI.
 
 #### Scenario: Tools present after clone
 - **WHEN** a user clones or installs neph.nvim via a plugin manager
-- **THEN** `tools/core/shim.py` and `tools/pi/pi.ts` are present on disk under the plugin's install directory
+- **THEN** the `tools/` directory SHALL contain agent-specific subdirectories referenced by agent manifests
 
 ### Requirement: Auto-symlink on setup
-neph.nvim's `M.setup()` SHALL defer tool installation to a UIEnter autocmd. The install SHALL check a stamp file first and skip entirely if the plugin directory has not changed. When install runs, all filesystem operations (mkdir, ln, npm build) SHALL execute in a single background shell job via `vim.fn.jobstart()`.
+neph.nvim's `M.setup()` SHALL defer tool installation to a UIEnter autocmd. The install SHALL check a stamp file first and skip entirely if the plugin directory has not changed. When install runs, it SHALL iterate injected agents' `tools` manifests and process symlinks, merges, builds, and files generically. All filesystem operations SHALL execute in background jobs via `vim.fn.jobstart()`.
 
-#### Scenario: Symlinks created on first setup
-- **WHEN** `require("neph").setup()` is called and no stamp file exists
-- **THEN** symlinks are created asynchronously after UIEnter fires
-- **AND** the Neovim event loop is not blocked during installation
+#### Scenario: Symlinks created from agent manifests
+- **WHEN** `tools.install_async()` runs and agents have `tools.symlinks` manifests
+- **THEN** symlinks are created asynchronously for each agent's declared symlinks
+- **AND** the executor does NOT reference any agent by name
+
+#### Scenario: Merges processed from agent manifests
+- **WHEN** `tools.install_async()` runs and agents have `tools.merges` manifests
+- **THEN** JSON merges are performed for each agent's declared merges
+
+#### Scenario: Builds processed from agent manifests
+- **WHEN** `tools.install_async()` runs and agents have `tools.builds` manifests
+- **THEN** npm builds are triggered only when source is newer than the check file
+
+#### Scenario: Files created from agent manifests
+- **WHEN** `tools.install_async()` runs and agents have `tools.files` manifests
+- **THEN** files are created according to the declared mode (create_only or overwrite)
 
 #### Scenario: Stamp-based skip on subsequent startups
 - **WHEN** `require("neph").setup()` is called and the stamp file is newer than the tools/ directory
 - **THEN** no installation work is performed
-- **AND** setup completes in under 1ms
 
-#### Scenario: Symlinks are force-updated
-- **WHEN** the tools/ directory is newer than the stamp file
-- **THEN** symlinks are re-created via a background shell job
-- **AND** the stamp file is touched after successful completion
+#### Scenario: tools.lua contains zero agent names
+- **WHEN** `lua/neph/tools.lua` is read
+- **THEN** it SHALL NOT contain any hardcoded agent names (pi, claude, cursor, amp, opencode, gemini, etc.)
+- **AND** the only hardcoded tool path SHALL be `neph-cli` (universal)
 
 ## REMOVED Requirements
 
 ### Requirement: nvim-shim is not symlinked
-**Reason**: `tools/core/nvim-shim` (bash wrapper) has been removed from the repo. There is no longer anything to symlink or document.
-**Migration**: Use `shim.py` (auto-symlinked to `~/.local/bin/shim`) for all Neovim msgpack-rpc integration.
+**Reason**: Already removed in previous change. No further action.
+**Migration**: N/A

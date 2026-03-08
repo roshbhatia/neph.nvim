@@ -102,4 +102,81 @@ describe("neph.contracts", function()
       end)
     end)
   end)
+
+  describe("validate_tools", function()
+    local function base_agent(tools)
+      return { name = "test", label = "Test", icon = " ", cmd = "test", tools = tools }
+    end
+
+    it("accepts agent without tools field", function()
+      assert.has_no.errors(function()
+        contracts.validate_agent({ name = "test", label = "Test", icon = " ", cmd = "test" })
+      end)
+    end)
+
+    it("accepts valid manifest with all fields", function()
+      assert.has_no.errors(function()
+        contracts.validate_tools(base_agent({
+          symlinks = { { src = "pi/pkg.json", dst = "~/.pi/pkg.json" } },
+          merges = { { src = "claude/s.json", dst = "~/.claude/s.json", key = "hooks" } },
+          builds = { { dir = "pi", src_dirs = { "." }, check = "dist/pi.js" } },
+          files = { { dst = "~/.pi/index.ts", content = "export {}", mode = "create_only" } },
+        }))
+      end)
+    end)
+
+    it("accepts empty sub-fields", function()
+      assert.has_no.errors(function()
+        contracts.validate_tools(base_agent({ symlinks = {}, merges = {}, builds = {}, files = {} }))
+      end)
+    end)
+
+    it("throws on symlink missing src", function()
+      assert.has_error(function()
+        contracts.validate_tools(base_agent({ symlinks = { { dst = "~/.foo" } } }))
+      end)
+    end)
+
+    it("throws on symlink missing dst", function()
+      assert.has_error(function()
+        contracts.validate_tools(base_agent({ symlinks = { { src = "foo" } } }))
+      end)
+    end)
+
+    it("throws on merge missing key", function()
+      assert.has_error(function()
+        contracts.validate_tools(base_agent({ merges = { { src = "a", dst = "b" } } }))
+      end)
+    end)
+
+    it("throws on build missing src_dirs", function()
+      assert.has_error(function()
+        contracts.validate_tools(base_agent({ builds = { { dir = "pi", check = "dist/pi.js" } } }))
+      end)
+    end)
+
+    it("throws on file missing content", function()
+      assert.has_error(function()
+        contracts.validate_tools(base_agent({ files = { { dst = "~/.foo" } } }))
+      end)
+    end)
+
+    it("throws on invalid file mode", function()
+      assert.has_error(function()
+        contracts.validate_tools(base_agent({ files = { { dst = "~/.foo", content = "x", mode = "invalid" } } }))
+      end)
+    end)
+
+    it("accepts file with default mode (create_only)", function()
+      assert.has_no.errors(function()
+        contracts.validate_tools(base_agent({ files = { { dst = "~/.foo", content = "x" } } }))
+      end)
+    end)
+
+    it("validate_agent calls validate_tools when tools present", function()
+      assert.has_error(function()
+        contracts.validate_agent(base_agent({ symlinks = { { dst = "~/.foo" } } }))
+      end)
+    end)
+  end)
 end)

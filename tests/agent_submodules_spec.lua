@@ -18,6 +18,25 @@ describe("neph.agents submodules", function()
     assert.is_function(pi.send_adapter)
   end)
 
+  local agents_with_tools = { "amp", "claude", "cursor", "gemini", "opencode", "pi" }
+  for _, name in ipairs(agents_with_tools) do
+    it(name .. " has a valid tools manifest", function()
+      local def = require("neph.agents." .. name)
+      assert.is_table(def.tools)
+      assert.has_no.errors(function()
+        contracts.validate_tools(def)
+      end)
+    end)
+  end
+
+  local agents_without_tools = { "codex", "copilot", "crush", "goose" }
+  for _, name in ipairs(agents_without_tools) do
+    it(name .. " has no tools field", function()
+      local def = require("neph.agents." .. name)
+      assert.is_nil(def.tools)
+    end)
+  end
+
   it("all.lua returns all 10 agents", function()
     local all = require("neph.agents.all")
     assert.are.equal(10, #all)

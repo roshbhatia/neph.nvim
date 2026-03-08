@@ -1,0 +1,17 @@
+local contracts = require("neph.internal.contracts")
+
+describe("backend contract conformance", function()
+  it("snacks backend passes validation", function()
+    local snacks = require("neph.backends.snacks")
+    assert.has_no.errors(function()
+      contracts.validate_backend(snacks, "snacks")
+    end)
+  end)
+
+  it("wezterm backend passes validation", function()
+    local wezterm = require("neph.backends.wezterm")
+    assert.has_no.errors(function()
+      contracts.validate_backend(wezterm, "wezterm")
+    end)
+  end)
+end)

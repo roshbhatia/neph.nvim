@@ -9,4 +9,9 @@ return {
     type = "hook",
     capabilities = { "review", "status", "checktime" },
   },
+  tools = {
+    merges = {
+      { src = "claude/settings.json", dst = "~/.claude/settings.json", key = "hooks" },
+    },
+  },
 }

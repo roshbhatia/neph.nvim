@@ -9,4 +9,9 @@ return {
     type = "hook",
     capabilities = { "status", "checktime" },
   },
+  tools = {
+    symlinks = {
+      { src = "cursor/hooks.json", dst = "~/.cursor/hooks.json" },
+    },
+  },
 }

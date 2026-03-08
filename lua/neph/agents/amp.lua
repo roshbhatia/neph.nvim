@@ -9,4 +9,9 @@ return {
     type = "extension",
     capabilities = { "review", "status" },
   },
+  tools = {
+    symlinks = {
+      { src = "amp/neph-plugin.ts", dst = "~/.config/amp/plugins/neph-plugin.ts" },
+    },
+  },
 }

@@ -1,16 +1,16 @@
-## ADDED Requirements
+## MODIFIED Requirements
 
 ### Requirement: Agent definition submodules
-neph.nvim SHALL provide standalone Lua modules under `lua/neph/agents/` where each module returns a single `AgentDef` table. Modules SHALL have no side effects on require.
+neph.nvim SHALL provide standalone Lua modules under `lua/neph/agents/` where each module returns a single `AgentDef` table. Modules SHALL have no side effects on require. Agents that require tool installation SHALL include a `tools` field with a declarative install manifest.
 
 #### Scenario: Require claude agent
 - **WHEN** `require("neph.agents.claude")` is called
-- **THEN** it SHALL return a table with `name = "claude"`, `label = "Claude"`, `cmd = "claude"`, `icon` (string), and `args` (string array)
+- **THEN** it SHALL return a table with `name = "claude"`, `label = "Claude"`, `cmd = "claude"`, `icon` (string), `args` (string array), and `tools` (table with `merges` field)
 
-#### Scenario: Require pi agent with send_adapter
+#### Scenario: Require pi agent with tools manifest
 - **WHEN** `require("neph.agents.pi")` is called
-- **THEN** it SHALL return a table with `name = "pi"` and a `send_adapter` function
-- **AND** the `send_adapter` function SHALL match the existing pi send behavior (set `vim.g.neph_pending_prompt`)
+- **THEN** it SHALL return a table with `name = "pi"`, a `send_adapter` function, and a `tools` field
+- **AND** `tools` SHALL contain `symlinks`, `builds`, and `files` sub-fields
 
 #### Scenario: Each agent module is independently requireable
 - **WHEN** any of `require("neph.agents.claude")`, `require("neph.agents.goose")`, `require("neph.agents.opencode")`, `require("neph.agents.amp")`, `require("neph.agents.copilot")`, `require("neph.agents.gemini")`, `require("neph.agents.codex")`, `require("neph.agents.crush")`, `require("neph.agents.cursor")`, `require("neph.agents.pi")` is called
