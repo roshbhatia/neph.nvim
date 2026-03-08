@@ -17,6 +17,9 @@ local dispatch = {
   ["status.unset"] = function(p)
     return require("neph.api.status").unset(p)
   end,
+  ["status.get"] = function(p)
+    return require("neph.api.status").get(p)
+  end,
   ["buffers.check"] = function(p)
     return require("neph.api.buffers").checktime(p)
   end,

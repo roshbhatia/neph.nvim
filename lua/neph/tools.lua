@@ -33,25 +33,36 @@ end
 ---@field dst     string  Absolute destination path (may use ~)
 ---@field key     string  JSON key to merge
 
+---@class neph.ToolSpec
+---@field src    string       Path relative to tools/ inside the plugin root
+---@field dst    string       Absolute destination path (may use ~)
+---@field agent? string       Agent name this belongs to (nil = always installed, e.g. neph CLI)
+
 ---@type neph.ToolSpec[]
 local TOOLS = {
   { src = "neph-cli/dist/index.js", dst = "~/.local/bin/neph" },
-  { src = "pi/package.json", dst = "~/.pi/agent/extensions/nvim/package.json" },
-  { src = "pi/dist", dst = "~/.pi/agent/extensions/nvim/dist" },
+  { src = "pi/package.json", dst = "~/.pi/agent/extensions/nvim/package.json", agent = "pi" },
+  { src = "pi/dist", dst = "~/.pi/agent/extensions/nvim/dist", agent = "pi" },
   -- Cursor hooks (symlink — standalone file)
-  { src = "cursor/hooks.json", dst = "~/.cursor/hooks.json" },
+  { src = "cursor/hooks.json", dst = "~/.cursor/hooks.json", agent = "cursor" },
   -- Amp plugin (symlink — single TS file, Bun-based)
-  { src = "amp/neph-plugin.ts", dst = "~/.config/amp/plugins/neph-plugin.ts" },
+  { src = "amp/neph-plugin.ts", dst = "~/.config/amp/plugins/neph-plugin.ts", agent = "amp" },
   -- OpenCode custom tools (symlink — standalone files)
-  { src = "opencode/write.ts", dst = "~/.config/opencode/tools/write.ts" },
-  { src = "opencode/edit.ts", dst = "~/.config/opencode/tools/edit.ts" },
+  { src = "opencode/write.ts", dst = "~/.config/opencode/tools/write.ts", agent = "opencode" },
+  { src = "opencode/edit.ts", dst = "~/.config/opencode/tools/edit.ts", agent = "opencode" },
 }
+
+---@class neph.MergeSpec
+---@field src     string  Path relative to tools/ inside the plugin root
+---@field dst     string  Absolute destination path (may use ~)
+---@field key     string  JSON key to merge
+---@field agent?  string  Agent name this belongs to (nil = always installed)
 
 --- Settings files that need JSON merge (not symlink)
 ---@type neph.MergeSpec[]
 local MERGE_TOOLS = {
-  { src = "claude/settings.json", dst = "~/.claude/settings.json", key = "hooks" },
-  { src = "gemini/settings.json", dst = "~/.gemini/settings.json", key = "hooks" },
+  { src = "claude/settings.json", dst = "~/.claude/settings.json", key = "hooks", agent = "claude" },
+  { src = "gemini/settings.json", dst = "~/.gemini/settings.json", key = "hooks", agent = "gemini" },
 }
 
 --- Check if a hook entry already exists in a list (match on matcher + first command).
@@ -172,13 +183,38 @@ local function build_if_needed(root)
   end
 end
 
+--- Check if an agent is in the enabled list (nil = all enabled).
+---@param agent string|nil  Agent name (nil = always enabled, e.g. neph CLI)
+---@param enabled string[]|nil  Allowlist (nil = all enabled)
+---@return boolean
+local function is_agent_enabled(agent, enabled)
+  if not agent then
+    return true -- no agent tag = always installed (e.g. neph CLI)
+  end
+  if not enabled then
+    return true -- no allowlist = all agents enabled
+  end
+  for _, name in ipairs(enabled) do
+    if name == agent then
+      return true
+    end
+  end
+  return false
+end
+
 --- Install (symlink) all bundled tools to their canonical locations.
+--- When `config.enabled_agents` is set, only installs tools for listed agents.
+--- The neph CLI is always installed regardless of the allowlist.
 function M.install()
   local root = plugin_root()
+  local enabled = require("neph.config").current.enabled_agents
 
   build_if_needed(root)
 
   for _, tool in ipairs(TOOLS) do
+    if not is_agent_enabled(tool.agent, enabled) then
+      goto continue_tool
+    end
     local src = root .. "/tools/" .. tool.src
     local dst = vim.fn.expand(tool.dst)
 
@@ -190,10 +226,14 @@ function M.install()
       vim.fn.mkdir(vim.fn.fnamemodify(dst, ":h"), "p")
       vim.fn.system({ "ln", "-sfn", src, dst })
     end
+    ::continue_tool::
   end
 
   -- JSON merge installs (claude, gemini settings)
   for _, spec in ipairs(MERGE_TOOLS) do
+    if not is_agent_enabled(spec.agent, enabled) then
+      goto continue_merge
+    end
     local src = root .. "/tools/" .. spec.src
     local dst = vim.fn.expand(spec.dst)
     if vim.fn.filereadable(src) == 1 then
@@ -201,13 +241,16 @@ function M.install()
     else
       vim.notify(string.format("Neph: tool not found, skipping merge: %s", src), vim.log.levels.WARN)
     end
+    ::continue_merge::
   end
 
-  -- Create pi extension index.ts wrapper
-  local pi_ext_dir = vim.fn.expand("~/.pi/agent/extensions/nvim")
-  local pi_index = pi_ext_dir .. "/index.ts"
-  if vim.fn.isdirectory(pi_ext_dir) == 1 and vim.fn.filereadable(pi_index) == 0 then
-    vim.fn.writefile({ 'export { default } from "./dist/pi.js";' }, pi_index)
+  -- Create pi extension index.ts wrapper (only if pi is enabled)
+  if is_agent_enabled("pi", enabled) then
+    local pi_ext_dir = vim.fn.expand("~/.pi/agent/extensions/nvim")
+    local pi_index = pi_ext_dir .. "/index.ts"
+    if vim.fn.isdirectory(pi_ext_dir) == 1 and vim.fn.filereadable(pi_index) == 0 then
+      vim.fn.writefile({ 'export { default } from "./dist/pi.js";' }, pi_index)
+    end
   end
 end
 

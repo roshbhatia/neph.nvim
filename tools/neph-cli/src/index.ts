@@ -202,6 +202,10 @@ export async function runCommand(transport: NvimTransport | null, command: strin
         method = 'status.unset';
         params = { name: args[1] };
         break;
+      case 'get':
+        method = 'status.get';
+        params = { name: args[1] };
+        break;
       case 'checktime':
         method = 'buffers.check';
         break;

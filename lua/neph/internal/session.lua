@@ -202,6 +202,18 @@ function M.send(termname, text, opts)
     return
   end
 
+  -- Check for agent-specific send adapter
+  local agent = require("neph.internal.agents").get_by_name(termname)
+  local adapter = agent and agent.send_adapter
+  if adapter then
+    local sent = adapter(td, text, opts)
+    if sent then
+      return
+    end
+    -- Adapter returned false/nil: fall through to default send
+  end
+
+  -- Default send: WezTerm pane or native terminal via chansend
   if td.pane_id then
     vim.fn.system(
       string.format("wezterm cli send-text --pane-id %d --no-paste %s", td.pane_id, vim.fn.shellescape(text))
@@ -209,10 +221,13 @@ function M.send(termname, text, opts)
     if opts.submit then
       vim.fn.system(string.format("wezterm cli send-text --pane-id %d --no-paste '\n'", td.pane_id))
     end
-  elseif td.term then
-    td.term:send(text)
-    if opts.submit then
-      td.term:send("\n")
+  elseif td.buf and vim.api.nvim_buf_is_valid(td.buf) then
+    local chan = vim.b[td.buf].terminal_job_id
+    if chan then
+      vim.fn.chansend(chan, text)
+      if opts.submit then
+        vim.fn.chansend(chan, "\n")
+      end
     end
   end
 end

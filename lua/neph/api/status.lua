@@ -22,4 +22,12 @@ function M.unset(params)
   return { ok = true }
 end
 
+---Get a vim.g global variable.
+---@param params {name: string}
+---@return {ok: boolean, value: any}
+function M.get(params)
+  local value = vim.g[params.name]
+  return { ok = true, value = value }
+end
+
 return M
