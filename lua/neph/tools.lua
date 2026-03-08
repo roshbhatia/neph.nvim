@@ -119,25 +119,44 @@ local function json_merge(src_path, dst_path, key)
   vim.fn.writefile({ vim.json.encode(dst_json) }, dst_path)
 end
 
+--- Find the newest mtime among all .ts files in a directory (non-recursive for flat, recursive for src/).
+---@param dir string  Directory to scan
+---@return number  newest mtime (0 if no files found)
+local function newest_ts_mtime(dir)
+  local glob = vim.fn.glob(dir .. "/**/*.ts", false, true)
+  local newest = 0
+  for _, f in ipairs(glob) do
+    local mt = vim.fn.getftime(f)
+    if mt > newest then
+      newest = mt
+    end
+  end
+  return newest
+end
+
 --- Build TypeScript tools that require bundling.
---- Rebuilds if dist is missing OR if source is newer than dist.
+--- Rebuilds if dist is missing OR if any source .ts file is newer than dist.
 ---@param root string  Plugin root path
 local function build_if_needed(root)
   local builds = {
-    { dir = "neph-cli", src = "src/index.ts", check = "dist/index.js" },
-    { dir = "pi", src = "pi.ts", check = "dist/pi.js" },
+    { dir = "neph-cli", src_dirs = { "src" }, check = "dist/index.js" },
+    { dir = "pi", src_dirs = { ".", "../lib" }, check = "dist/pi.js" },
   }
   for _, b in ipairs(builds) do
     local tool_dir = root .. "/tools/" .. b.dir
     local check_file = tool_dir .. "/" .. b.check
-    local src_file = tool_dir .. "/" .. b.src
     local pkg = tool_dir .. "/package.json"
     if vim.fn.filereadable(pkg) == 1 then
       local needs_build = vim.fn.filereadable(check_file) == 0
-      if not needs_build and vim.fn.filereadable(src_file) == 1 then
-        local src_mtime = vim.fn.getftime(src_file)
+      if not needs_build then
         local dst_mtime = vim.fn.getftime(check_file)
-        needs_build = src_mtime > dst_mtime
+        for _, sd in ipairs(b.src_dirs) do
+          local src_mtime = newest_ts_mtime(tool_dir .. "/" .. sd)
+          if src_mtime > dst_mtime then
+            needs_build = true
+            break
+          end
+        end
       end
 
       if needs_build then
