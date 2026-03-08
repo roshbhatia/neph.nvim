@@ -100,6 +100,8 @@ function MultilineInput:open(default)
   vim.schedule(function()
     if vim.api.nvim_buf_is_valid(self.bufnr) then
       vim.fn.matchadd("Special", "+[%w_]\\+")
+      -- Attach markdown treesitter for syntax highlighting in the input
+      pcall(vim.treesitter.start, self.bufnr, "markdown")
     end
   end)
 
@@ -197,7 +199,7 @@ end
 ---@param opts?       {action?:string, default?:string, on_confirm?:fun(text:string)}
 function M.create_input(termname, agent_icon, opts)
   opts = opts or {}
-  local title = string.format(" %s  %s", agent_icon or "", opts.action or "Ask")
+  local title = string.format(" %s  %s: ", agent_icon or "", opts.action or "Ask")
 
   local initial_state = require("neph.internal.context").new()
   local hist = history.load(termname)

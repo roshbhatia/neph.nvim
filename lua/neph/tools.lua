@@ -188,7 +188,8 @@ local function build_install_script(root, manifests)
       table.insert(
         lines,
         string.format(
-          "    if [ -n \"$(find '%s/%s' -name '*.ts' -newer \"$CHECK\" 2>/dev/null | head -1)\" ]; then NEEDS_BUILD=1; fi",
+          "    if [ -n \"$(find '%s/%s' -name '*.ts' -newer \"$CHECK\""
+            .. " 2>/dev/null | head -1)\" ]; then NEEDS_BUILD=1; fi",
           tool_dir,
           sd
         )
@@ -198,7 +199,8 @@ local function build_install_script(root, manifests)
     table.insert(
       lines,
       string.format(
-        "  if [ \"$NEEDS_BUILD\" = 1 ]; then cd '%s' && npm install --ignore-scripts 2>/dev/null && npm run build 2>&1; fi",
+        "  if [ \"$NEEDS_BUILD\" = 1 ]; then cd '%s'"
+          .. " && npm install --ignore-scripts 2>/dev/null && npm run build 2>&1; fi",
         tool_dir
       )
     )

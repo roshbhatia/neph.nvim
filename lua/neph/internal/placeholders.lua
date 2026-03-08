@@ -303,14 +303,6 @@ M.descriptions = {
 -- Apply placeholders to a string
 -- ---------------------------------------------------------------------------
 
-local function escape_pattern(s)
-  return (s:gsub("([%^%$%(%)%%%.%[%]%*%+%-%?])", "%%%1"))
-end
-
-local function escape_replacement(s)
-  return (s:gsub("%%", "%%%%"))
-end
-
 --- Expand all +token placeholders in *input* using *state*.
 --- Supports escape syntax: \+token is preserved as literal +token.
 --- Failed expansions (nil provider result) are stripped.

@@ -133,9 +133,6 @@ function M.start_review(session, ui_state, on_done)
     M.place_sign(ui_state.left_buf, "neph_current", hunk.start_a, ui_state.sign_ids)
     M.show_hints(ui_state.right_buf, hunk, idx, total)
 
-    -- Read hunk lines from correct buffer sides
-    local new_hunk_lines = vim.api.nvim_buf_get_lines(ui_state.right_buf, hunk.start_b - 1, hunk.end_b, false)
-    local old_hunk_lines = vim.api.nvim_buf_get_lines(ui_state.left_buf, hunk.start_a - 1, hunk.end_a, false)
     local ft = vim.bo[ui_state.left_buf].filetype
 
     -- Build preview with context for each action

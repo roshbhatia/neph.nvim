@@ -1,6 +1,4 @@
 ---@diagnostic disable: undefined-global
-local contracts = require("neph.internal.contracts")
-
 local function make_stub_backend()
   return {
     setup = function() end,
