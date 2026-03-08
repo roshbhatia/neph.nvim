@@ -6,7 +6,7 @@ The system SHALL provide a pure Lua module for review logic that is testable wit
 
 #### Scenario: Compute hunks
 - **WHEN** `engine.compute_hunks(old_lines, new_lines)` is called
-- **THEN** it SHALL return an array of hunk ranges with start_line and end_line
+- **THEN** it SHALL return an array of hunk ranges with `start_a`, `end_a` (old-file), `start_b`, `end_b` (new-file)
 - **AND** use `vim.diff()` with `result_type = "indices"`
 
 #### Scenario: No differences
