@@ -61,9 +61,13 @@ local MERGE_TOOLS = {
 ---@param key      string  JSON key to merge
 local function json_merge(src_path, dst_path, key)
   local src_content = vim.fn.readfile(src_path)
-  if not src_content or #src_content == 0 then return end
+  if not src_content or #src_content == 0 then
+    return
+  end
   local src_json = vim.json.decode(table.concat(src_content, "\n"))
-  if not src_json or not src_json[key] then return end
+  if not src_json or not src_json[key] then
+    return
+  end
 
   local dst_json = {}
   if vim.fn.filereadable(dst_path) == 1 then
