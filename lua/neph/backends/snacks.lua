@@ -20,7 +20,7 @@ function M.open(termname, agent_config, cwd)
     NVIM_SOCKET_PATH = vim.v.servername,
   })
 
-  local term = Snacks.terminal.open(agent_config.cmd, {
+  local term = Snacks.terminal.open(agent_config.full_cmd, {
     cwd = cwd,
     env = env,
     win = { position = "right", width = 0.5 },
@@ -65,6 +65,9 @@ function M.kill(term_data)
   if term_data.win and vim.api.nvim_win_is_valid(term_data.win) then
     vim.api.nvim_win_close(term_data.win, true)
   end
+  term_data.win = nil
+  term_data.buf = nil
+  term_data.term = nil
 end
 
 function M.cleanup_all(terminals)

@@ -48,10 +48,14 @@ local function build_cmd(agent)
 end
 
 --- Initialize the agent accessor with injected definitions.
+--- Computes full_cmd once at init time.
 ---@param agent_defs neph.AgentDef[]
 function M.init(agent_defs)
   agents = agent_defs or {}
   executable_cache = {}
+  for _, agent in ipairs(agents) do
+    agent.full_cmd = build_cmd(agent)
+  end
 end
 
 --- Return all agents whose executable is present on PATH.
@@ -60,7 +64,6 @@ function M.get_all()
   local result = {}
   for _, agent in ipairs(agents) do
     if is_available(agent.cmd) then
-      agent.full_cmd = build_cmd(agent)
       table.insert(result, agent)
     end
   end
@@ -76,7 +79,6 @@ function M.get_by_name(name)
   end
   for _, agent in ipairs(agents) do
     if agent.name == name and is_available(agent.cmd) then
-      agent.full_cmd = build_cmd(agent)
       return agent
     end
   end

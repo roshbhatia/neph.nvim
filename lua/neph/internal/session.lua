@@ -254,7 +254,7 @@ function M.ensure_active_and_send(text)
     local retries = 0
     local max_retries = 20
     local name = active_terminal
-    local timer = vim.loop.new_timer()
+    local timer = vim.uv.new_timer()
     pending_timers[name] = timer
     timer:start(
       50,

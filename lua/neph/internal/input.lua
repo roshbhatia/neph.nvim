@@ -134,16 +134,26 @@ function MultilineInput:_set_numbers(height)
 end
 
 function MultilineInput:resize()
-  local text = table.concat(vim.api.nvim_buf_get_lines(self.bufnr, 0, -1, false), "")
-  if text == "" then
+  local buf_lines = vim.api.nvim_buf_get_lines(self.bufnr, 0, -1, false)
+  local total_text = table.concat(buf_lines, "\n")
+  if total_text == "" then
     self:_set_size(0, 1)
     return
   end
-  local lines = utils.split_wrapped_lines(text, self.config.width.max)
-  local lens = vim.tbl_map(function(l)
-    return vim.fn.strdisplaywidth(l)
-  end, lines)
-  self:_set_size(math.max(unpack(lens)), #lines)
+  local max_width = 0
+  local total_wrapped = 0
+  for _, line in ipairs(buf_lines) do
+    local wrapped = utils.split_wrapped_lines(line, self.config.width.max)
+    if #wrapped == 0 then
+      total_wrapped = total_wrapped + 1
+    else
+      total_wrapped = total_wrapped + #wrapped
+      for _, wl in ipairs(wrapped) do
+        max_width = math.max(max_width, vim.fn.strdisplaywidth(wl))
+      end
+    end
+  end
+  self:_set_size(max_width, total_wrapped)
 end
 
 function MultilineInput:_set_size(width, height)

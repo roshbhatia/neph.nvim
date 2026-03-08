@@ -227,7 +227,7 @@ function M.start_review(session, ui_state, on_done)
                 prompt_next()
                 return
               end
-              session.reject_all(reason or "User cancelled review")
+              session.reject_all(reason)
               prompt_next()
             end)
           end

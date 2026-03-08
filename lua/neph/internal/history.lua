@@ -1,12 +1,12 @@
 ---@mod neph.history Prompt history management
 ---@brief [[
---- Persists sent prompts per agent to simple flat files under /tmp and
---- exposes a Snacks picker to browse/copy them.
+--- Persists sent prompts per agent as JSON files under stdpath("data")
+--- and exposes a Snacks picker to browse/copy them.
 ---@brief ]]
 
 local M = {}
 
-local history_dir = "/tmp"
+local history_dir = vim.fn.stdpath("data")
 
 ---@type table<string,string>
 local history_files = {}
@@ -18,7 +18,7 @@ local current_index = {}
 ---@return string
 function M.get_history_file(termname)
   if not history_files[termname] then
-    history_files[termname] = string.format("%s/neph-history-%s.txt", history_dir, termname)
+    history_files[termname] = string.format("%s/neph_history_%s.json", history_dir, termname)
   end
   return history_files[termname]
 end
@@ -30,11 +30,11 @@ function M.save(termname, prompt)
   if not prompt or prompt == "" then
     return
   end
-  local f = io.open(M.get_history_file(termname), "a")
-  if f then
-    f:write(string.format("%s|%s\n", os.date("%Y-%m-%d %H:%M:%S"), prompt))
-    f:close()
-  end
+  local entries = M.load(termname)
+  table.insert(entries, { timestamp = os.date("%Y-%m-%d %H:%M:%S"), prompt = prompt })
+  local path = M.get_history_file(termname)
+  vim.fn.mkdir(vim.fn.fnamemodify(path, ":h"), "p")
+  vim.fn.writefile({ vim.json.encode(entries) }, path)
 end
 
 -- Keep old name as alias for backward compat
@@ -44,18 +44,19 @@ M.save_to_history = M.save
 ---@param termname string
 ---@return {timestamp:string, prompt:string}[]
 function M.load(termname)
-  local entries = {}
-  local f = io.open(M.get_history_file(termname), "r")
-  if f then
-    for line in f:lines() do
-      local ts, prompt = line:match("^(.-)|(.*)")
-      if ts and prompt then
-        table.insert(entries, { timestamp = ts, prompt = prompt })
-      end
-    end
-    f:close()
+  local path = M.get_history_file(termname)
+  if vim.fn.filereadable(path) ~= 1 then
+    return {}
   end
-  return entries
+  local content = vim.fn.readfile(path)
+  if not content or #content == 0 then
+    return {}
+  end
+  local ok, entries = pcall(vim.json.decode, table.concat(content, "\n"))
+  if ok and type(entries) == "table" then
+    return entries
+  end
+  return {}
 end
 
 M.load_history = M.load

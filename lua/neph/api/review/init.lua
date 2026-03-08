@@ -30,6 +30,7 @@ function M.open(params)
   end
 
   -- Handle trailing newline in content to match buffer line splitting behavior
+  content = content or ""
   if content:sub(-1) == "\n" then
     content = content:sub(1, -2)
   end
@@ -86,7 +87,10 @@ function M.write_result(path, channel_id, request_id, envelope)
   end
   f:write(vim.json.encode(envelope))
   f:close()
-  os.rename(tmp_path, path)
+  local ok, rename_err = os.rename(tmp_path, path)
+  if not ok then
+    vim.notify("Neph: failed to rename review result: " .. (rename_err or ""), vim.log.levels.ERROR)
+  end
 
   pcall(vim.rpcnotify, channel_id, "neph:review_done", { request_id = request_id })
 end

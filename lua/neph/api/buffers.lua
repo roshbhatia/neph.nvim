@@ -17,7 +17,9 @@ end
 ---@param params? table Unused, present for RPC dispatch consistency.
 ---@return {ok: boolean}
 function M.close_tab(_params)
-  vim.cmd("tabclose")
+  if #vim.api.nvim_list_tabpages() > 1 then
+    vim.cmd("tabclose")
+  end
   return { ok = true }
 end
 

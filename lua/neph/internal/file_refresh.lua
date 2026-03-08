@@ -23,15 +23,11 @@ function M.setup(config)
     "CursorHoldI",
     "FocusGained",
     "BufEnter",
-    "InsertLeave",
-    "TextChanged",
   }, {
     group = augroup,
     pattern = "*",
     callback = function()
-      if vim.fn.filereadable(vim.fn.expand("%")) == 1 then
-        vim.cmd("checktime")
-      end
+      vim.cmd("silent! checktime")
     end,
     desc = "Neph: check for file changes on disk",
   })
@@ -42,7 +38,7 @@ function M.setup(config)
     timer:close()
     timer = nil
   end
-  timer = vim.loop.new_timer()
+  timer = vim.uv.new_timer()
   if timer then
     timer:start(
       cfg.timer_interval or 1000,
@@ -52,8 +48,6 @@ function M.setup(config)
       end)
     )
   end
-
-  vim.o.updatetime = cfg.updatetime or 750
 end
 
 --- Stop the polling timer and clear the autocmd group.
