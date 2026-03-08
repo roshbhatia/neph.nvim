@@ -19,6 +19,11 @@ connect(async (client: Client) => {
     .withExec([
       "nix", "develop", "--no-write-lock-file", "-c",
       "sh", "-c", "npm ci --prefix tools/neph-cli && npm ci --prefix tools/pi && npm ci --prefix tools/lib",
+    ])
+    // Build bundled tools (neph-cli, pi)
+    .withExec([
+      "nix", "develop", "--no-write-lock-file", "-c",
+      "task", "tools:build",
     ]);
 
   try {
