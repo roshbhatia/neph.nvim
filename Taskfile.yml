@@ -35,7 +35,7 @@ tasks:
       - stylua --check lua/ tests/
       - cmd: luacheck lua/ tests/ --globals vim Snacks describe it before_each after_each assert
         ignore_error: true
-      - npx --prefix tools/neph-cli tsc --noEmit
+      - task: tools:lint:neph
 
   ci:
     desc: Run lint + test
