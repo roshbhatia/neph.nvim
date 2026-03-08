@@ -18,13 +18,42 @@ A single Lua module that routes all incoming RPC requests from the `neph` CLI to
 ### 3. API Modules (`lua/neph/api/`)
 Stateless modules implementing specific capabilities:
 - `review/`: Core diff review logic and UI.
-- `status.lua`: Global state management (`vim.g`).
+- `status.lua`: Global state management (`vim.g`), including the `status.get` RPC for reading state variables.
 - `buffers.lua`: Buffer and tab operations.
 
 ### 4. Review Engine vs. UI
 The review system is split into two layers:
 - **Engine** (`lua/neph/api/review/engine.lua`): Pure logic for hunk computation and decision application. Testable in headless Neovim.
 - **UI** (`lua/neph/api/review/ui.lua`): Thin Neovim adapter managing signs, virtual text, and the `Snacks.picker` selection loop.
+
+### 5. Send Adapters & Prompt Delivery
+Prompt delivery is decoupled using agent-specific **send adapters**. For example, the `pi` adapter sets `vim.g.neph_pending_prompt` for programmatic delivery. Extensions then poll these state variables using the `neph get` CLI command to retrieve and process pending prompts asynchronously.
+
+## Architecture
+
+```mermaid
+graph TD
+    Agent[AI Agent / PATH Tool] -->|spawns| CLI[Neph CLI]
+    Ext[Agent Extension e.g., Pi] -.->|polls neph get| CLI
+
+    CLI -->|msgpack-rpc| RPC[RPC Dispatch Facade lua/neph/rpc.lua]
+
+    RPC --> API_Review[API: review/]
+    RPC --> API_Status[API: status.lua]
+    RPC --> API_Buffers[API: buffers.lua]
+
+    API_Review --> Engine[Review Engine]
+    API_Review --> UI[Review UI Snacks.picker]
+
+    Engine --> Envelope[ReviewEnvelope JSON]
+    UI --> Envelope
+    Envelope -->|rpcnotify via temp file| CLI
+
+    API_Status --> State[vim.g state]
+    State -.->|neph_pending_prompt| Ext
+
+    CLI -->|stdout| Agent
+```
 
 ## Data Flow: Interactive Review
 
@@ -43,3 +72,8 @@ The review system is split into two layers:
 - **Neovim RPC**: Standard msgpack-rpc over Unix sockets.
 - **Neph RPC**: A custom method+params contract defined in `protocol.json`.
 - **Review Protocol**: Asynchronous, request-id-correlated exchange via temp files and notifications.
+
+## Changelog
+
+- **[2026-03-08 10:15:00]** Decoupled prompt delivery by introducing send adapters. Agent extensions like `pi` can now poll `vim.g.neph_pending_prompt` via the new `neph get` CLI tool and `status.get` RPC.
+- **[Last Known Hash]:** 238259516fd71885148ff1018566e6a35ae432a3
