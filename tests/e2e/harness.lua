@@ -61,7 +61,9 @@ end
 
 function M.report()
   io.write("\n")
-  io.write(string.format("Results: %d passed, %d failed, %d skipped\n", results.passed, results.failed, results.skipped))
+  io.write(
+    string.format("Results: %d passed, %d failed, %d skipped\n", results.passed, results.failed, results.skipped)
+  )
   if #results.errors > 0 then
     io.stderr:write("\nFailures:\n")
     for _, e in ipairs(results.errors) do
