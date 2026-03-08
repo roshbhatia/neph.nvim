@@ -16,6 +16,12 @@ return {
   send_adapter = function(_td, text, opts)
     local full = opts and opts.submit and (text .. "\n") or text
     vim.g.neph_pending_prompt = full
+    require("neph.internal.log").debug(
+      "pi",
+      "send_adapter: set neph_pending_prompt (submit=%s, len=%d)",
+      tostring(opts and opts.submit or false),
+      #full
+    )
     return true
   end,
   tools = {

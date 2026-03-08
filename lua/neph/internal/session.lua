@@ -6,6 +6,8 @@
 
 local M = {}
 
+local log = require("neph.internal.log")
+
 ---@type table  Backend module (neph.backends.wezterm or neph.backends.native)
 local backend = nil
 ---@type neph.Config
@@ -105,6 +107,7 @@ function M.open(termname)
     full_cmd = agent.full_cmd or agent.cmd,
   }
 
+  log.debug("session", "open: %s (cmd=%s)", termname, agent_config.cmd)
   local td = backend.open(termname, agent_config, cwd)
   if td then
     terminals[termname] = td
@@ -126,6 +129,7 @@ function M.toggle(termname)
 end
 
 function M.focus(termname)
+  log.debug("session", "focus: %s", termname)
   local td = terminals[termname]
   if not td or not backend then
     return
@@ -146,6 +150,7 @@ function M.focus(termname)
 end
 
 function M.hide(termname)
+  log.debug("session", "hide: %s", termname)
   local td = terminals[termname]
   if not td or not backend then
     return
@@ -168,6 +173,7 @@ function M.activate(termname)
 end
 
 function M.kill_session(termname)
+  log.debug("session", "kill_session: %s", termname)
   -- Cancel any pending retry timer
   local pt = pending_timers[termname]
   if pt then
@@ -206,11 +212,14 @@ function M.send(termname, text, opts)
   local agent = require("neph.internal.agents").get_by_name(termname)
   local adapter = agent and agent.send_adapter
   if adapter then
+    log.debug("session", "send: %s via adapter (len=%d, submit=%s)", termname, #text, tostring(opts.submit or false))
     local sent = adapter(td, text, opts)
     if sent then
       return
     end
-    -- Adapter returned false/nil: fall through to default send
+    log.debug("session", "send: %s adapter returned false, falling through", termname)
+  else
+    log.debug("session", "send: %s via default (len=%d, submit=%s)", termname, #text, tostring(opts.submit or false))
   end
 
   -- Default send: WezTerm pane or native terminal via chansend

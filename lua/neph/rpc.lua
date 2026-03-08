@@ -7,6 +7,8 @@
 
 local M = {}
 
+local log = require("neph.internal.log")
+
 local dispatch = {
   ["review.open"] = function(p)
     return require("neph.api.review").open(p)
@@ -29,14 +31,18 @@ local dispatch = {
 }
 
 function M.request(method, params)
+  log.debug("rpc", "dispatch: %s params=%s", method, vim.inspect(params, { newline = " ", indent = "" }))
   local handler = dispatch[method]
   if not handler then
+    log.debug("rpc", "dispatch: METHOD_NOT_FOUND %s", method)
     return { ok = false, error = { code = "METHOD_NOT_FOUND", message = method } }
   end
   local ok, result = pcall(handler, params or {})
   if not ok then
+    log.debug("rpc", "dispatch: INTERNAL error %s: %s", method, tostring(result))
     return { ok = false, error = { code = "INTERNAL", message = tostring(result) } }
   end
+  log.debug("rpc", "dispatch: %s result=%s", method, vim.inspect(result, { newline = " ", indent = "" }))
   return { ok = true, result = result }
 end
 

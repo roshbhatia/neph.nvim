@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { resolve, relative, basename } from "node:path";
 import process from "node:process";
 import { createNephQueue, nephRun, NEPH_TIMEOUT_MS, review } from "../lib/neph-run";
+import { debug as log } from "../lib/log";
 
 // Neovim integration for pi.
 //
@@ -37,12 +38,16 @@ export default function (pi: ExtensionAPI) {
         const res = JSON.parse(raw);
         if (res?.ok && res?.result?.value) {
           const prompt = res.result.value;
+          log("pi-poll", `prompt found (len=${String(prompt).length}): ${String(prompt).slice(0, 80)}`);
           // Clear the global before sending to avoid re-delivery
           await nephRun(["unset", "neph_pending_prompt"], undefined, NEPH_TIMEOUT_MS);
           pi.sendUserMessage(typeof prompt === "string" ? prompt : String(prompt));
+          log("pi-poll", "sendUserMessage called");
+        } else {
+          log("pi-poll", "poll: no prompt");
         }
-      } catch {
-        // nvim may have closed or neph not available — ignore
+      } catch (e) {
+        log("pi-poll", `poll error: ${e instanceof Error ? e.message : String(e)}`);
       } finally {
         polling = false;
       }

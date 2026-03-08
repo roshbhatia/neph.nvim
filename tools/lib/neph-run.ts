@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import process from "node:process";
 import { Buffer } from "node:buffer";
+import { debug as log } from "./log";
 
 export interface HunkResult {
   index: number;
@@ -29,6 +30,7 @@ export function nephRun(
   timeoutMs?: number,
 ): Promise<string> {
   return new Promise((res, rej) => {
+    log("neph-run", `spawn: neph ${args.join(" ")}`);
     const child = spawn("neph", args, {
       stdio: ["pipe", "pipe", "pipe"],
       env: process.env,
@@ -54,17 +56,20 @@ export function nephRun(
 
     child.on("error", (e) => {
       if (timer !== undefined) clearTimeout(timer);
+      log("neph-run", `spawn error: ${e.message} (args: ${args.join(" ")})`);
       rej(e);
     });
     child.on("close", (code) => {
       if (timer !== undefined) clearTimeout(timer);
-      if (code !== 0)
-        rej(
-          new Error(
-            Buffer.concat(err).toString().trim() || `neph exited ${code}`,
-          ),
-        );
-      else res(Buffer.concat(out).toString());
+      if (code !== 0) {
+        const stderr = Buffer.concat(err).toString().trim();
+        log("neph-run", `exit ${code}: ${stderr || "(no stderr)"} (args: ${args.join(" ")})`);
+        rej(new Error(stderr || `neph exited ${code}`));
+      } else {
+        const stdout = Buffer.concat(out).toString();
+        log("neph-run", `exit 0 (args: ${args.join(" ")}, stdout_len=${stdout.length})`);
+        res(stdout);
+      }
     });
   });
 }

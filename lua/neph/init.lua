@@ -55,6 +55,37 @@ function M.setup(opts)
   require("neph.internal.file_refresh").setup(config.current)
   require("neph.internal.completion").setup()
 
+  -- Register :NephDebug command
+  vim.api.nvim_create_user_command("NephDebug", function(cmd_opts)
+    local log = require("neph.internal.log")
+    local sub = cmd_opts.fargs[1]
+    if sub == "on" then
+      vim.g.neph_debug = true
+      log.truncate()
+      vim.notify("Neph: debug logging ON → /tmp/neph-debug.log", vim.log.levels.INFO)
+    elseif sub == "off" then
+      vim.g.neph_debug = nil
+      vim.notify("Neph: debug logging OFF", vim.log.levels.INFO)
+    elseif sub == "tail" then
+      vim.cmd("split /tmp/neph-debug.log")
+    else
+      -- Toggle
+      if vim.g.neph_debug then
+        vim.g.neph_debug = nil
+        vim.notify("Neph: debug logging OFF", vim.log.levels.INFO)
+      else
+        vim.g.neph_debug = true
+        log.truncate()
+        vim.notify("Neph: debug logging ON → /tmp/neph-debug.log", vim.log.levels.INFO)
+      end
+    end
+  end, {
+    nargs = "?",
+    complete = function()
+      return { "on", "off", "tail" }
+    end,
+  })
+
   -- Defer tool installation until after UI is rendered
   if vim.v.vim_did_enter == 1 then
     vim.schedule(function()
