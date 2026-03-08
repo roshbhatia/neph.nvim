@@ -9,7 +9,29 @@ return function(t)
     end)
 
     t.it("neph.setup() completes without error", function()
-      require("neph").setup()
+      local stub_backend = {
+        setup = function() end,
+        open = function(_, ac, _)
+          return { pane_id = 1, cmd = ac.cmd, cwd = "/tmp", name = "stub" }
+        end,
+        focus = function()
+          return true
+        end,
+        hide = function(td)
+          td.pane_id = nil
+        end,
+        is_visible = function(td)
+          return td ~= nil and td.pane_id ~= nil
+        end,
+        kill = function(td)
+          td.pane_id = nil
+        end,
+        cleanup_all = function() end,
+      }
+      require("neph").setup({
+        agents = { require("neph.agents.claude") },
+        backend = stub_backend,
+      })
     end)
 
     t.it("agents.get_all() returns a table", function()
