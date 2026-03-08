@@ -1,8 +1,10 @@
 local M = {}
 
 ---@class HunkRange
----@field start_line integer
----@field end_line integer
+---@field start_a integer  Start line in old file (1-indexed)
+---@field end_a   integer  End line in old file (inclusive)
+---@field start_b integer  Start line in new file (1-indexed)
+---@field end_b   integer  End line in new file (inclusive)
 
 ---@class HunkDecision
 ---@field index integer
@@ -42,23 +44,27 @@ function M.compute_hunks(old_lines, new_lines)
   local ranges = {}
   for _, hunk in ipairs(diff_result) do
     -- hunk format: {start_a, count_a, start_b, count_b}
-    local start_a, count_a, _, _ = unpack(hunk)
+    local start_a, count_a, start_b, count_b = unpack(hunk)
 
-    -- In nvim.diff indices, if count is 0, start_a points to the line AFTER
-    -- where the insertion happens (or the end of file + 1).
-    -- For our UI purposes, we want a valid line number if possible.
-    local display_start = start_a
-    if count_a == 0 then
-      -- It's a pure addition.
-      -- If start_a is > #old_lines, it's at the end.
-      if display_start > #old_lines then
-        display_start = math.max(1, #old_lines)
-      end
+    -- For pure insertions (count_a == 0), start_a is the line AFTER which
+    -- the insertion happens. Clamp to valid range for UI display.
+    local display_a = start_a
+    if count_a == 0 and display_a > #old_lines then
+      display_a = math.max(1, #old_lines)
+    end
+
+    -- For pure deletions (count_b == 0), start_b is the line AFTER which
+    -- the deletion point sits. Clamp similarly.
+    local display_b = start_b
+    if count_b == 0 and display_b > #new_lines then
+      display_b = math.max(1, #new_lines)
     end
 
     table.insert(ranges, {
-      start_line = display_start,
-      end_line = math.max(display_start, display_start + count_a - 1),
+      start_a = display_a,
+      end_a = math.max(display_a, display_a + count_a - 1),
+      start_b = display_b,
+      end_b = math.max(display_b, display_b + count_b - 1),
     })
   end
 

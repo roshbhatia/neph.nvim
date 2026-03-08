@@ -12,14 +12,39 @@ describe("neph.api.review.engine", function()
       local old = { "line 1", "old 2", "line 3" }
       local new = { "line 1", "new 2", "line 3" }
       local hunks = engine.compute_hunks(old, new)
-      assert.are.same({ { start_line = 2, end_line = 2 } }, hunks)
+      assert.are.same({ { start_a = 2, end_a = 2, start_b = 2, end_b = 2 } }, hunks)
     end)
 
     it("handles addition", function()
       local old = { "line 1" }
       local new = { "line 1", "line 2" }
       local hunks = engine.compute_hunks(old, new)
-      assert.are.same({ { start_line = 1, end_line = 1 } }, hunks)
+      -- Pure addition: start_a=1 (insertion after line 1), count_a=0
+      -- start_b=2, count_b=1 (new line 2)
+      assert.are.equal(1, #hunks)
+      assert.are.equal(1, hunks[1].start_a)
+      assert.are.equal(2, hunks[1].start_b)
+      assert.are.equal(2, hunks[1].end_b)
+    end)
+
+    it("handles deletion", function()
+      local old = { "line 1", "line 2", "line 3" }
+      local new = { "line 1", "line 3" }
+      local hunks = engine.compute_hunks(old, new)
+      assert.are.equal(1, #hunks)
+      assert.are.equal(2, hunks[1].start_a)
+      assert.are.equal(2, hunks[1].end_a)
+    end)
+
+    it("handles multi-line replacement with different counts", function()
+      local old = { "A", "B", "C" }
+      local new = { "A", "X", "Y", "Z", "C" }
+      local hunks = engine.compute_hunks(old, new)
+      assert.are.equal(1, #hunks)
+      assert.are.equal(2, hunks[1].start_a)
+      assert.are.equal(2, hunks[1].end_a)
+      assert.are.equal(2, hunks[1].start_b)
+      assert.are.equal(4, hunks[1].end_b)
     end)
   end)
 
