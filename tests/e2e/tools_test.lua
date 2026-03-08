@@ -110,6 +110,24 @@ return function(t)
       vim.fn.delete(tmp)
     end)
 
+    t.it("pi dist does not contain recursive symlink", function()
+      local plugin_root = vim.fn.getcwd()
+      local bad_link = plugin_root .. "/tools/pi/dist/dist"
+      t.assert_eq(vim.fn.isdirectory(bad_link), 0, "tools/pi/dist/dist should not exist (recursive symlink)")
+    end)
+
+    t.it("neph CLI uses disconnect not quit", function()
+      local plugin_root = vim.fn.getcwd()
+      local src = plugin_root .. "/tools/neph-cli/src/transport.ts"
+      if vim.fn.filereadable(src) ~= 1 then
+        t.skip("transport source check", "transport.ts not found")
+        return
+      end
+      local content = table.concat(vim.fn.readfile(src), "\n")
+      t.assert_truthy(content:find("%.disconnect%(%)"), "transport.ts close() must use disconnect(), not quit()")
+      t.assert_eq(content:find("%.quit%(%)"), nil, "transport.ts must NOT contain .quit() — it kills neovim")
+    end)
+
     t.it("pi dist/pi.js is fresh (not stale)", function()
       local plugin_root = vim.fn.getcwd()
       local src = plugin_root .. "/tools/pi/pi.ts"

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { EventEmitter } from "node:events";
+import type { ChildProcess } from "node:child_process";
 
 vi.mock("node:child_process", () => ({ spawn: vi.fn() }));
 
