@@ -2,7 +2,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+
+vi.mock('../../lib/log', () => ({ debug: vi.fn() }));
+
 import { parseClaude, parseCopilot, parseGemini, parseCursor, runGate } from '../src/gate';
+import { debug as logDebug } from '../../lib/log';
 import { FakeTransport } from './fake_transport';
 
 describe('parseClaude', () => {
@@ -243,5 +247,50 @@ describe('runGate', () => {
       tool_input: { file_path: '/tmp/test.txt', content: 'hello' },
     }));
     expect(code).toBe(0); // fail-open, no transport calls
+  });
+});
+
+describe('debug logging on null-return', () => {
+  const logMock = logDebug as ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    logMock.mockClear();
+  });
+
+  it('logs warning when parser returns null but input contains path-like field', async () => {
+    // "Read" is not a write/edit tool, so parseClaude returns null,
+    // but input contains file_path with a path-like value
+    await runGate(null, 'claude', JSON.stringify({
+      tool_name: 'Read',
+      tool_input: { file_path: '/tmp/test.txt' },
+    }));
+
+    expect(logMock).toHaveBeenCalledWith(
+      'gate',
+      expect.stringContaining('schema may need updating'),
+    );
+  });
+
+  it('does not log when parser returns null and no path-like fields', async () => {
+    await runGate(null, 'claude', JSON.stringify({
+      tool_name: 'Read',
+      tool_input: { name: 'hello' },
+    }));
+
+    expect(logMock).not.toHaveBeenCalled();
+  });
+
+  it('does not log when parser successfully returns a payload', async () => {
+    await runGate(null, 'claude', JSON.stringify({
+      tool_name: 'Write',
+      tool_input: { file_path: '/tmp/test.txt', content: 'hello' },
+    }));
+
+    // Parser succeeded (returned payload), so no warning logged
+    // (logMock might be called for other reasons, but not with 'gate' + 'schema may need updating')
+    const gateCalls = logMock.mock.calls.filter(
+      ([mod, msg]: [string, string]) => mod === 'gate' && msg.includes('schema may need updating')
+    );
+    expect(gateCalls).toHaveLength(0);
   });
 });
