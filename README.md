@@ -6,6 +6,10 @@
 
 Neph.nvim provides a clean, universal bridge between AI agents and Neovim. It supports multiple agent backends (goose, claude, opencode, amp, copilot, gemini) and handles interactive diff reviews, state management, and tool discovery.
 
+| Input | Review |
+|-------|--------|
+| ![Input prompt with context placeholders](docs/assets/demo-input.png) | ![Interactive hunk-by-hunk diff review](docs/assets/demo-review.png) |
+
 ## Requirements
 
 - Neovim ≥ 0.10
