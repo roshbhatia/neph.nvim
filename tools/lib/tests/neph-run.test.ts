@@ -153,7 +153,7 @@ describe("review", () => {
 });
 
 describe("createNephQueue", () => {
-  it("executes commands serially", async () => {
+  it("dispatches commands fire-and-forget", async () => {
     const children: ReturnType<typeof createMockChild>[] = [];
     mockSpawn.mockImplementation(() => {
       const child = createMockChild();
@@ -165,18 +165,12 @@ describe("createNephQueue", () => {
     neph("set", "a", "1");
     neph("set", "b", "2");
 
-    // First call spawned immediately
+    // Both calls dispatch without waiting for the first to finish
     await vi.advanceTimersByTimeAsync(0);
-    expect(children.length).toBe(1);
-    expect(mockSpawn).toHaveBeenCalledWith("neph", ["set", "a", "1"], expect.any(Object));
-
-    // Complete first call
-    children[0].simulateExit(0);
-    await vi.advanceTimersByTimeAsync(0);
-
-    // Second call spawned after first completes
     expect(children.length).toBe(2);
+    expect(mockSpawn).toHaveBeenCalledWith("neph", ["set", "a", "1"], expect.any(Object));
     expect(mockSpawn).toHaveBeenCalledWith("neph", ["set", "b", "2"], expect.any(Object));
+    children[0].simulateExit(0);
     children[1].simulateExit(0);
   });
 
@@ -193,11 +187,10 @@ describe("createNephQueue", () => {
     neph("set", "b", "2");
 
     await vi.advanceTimersByTimeAsync(0);
-    // First call fails
+    // First call fails — second still runs
     children[0].simulateExit(1);
     await vi.advanceTimersByTimeAsync(0);
 
-    // Second call still runs
     expect(children.length).toBe(2);
     children[1].simulateExit(0);
   });
