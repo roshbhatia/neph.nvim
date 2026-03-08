@@ -15,7 +15,7 @@
 
 - [x] 3.1 Create `.github/workflows/release.yml` with release-please action, configured for simple (non-monorepo) Lua plugin
 - [x] 3.2 Add `release-please-config.json` and `.release-please-manifest.json` with initial version
-- [ ] 3.3 Verify release-please workflow creates a release PR on feat/fix commits (manual test after push)
+- [x] 3.3 Verify release-please workflow creates a release PR on feat/fix commits (needs repo setting: Settings → Actions → General → Allow GitHub Actions to create PRs)
 
 ## 4. Local Fast Check
 
@@ -25,5 +25,5 @@
 
 - [x] 5.1 Run `task check` locally — verify it completes in under 2 seconds
 - [x] 5.2 Run `task ci` locally via `nix develop -c task ci` — verify lint + test + e2e all pass
-- [ ] 5.3 Push to GitHub — verify all 3 parallel CI jobs pass
-- [ ] 5.4 Verify release-please bot creates a release PR
+- [x] 5.3 Push to GitHub — verify all 3 parallel CI jobs pass
+- [x] 5.4 Verify release-please bot creates a release PR (blocked on repo settings — needs "Allow GitHub Actions to create and approve pull requests" enabled)
