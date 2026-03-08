@@ -189,6 +189,10 @@ function M.kill_session(termname)
   if agent and not agent.integration then
     vim.g[termname .. "_active"] = nil
   end
+  -- Extension agents with send_adapter: clear pending prompt
+  if agent and agent.send_adapter then
+    vim.g.neph_pending_prompt = nil
+  end
 end
 
 function M.send(termname, text, opts)

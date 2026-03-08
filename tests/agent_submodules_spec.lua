@@ -37,6 +37,44 @@ describe("neph.agents submodules", function()
     end)
   end
 
+  describe("pi send_adapter", function()
+    local pi
+
+    before_each(function()
+      pi = require("neph.agents.pi")
+      vim.g.neph_pending_prompt = nil
+      vim.g.pi_active = nil
+    end)
+
+    after_each(function()
+      vim.g.neph_pending_prompt = nil
+      vim.g.pi_active = nil
+    end)
+
+    it("always returns true regardless of pi_active", function()
+      -- pi_active is nil (pi still initializing)
+      local result = pi.send_adapter({}, "hello", { submit = true })
+      assert.is_true(result)
+    end)
+
+    it("sets neph_pending_prompt with submit newline", function()
+      pi.send_adapter({}, "hello", { submit = true })
+      assert.are.equal("hello\n", vim.g.neph_pending_prompt)
+    end)
+
+    it("sets neph_pending_prompt without newline when no submit", function()
+      pi.send_adapter({}, "hello", {})
+      assert.are.equal("hello", vim.g.neph_pending_prompt)
+    end)
+
+    it("works when pi_active is already set", function()
+      vim.g.pi_active = true
+      local result = pi.send_adapter({}, "test prompt", { submit = true })
+      assert.is_true(result)
+      assert.are.equal("test prompt\n", vim.g.neph_pending_prompt)
+    end)
+  end)
+
   it("all.lua returns all 10 agents", function()
     local all = require("neph.agents.all")
     assert.are.equal(10, #all)
