@@ -240,15 +240,23 @@ function M.ensure_active_and_send(text)
   if not M.exists(active_terminal) then
     M.open(active_terminal)
     M.focus(active_terminal)
-    local retries = 20
-    for _ = 1, retries do
-      if M.exists(active_terminal) then
-        M.send(active_terminal, text, { submit = true })
-        return
+    -- Use a non-blocking timer to wait for the terminal to become ready
+    local retries = 0
+    local max_retries = 20
+    local name = active_terminal
+    local timer = vim.loop.new_timer()
+    timer:start(50, 50, vim.schedule_wrap(function()
+      retries = retries + 1
+      if M.exists(name) then
+        timer:stop()
+        timer:close()
+        M.send(name, text, { submit = true })
+      elseif retries >= max_retries then
+        timer:stop()
+        timer:close()
+        vim.notify("Neph: terminal failed to become ready", vim.log.levels.ERROR)
       end
-      vim.fn.system("sleep 0.05")
-    end
-    vim.notify("Neph: terminal failed to become ready", vim.log.levels.ERROR)
+    end))
   else
     M.focus(active_terminal)
     M.send(active_terminal, text, { submit = true })
