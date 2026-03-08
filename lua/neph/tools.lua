@@ -85,24 +85,41 @@ local function json_merge(src_path, dst_path, key)
   vim.fn.writefile({ vim.json.encode(dst_json) }, dst_path)
 end
 
---- Build TypeScript tools that require bundling (only if dist is missing).
+--- Build TypeScript tools that require bundling.
+--- Rebuilds if dist is missing OR if source is newer than dist.
 ---@param root string  Plugin root path
 local function build_if_needed(root)
   local builds = {
-    { dir = "neph-cli", check = "dist/index.js" },
-    { dir = "pi", check = "dist/pi.js" },
+    { dir = "neph-cli", src = "src/index.ts", check = "dist/index.js" },
+    { dir = "pi", src = "pi.ts", check = "dist/pi.js" },
   }
   for _, b in ipairs(builds) do
     local tool_dir = root .. "/tools/" .. b.dir
     local check_file = tool_dir .. "/" .. b.check
+    local src_file = tool_dir .. "/" .. b.src
     local pkg = tool_dir .. "/package.json"
-    if vim.fn.filereadable(pkg) == 1 and vim.fn.filereadable(check_file) == 0 then
-      local cmd = "cd " .. vim.fn.shellescape(tool_dir) .. " && npm install --ignore-scripts && npm run build"
+    if vim.fn.filereadable(pkg) ~= 1 then
+      goto continue
+    end
+
+    local needs_build = vim.fn.filereadable(check_file) == 0
+    if not needs_build and vim.fn.filereadable(src_file) == 1 then
+      local src_mtime = vim.fn.getftime(src_file)
+      local dst_mtime = vim.fn.getftime(check_file)
+      needs_build = src_mtime > dst_mtime
+    end
+
+    if needs_build then
+      local cmd = "cd "
+        .. vim.fn.shellescape(tool_dir)
+        .. " && npm install --ignore-scripts 2>/dev/null && npm run build 2>&1"
       local result = vim.fn.system({ "sh", "-c", cmd })
       if vim.v.shell_error ~= 0 then
         vim.notify("Neph: build failed for " .. b.dir .. ": " .. result, vim.log.levels.WARN)
       end
     end
+
+    ::continue::
   end
 end
 
