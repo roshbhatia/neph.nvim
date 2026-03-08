@@ -98,28 +98,24 @@ local function build_if_needed(root)
     local check_file = tool_dir .. "/" .. b.check
     local src_file = tool_dir .. "/" .. b.src
     local pkg = tool_dir .. "/package.json"
-    if vim.fn.filereadable(pkg) ~= 1 then
-      goto continue
-    end
+    if vim.fn.filereadable(pkg) == 1 then
+      local needs_build = vim.fn.filereadable(check_file) == 0
+      if not needs_build and vim.fn.filereadable(src_file) == 1 then
+        local src_mtime = vim.fn.getftime(src_file)
+        local dst_mtime = vim.fn.getftime(check_file)
+        needs_build = src_mtime > dst_mtime
+      end
 
-    local needs_build = vim.fn.filereadable(check_file) == 0
-    if not needs_build and vim.fn.filereadable(src_file) == 1 then
-      local src_mtime = vim.fn.getftime(src_file)
-      local dst_mtime = vim.fn.getftime(check_file)
-      needs_build = src_mtime > dst_mtime
-    end
-
-    if needs_build then
-      local cmd = "cd "
-        .. vim.fn.shellescape(tool_dir)
-        .. " && npm install --ignore-scripts 2>/dev/null && npm run build 2>&1"
-      local result = vim.fn.system({ "sh", "-c", cmd })
-      if vim.v.shell_error ~= 0 then
-        vim.notify("Neph: build failed for " .. b.dir .. ": " .. result, vim.log.levels.WARN)
+      if needs_build then
+        local cmd = "cd "
+          .. vim.fn.shellescape(tool_dir)
+          .. " && npm install --ignore-scripts 2>/dev/null && npm run build 2>&1"
+        local result = vim.fn.system({ "sh", "-c", cmd })
+        if vim.v.shell_error ~= 0 then
+          vim.notify("Neph: build failed for " .. b.dir .. ": " .. result, vim.log.levels.WARN)
+        end
       end
     end
-
-    ::continue::
   end
 end
 

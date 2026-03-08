@@ -54,7 +54,10 @@ return function(t)
       end
       local src_mtime = vim.fn.getftime(src)
       local dst_mtime = vim.fn.getftime(dst)
-      t.assert_truthy(dst_mtime >= src_mtime, "dist/pi.js should be newer than or equal to pi.ts (stale bundle detected)")
+      t.assert_truthy(
+        dst_mtime >= src_mtime,
+        "dist/pi.js should be newer than or equal to pi.ts (stale bundle detected)"
+      )
     end)
   end)
 end
