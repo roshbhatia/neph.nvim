@@ -2,15 +2,19 @@
 ---@brief [[
 --- Registers a blink.cmp source that completes +token placeholders inside
 --- the ai_terminals_input filetype.  Silently no-ops when blink is absent.
+---
+--- Registration is deferred until the ai_terminals_input filetype is first
+--- entered, so blink.cmp is never loaded eagerly at startup.
 ---@brief ]]
 
 local M = {}
-local done = false
+local registered = false
 
-function M.setup()
-  if done then
+local function register_source()
+  if registered then
     return
   end
+  registered = true
 
   local ok, blink = pcall(require, "blink.cmp")
   if not ok then
@@ -23,8 +27,15 @@ function M.setup()
   })
   blink.add_filetype_source("ai_terminals_input", "neph_context")
   blink.add_filetype_source("ai_terminals_input", "path")
+end
 
-  done = true
+function M.setup()
+  -- Don't load blink.cmp now — wait until the filetype is actually used
+  vim.api.nvim_create_autocmd("FileType", {
+    pattern = "ai_terminals_input",
+    once = true,
+    callback = register_source,
+  })
 end
 
 -- ---------------------------------------------------------------------------

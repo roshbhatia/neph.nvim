@@ -2,7 +2,9 @@
 ---@brief [[
 --- Auto-symlinks bundled companion tools to their expected locations.
 ---
---- Called once from neph.setup(). Safe to call multiple times (uses ln -sf).
+--- Uses a stamp file to skip reinstallation when nothing has changed.
+--- The stamp records the plugin root mtime; install only runs when
+--- the plugin directory is newer than the stamp.
 ---
 --- Symlinks created:
 ---   tools/neph-cli/dist/index.js → ~/.local/bin/neph
@@ -18,9 +20,7 @@ local M = {}
 -- Resolve the plugin root (two levels up from this file: lua/neph/tools.lua → ../../)
 local function plugin_root()
   local src = debug.getinfo(1, "S").source
-  -- source is "@/path/to/lua/neph/tools.lua" — strip the leading "@"
   local file = src:match("^@(.+)$") or src
-  -- Go up two directories: neph/ → lua/ → plugin root
   return vim.fn.fnamemodify(file, ":h:h:h")
 end
 
@@ -34,11 +34,8 @@ local TOOLS = {
   { src = "neph-cli/dist/index.js", dst = "~/.local/bin/neph" },
   { src = "pi/package.json", dst = "~/.pi/agent/extensions/nvim/package.json", agent = "pi" },
   { src = "pi/dist", dst = "~/.pi/agent/extensions/nvim/dist", agent = "pi" },
-  -- Cursor hooks (symlink — standalone file)
   { src = "cursor/hooks.json", dst = "~/.cursor/hooks.json", agent = "cursor" },
-  -- Amp plugin (symlink — single TS file, Bun-based)
   { src = "amp/neph-plugin.ts", dst = "~/.config/amp/plugins/neph-plugin.ts", agent = "amp" },
-  -- OpenCode custom tools (symlink — standalone files)
   { src = "opencode/write.ts", dst = "~/.config/opencode/tools/write.ts", agent = "opencode" },
   { src = "opencode/edit.ts", dst = "~/.config/opencode/tools/edit.ts", agent = "opencode" },
 }
@@ -49,21 +46,73 @@ local TOOLS = {
 ---@field key     string  JSON key to merge
 ---@field agent?  string  Agent name this belongs to (nil = always installed)
 
---- Settings files that need JSON merge (not symlink)
 ---@type neph.MergeSpec[]
 local MERGE_TOOLS = {
   { src = "claude/settings.json", dst = "~/.claude/settings.json", key = "hooks", agent = "claude" },
   { src = "gemini/settings.json", dst = "~/.gemini/settings.json", key = "hooks", agent = "gemini" },
 }
 
---- Check if a hook entry already exists in a list (match on matcher + first command).
----@param list table[]  Existing hook entries
----@param entry table   Entry to check
+-- ---------------------------------------------------------------------------
+-- Stamp file: skip install when nothing changed
+-- ---------------------------------------------------------------------------
+
+local STAMP_NAME = "neph_install.stamp"
+
+--- Get the stamp file path (in Neovim's data directory).
+---@return string
+local function stamp_path()
+  return vim.fn.stdpath("data") .. "/" .. STAMP_NAME
+end
+
+--- Check if install can be skipped. Compares the plugin root's mtime
+--- against the stamp file's mtime. If the stamp is newer, nothing changed.
+---@param root string
+---@return boolean  true if install should be skipped
+local function is_up_to_date(root)
+  local sp = stamp_path()
+  local stamp_mt = vim.fn.getftime(sp)
+  if stamp_mt < 0 then
+    return false -- no stamp = first install
+  end
+  -- Check if any tools/ source is newer than stamp
+  local tools_dir = root .. "/tools"
+  local tools_mt = vim.fn.getftime(tools_dir)
+  return tools_mt <= stamp_mt
+end
+
+--- Touch the stamp file.
+local function touch_stamp()
+  local sp = stamp_path()
+  vim.fn.writefile({ tostring(os.time()) }, sp)
+end
+
+-- ---------------------------------------------------------------------------
+-- Helpers
+-- ---------------------------------------------------------------------------
+
+--- Check if an agent is in the enabled list (nil = all enabled).
+---@param agent string|nil
+---@param enabled string[]|nil
+---@return boolean
+local function is_agent_enabled(agent, enabled)
+  if not agent or not enabled then
+    return true
+  end
+  for _, name in ipairs(enabled) do
+    if name == agent then
+      return true
+    end
+  end
+  return false
+end
+
+--- Check if a hook entry already exists in a list.
+---@param list table[]
+---@param entry table
 ---@return boolean
 local function hook_entry_exists(list, entry)
   for _, existing in ipairs(list) do
     if existing.matcher == entry.matcher then
-      -- Same matcher — check if commands match
       if existing.hooks and entry.hooks and #existing.hooks > 0 and #entry.hooks > 0 then
         if existing.hooks[1].command == entry.hooks[1].command then
           return true
@@ -75,11 +124,9 @@ local function hook_entry_exists(list, entry)
 end
 
 --- Additively merge hooks from source JSON into destination JSON file.
---- Existing hooks in destination are preserved. Neph hooks are appended
---- only if not already present (idempotent). Non-hook keys are untouched.
----@param src_path string  Absolute path to source JSON
----@param dst_path string  Absolute path to destination JSON
----@param key      string  JSON key to merge (e.g. "hooks")
+---@param src_path string
+---@param dst_path string
+---@param key string
 local function json_merge(src_path, dst_path, key)
   local src_content = vim.fn.readfile(src_path)
   if not src_content or #src_content == 0 then
@@ -101,8 +148,6 @@ local function json_merge(src_path, dst_path, key)
     end
   end
 
-  -- Additive merge: for each event type in source hooks, append entries
-  -- that don't already exist in the destination
   if not dst_json[key] then
     dst_json[key] = {}
   end
@@ -121,107 +166,65 @@ local function json_merge(src_path, dst_path, key)
   vim.fn.writefile({ vim.json.encode(dst_json) }, dst_path)
 end
 
---- Find the newest mtime among all .ts files in a directory (non-recursive for flat, recursive for src/).
----@param dir string  Directory to scan
----@return number  newest mtime (0 if no files found)
-local function newest_ts_mtime(dir)
-  local glob = vim.fn.glob(dir .. "/**/*.ts", false, true)
-  local newest = 0
-  for _, f in ipairs(glob) do
-    local mt = vim.fn.getftime(f)
-    if mt > newest then
-      newest = mt
-    end
-  end
-  return newest
-end
+-- ---------------------------------------------------------------------------
+-- Install logic
+-- ---------------------------------------------------------------------------
 
---- Check which TypeScript tools need rebuilding.
---- Returns a list of {dir, cmd} for tools that need a build.
----@param root string  Plugin root path
----@return {dir: string, cmd: string}[]
-local function collect_builds(root)
-  local builds = {
-    { dir = "neph-cli", src_dirs = { "src" }, check = "dist/index.js" },
-    { dir = "pi", src_dirs = { ".", "../lib" }, check = "dist/pi.js" },
-  }
-  local pending = {}
-  for _, b in ipairs(builds) do
-    local tool_dir = root .. "/tools/" .. b.dir
-    local check_file = tool_dir .. "/" .. b.check
-    local pkg = tool_dir .. "/package.json"
-    if vim.fn.filereadable(pkg) == 1 then
-      local needs_build = vim.fn.filereadable(check_file) == 0
-      if not needs_build then
-        local dst_mtime = vim.fn.getftime(check_file)
-        for _, sd in ipairs(b.src_dirs) do
-          local src_mtime = newest_ts_mtime(tool_dir .. "/" .. sd)
-          if src_mtime > dst_mtime then
-            needs_build = true
-            break
-          end
-        end
-      end
-      if needs_build then
-        local cmd = "cd "
-          .. vim.fn.shellescape(tool_dir)
-          .. " && npm install --ignore-scripts 2>/dev/null && npm run build 2>&1"
-        table.insert(pending, { dir = b.dir, cmd = cmd })
-      end
-    end
-  end
-  return pending
-end
-
-
---- Check if an agent is in the enabled list (nil = all enabled).
----@param agent string|nil  Agent name (nil = always enabled, e.g. neph CLI)
----@param enabled string[]|nil  Allowlist (nil = all enabled)
----@return boolean
-local function is_agent_enabled(agent, enabled)
-  if not agent then
-    return true -- no agent tag = always installed (e.g. neph CLI)
-  end
-  if not enabled then
-    return true -- no allowlist = all agents enabled
-  end
-  for _, name in ipairs(enabled) do
-    if name == agent then
-      return true
-    end
-  end
-  return false
-end
-
---- Build a shell script that does all symlinks + builds in one shot.
---- Runs entirely in a background job — zero blocking on the main thread.
----@param root string  Plugin root path
----@param pending {dir: string, cmd: string}[]
+--- Build a shell script that does everything: mtime checks, builds, symlinks.
+--- The entire script runs in a background job — zero main-thread blocking.
+---@param root string
 ---@return string
-local function build_install_script(root, pending)
+local function build_install_script(root)
   local enabled = require("neph.config").current.enabled_agents
-  local lines = { "#!/bin/sh", "set -e" }
+  local lines = { "#!/bin/sh" }
 
   -- Symlinks
   for _, tool in ipairs(TOOLS) do
     if is_agent_enabled(tool.agent, enabled) then
       local src = root .. "/tools/" .. tool.src
       local dst = vim.fn.expand(tool.dst)
-      table.insert(lines, string.format("mkdir -p %s", vim.fn.shellescape(vim.fn.fnamemodify(dst, ":h"))))
-      table.insert(lines, string.format("[ -e %s ] && ln -sfn %s %s || true", vim.fn.shellescape(src), vim.fn.shellescape(src), vim.fn.shellescape(dst)))
+      local dst_dir = vim.fn.fnamemodify(dst, ":h")
+      table.insert(lines, string.format("mkdir -p '%s'", dst_dir))
+      table.insert(lines, string.format("[ -e '%s' ] && ln -sfn '%s' '%s'", src, src, dst))
     end
   end
 
-  -- Builds
-  for _, b in ipairs(pending) do
-    table.insert(lines, b.cmd .. " || true")
+  -- Conditional builds: only if dist is missing or source is newer
+  local builds = {
+    { dir = "neph-cli", src_dirs = { "src" }, check = "dist/index.js" },
+    { dir = "pi", src_dirs = { ".", "../lib" }, check = "dist/pi.js" },
+  }
+  for _, b in ipairs(builds) do
+    local tool_dir = root .. "/tools/" .. b.dir
+    -- Let the shell do the mtime comparison — no Lua glob needed
+    table.insert(lines, string.format(
+      "if [ -f '%s/package.json' ]; then",
+      tool_dir
+    ))
+    table.insert(lines, string.format(
+      "  NEEDS_BUILD=0; CHECK='%s/%s'",
+      tool_dir, b.check
+    ))
+    table.insert(lines, "  if [ ! -f \"$CHECK\" ]; then NEEDS_BUILD=1; else")
+    for _, sd in ipairs(b.src_dirs) do
+      table.insert(lines, string.format(
+        "    if [ -n \"$(find '%s/%s' -name '*.ts' -newer \"$CHECK\" 2>/dev/null | head -1)\" ]; then NEEDS_BUILD=1; fi",
+        tool_dir, sd
+      ))
+    end
+    table.insert(lines, "  fi")
+    table.insert(lines, string.format(
+      "  if [ \"$NEEDS_BUILD\" = 1 ]; then cd '%s' && npm install --ignore-scripts 2>/dev/null && npm run build 2>&1; fi",
+      tool_dir
+    ))
+    table.insert(lines, "fi")
   end
 
   return table.concat(lines, "\n")
 end
 
 --- JSON merges and pi wrapper (must run on main thread for vim.fn access).
----@param root string  Plugin root path
+---@param root string
 local function do_json_merges(root)
   local enabled = require("neph.config").current.enabled_agents
 
@@ -244,19 +247,25 @@ local function do_json_merges(root)
   end
 end
 
---- Non-blocking install. Everything runs in a single background job.
+--- Non-blocking install. Skips entirely if stamp is up to date.
+--- Everything runs in a single background shell job.
 function M.install_async()
   local root = plugin_root()
-  local pending = collect_builds(root)
-  local script = build_install_script(root, pending)
+
+  -- Fast path: skip if nothing changed (single stat call)
+  if is_up_to_date(root) then
+    return
+  end
+
+  local script = build_install_script(root)
 
   vim.fn.jobstart({ "sh", "-c", script }, {
     on_exit = vim.schedule_wrap(function(_, code)
       if code ~= 0 then
         vim.notify("Neph: tool install had errors", vim.log.levels.WARN)
       end
-      -- JSON merges need vim.fn — run on main thread after job completes
       do_json_merges(root)
+      touch_stamp()
     end),
   })
 end
@@ -264,10 +273,10 @@ end
 --- Synchronous install (blocking). Use install_async() for startup.
 function M.install()
   local root = plugin_root()
-  local pending = collect_builds(root)
-  local script = build_install_script(root, pending)
+  local script = build_install_script(root)
   vim.fn.system({ "sh", "-c", script })
   do_json_merges(root)
+  touch_stamp()
 end
 
 return M
