@@ -25,15 +25,6 @@ local function plugin_root()
 end
 
 ---@class neph.ToolSpec
----@field src  string  Path relative to tools/ inside the plugin root
----@field dst  string  Absolute destination path (may use ~)
-
----@class neph.MergeSpec
----@field src     string  Path relative to tools/ inside the plugin root
----@field dst     string  Absolute destination path (may use ~)
----@field key     string  JSON key to merge
-
----@class neph.ToolSpec
 ---@field src    string       Path relative to tools/ inside the plugin root
 ---@field dst    string       Absolute destination path (may use ~)
 ---@field agent? string       Agent name this belongs to (nil = always installed, e.g. neph CLI)
@@ -145,14 +136,16 @@ local function newest_ts_mtime(dir)
   return newest
 end
 
---- Build TypeScript tools that require bundling.
---- Rebuilds if dist is missing OR if any source .ts file is newer than dist.
+--- Check which TypeScript tools need rebuilding.
+--- Returns a list of {dir, cmd} for tools that need a build.
 ---@param root string  Plugin root path
-local function build_if_needed(root)
+---@return {dir: string, cmd: string}[]
+local function collect_builds(root)
   local builds = {
     { dir = "neph-cli", src_dirs = { "src" }, check = "dist/index.js" },
     { dir = "pi", src_dirs = { ".", "../lib" }, check = "dist/pi.js" },
   }
+  local pending = {}
   for _, b in ipairs(builds) do
     local tool_dir = root .. "/tools/" .. b.dir
     local check_file = tool_dir .. "/" .. b.check
@@ -169,16 +162,51 @@ local function build_if_needed(root)
           end
         end
       end
-
       if needs_build then
         local cmd = "cd "
           .. vim.fn.shellescape(tool_dir)
           .. " && npm install --ignore-scripts 2>/dev/null && npm run build 2>&1"
-        local result = vim.fn.system({ "sh", "-c", cmd })
-        if vim.v.shell_error ~= 0 then
-          vim.notify("Neph: build failed for " .. b.dir .. ": " .. result, vim.log.levels.WARN)
-        end
+        table.insert(pending, { dir = b.dir, cmd = cmd })
       end
+    end
+  end
+  return pending
+end
+
+--- Run builds asynchronously via vim.fn.jobstart.
+---@param pending {dir: string, cmd: string}[]
+---@param callback fun()|nil  Called when all builds complete
+local function build_async(pending, callback)
+  if #pending == 0 then
+    if callback then
+      callback()
+    end
+    return
+  end
+  local remaining = #pending
+  for _, b in ipairs(pending) do
+    vim.fn.jobstart({ "sh", "-c", b.cmd }, {
+      on_exit = vim.schedule_wrap(function(_, code)
+        if code ~= 0 then
+          vim.notify("Neph: build failed for " .. b.dir, vim.log.levels.WARN)
+        end
+        remaining = remaining - 1
+        if remaining == 0 and callback then
+          callback()
+        end
+      end),
+    })
+  end
+end
+
+--- Synchronous build (for M.install() backward compat).
+---@param root string
+local function build_if_needed(root)
+  local pending = collect_builds(root)
+  for _, b in ipairs(pending) do
+    local result = vim.fn.system({ "sh", "-c", b.cmd })
+    if vim.v.shell_error ~= 0 then
+      vim.notify("Neph: build failed for " .. b.dir .. ": " .. result, vim.log.levels.WARN)
     end
   end
 end
@@ -202,14 +230,10 @@ local function is_agent_enabled(agent, enabled)
   return false
 end
 
---- Install (symlink) all bundled tools to their canonical locations.
---- When `config.enabled_agents` is set, only installs tools for listed agents.
---- The neph CLI is always installed regardless of the allowlist.
-function M.install()
-  local root = plugin_root()
+--- Create symlinks and merge JSON for all enabled tools.
+---@param root string  Plugin root path
+local function link_and_merge(root)
   local enabled = require("neph.config").current.enabled_agents
-
-  build_if_needed(root)
 
   for _, tool in ipairs(TOOLS) do
     if not is_agent_enabled(tool.agent, enabled) then
@@ -218,10 +242,9 @@ function M.install()
     local src = root .. "/tools/" .. tool.src
     local dst = vim.fn.expand(tool.dst)
 
-    -- Check if src exists (file or directory)
     local exists = vim.fn.filereadable(src) == 1 or vim.fn.isdirectory(src) == 1
     if not exists then
-      vim.notify(string.format("Neph: tool not found, skipping symlink: %s", src), vim.log.levels.WARN)
+      -- Silently skip missing tools (common when dist not yet built)
     else
       vim.fn.mkdir(vim.fn.fnamemodify(dst, ":h"), "p")
       vim.fn.system({ "ln", "-sfn", src, dst })
@@ -229,7 +252,6 @@ function M.install()
     ::continue_tool::
   end
 
-  -- JSON merge installs (claude, gemini settings)
   for _, spec in ipairs(MERGE_TOOLS) do
     if not is_agent_enabled(spec.agent, enabled) then
       goto continue_merge
@@ -238,13 +260,10 @@ function M.install()
     local dst = vim.fn.expand(spec.dst)
     if vim.fn.filereadable(src) == 1 then
       json_merge(src, dst, spec.key)
-    else
-      vim.notify(string.format("Neph: tool not found, skipping merge: %s", src), vim.log.levels.WARN)
     end
     ::continue_merge::
   end
 
-  -- Create pi extension index.ts wrapper (only if pi is enabled)
   if is_agent_enabled("pi", enabled) then
     local pi_ext_dir = vim.fn.expand("~/.pi/agent/extensions/nvim")
     local pi_index = pi_ext_dir .. "/index.ts"
@@ -252,6 +271,33 @@ function M.install()
       vim.fn.writefile({ 'export { default } from "./dist/pi.js";' }, pi_index)
     end
   end
+end
+
+--- Non-blocking install. Builds run as background jobs; symlinks happen after.
+function M.install_async()
+  local root = plugin_root()
+  local pending = collect_builds(root)
+
+  if #pending == 0 then
+    -- No builds needed — just link (fast, <100ms)
+    link_and_merge(root)
+    return
+  end
+
+  -- Kick off builds in background, link after they complete
+  build_async(pending, function()
+    link_and_merge(root)
+  end)
+
+  -- Link what we can now (dist may already exist for some tools)
+  link_and_merge(root)
+end
+
+--- Synchronous install (blocking). Use install_async() for startup.
+function M.install()
+  local root = plugin_root()
+  build_if_needed(root)
+  link_and_merge(root)
 end
 
 return M
