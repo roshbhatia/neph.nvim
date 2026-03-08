@@ -13,6 +13,8 @@ jobs:
         with:
           nix_path: nixpkgs=channel:nixos-unstable
       - uses: DeterminateSystems/magic-nix-cache-action@v8
+      - name: Install deps
+        run: nix develop --no-write-lock-file -c sh -c "npm ci --prefix tools/neph-cli && npm ci --prefix tools/pi && npm ci --prefix tools/lib"
       - name: Lint
         run: nix develop --no-write-lock-file -c task lint
 
