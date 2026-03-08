@@ -1,28 +1,59 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { parseClaude, parseCopilot, parseGemini, parseCursor, runGate } from '../src/gate';
 import { FakeTransport } from './fake_transport';
 
 describe('parseClaude', () => {
+  let tmpFile: string;
+
+  beforeEach(() => {
+    tmpFile = path.join(os.tmpdir(), `neph-gate-test-${Date.now()}.txt`);
+    fs.writeFileSync(tmpFile, 'hello foo world');
+  });
+
+  afterEach(() => {
+    try { fs.unlinkSync(tmpFile); } catch {}
+  });
+
   it('parses Write tool', () => {
     const result = parseClaude({
       tool_name: 'Write',
-      tool_input: { file_path: '/tmp/test.txt', content: 'hello world' },
+      tool_input: { file_path: tmpFile, content: 'hello world' },
     });
-    expect(result).toEqual({ filePath: '/tmp/test.txt', content: 'hello world' });
+    expect(result).toEqual({ filePath: tmpFile, content: 'hello world' });
   });
 
-  it('parses Edit tool with old_str/new_str', () => {
+  it('parses Edit tool — reconstructs full file content', () => {
     const result = parseClaude({
       tool_name: 'Edit',
-      tool_input: { file_path: '/tmp/test.txt', old_str: 'foo', new_str: 'bar' },
+      tool_input: { file_path: tmpFile, old_str: 'foo', new_str: 'bar' },
     });
     expect(result).not.toBeNull();
-    expect(result!.filePath).toBe('/tmp/test.txt');
-    expect(JSON.parse(result!.content)).toEqual({ old_str: 'foo', new_str: 'bar' });
+    expect(result!.filePath).toBe(tmpFile);
+    expect(result!.content).toBe('hello bar world');
+  });
+
+  it('Edit returns null when old_str not found in file', () => {
+    const result = parseClaude({
+      tool_name: 'Edit',
+      tool_input: { file_path: tmpFile, old_str: 'missing', new_str: 'bar' },
+    });
+    expect(result).toBeNull();
+  });
+
+  it('Edit on nonexistent file returns new_str as content', () => {
+    const result = parseClaude({
+      tool_name: 'Edit',
+      tool_input: { file_path: '/tmp/nonexistent-neph-test.txt', old_str: 'x', new_str: 'bar' },
+    });
+    expect(result).not.toBeNull();
+    expect(result!.content).toBe('bar');
   });
 
   it('returns null for non-file tools', () => {
-    expect(parseClaude({ tool_name: 'Read', tool_input: { file_path: '/tmp/test.txt' } })).toBeNull();
+    expect(parseClaude({ tool_name: 'Read', tool_input: { file_path: tmpFile } })).toBeNull();
   });
 
   it('returns null when tool_input is missing', () => {
@@ -65,28 +96,48 @@ describe('parseCopilot', () => {
 });
 
 describe('parseGemini', () => {
+  let tmpFile: string;
+
+  beforeEach(() => {
+    tmpFile = path.join(os.tmpdir(), `neph-gemini-test-${Date.now()}.txt`);
+    fs.writeFileSync(tmpFile, 'hello old world');
+  });
+
+  afterEach(() => {
+    try { fs.unlinkSync(tmpFile); } catch {}
+  });
+
   it('parses write_file tool', () => {
     const result = parseGemini({
       tool_name: 'write_file',
-      tool_input: { filepath: '/tmp/test.txt', content: 'hello' },
+      tool_input: { filepath: tmpFile, content: 'hello' },
     });
-    expect(result).toEqual({ filePath: '/tmp/test.txt', content: 'hello' });
+    expect(result).toEqual({ filePath: tmpFile, content: 'hello' });
   });
 
-  it('parses edit_file with new_string', () => {
+  it('parses edit_file — reconstructs full file content', () => {
     const result = parseGemini({
       tool_name: 'edit_file',
-      tool_input: { filepath: '/tmp/test.txt', new_string: 'updated' },
+      tool_input: { filepath: tmpFile, old_string: 'old', new_string: 'new' },
     });
-    expect(result).toEqual({ filePath: '/tmp/test.txt', content: 'updated' });
+    expect(result).not.toBeNull();
+    expect(result!.content).toBe('hello new world');
+  });
+
+  it('edit_file falls back to content when no old_string/new_string', () => {
+    const result = parseGemini({
+      tool_name: 'edit_file',
+      tool_input: { filepath: tmpFile, content: 'full replacement' },
+    });
+    expect(result).toEqual({ filePath: tmpFile, content: 'full replacement' });
   });
 
   it('returns null for non-file tools', () => {
-    expect(parseGemini({ tool_name: 'read_file', tool_input: { filepath: '/tmp/test.txt' } })).toBeNull();
+    expect(parseGemini({ tool_name: 'read_file', tool_input: { filepath: tmpFile } })).toBeNull();
   });
 
   it('returns null when filepath missing (uses filepath, not file_path)', () => {
-    expect(parseGemini({ tool_name: 'write_file', tool_input: { file_path: '/tmp/test.txt', content: 'hello' } })).toBeNull();
+    expect(parseGemini({ tool_name: 'write_file', tool_input: { file_path: tmpFile, content: 'hello' } })).toBeNull();
   });
 });
 

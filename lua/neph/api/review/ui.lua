@@ -115,14 +115,15 @@ function M.start_review(session, ui_state, on_done)
     M.place_sign(ui_state.left_buf, "neph_current", hunk.start_line, ui_state.sign_ids)
     M.show_hints(ui_state.right_buf, hunk, idx, total)
 
-    local preview_lines = vim.api.nvim_buf_get_lines(ui_state.right_buf, hunk.start_line - 1, hunk.end_line, false)
+    local new_hunk_lines = vim.api.nvim_buf_get_lines(ui_state.right_buf, hunk.start_line - 1, hunk.end_line, false)
+    local old_hunk_lines = vim.api.nvim_buf_get_lines(ui_state.left_buf, hunk.start_line - 1, hunk.end_line, false)
     local ft = vim.bo[ui_state.left_buf].filetype
 
     local items = {
-      { text = "Accept", action = "accept" },
-      { text = "Reject", action = "reject" },
-      { text = "Accept all", action = "accept_all" },
-      { text = "Reject all", action = "reject_all" },
+      { text = "Accept — use proposed change", action = "accept", preview_lines = new_hunk_lines },
+      { text = "Reject — keep current", action = "reject", preview_lines = old_hunk_lines },
+      { text = "Accept all remaining", action = "accept_all", preview_lines = new_hunk_lines },
+      { text = "Reject all remaining", action = "reject_all", preview_lines = old_hunk_lines },
     }
 
     Snacks.picker.select(items, {
@@ -131,7 +132,7 @@ function M.start_review(session, ui_state, on_done)
         return item.text
       end,
       preview = function(ctx)
-        ctx.preview:set_lines(preview_lines)
+        ctx.preview:set_lines(ctx.item.preview_lines)
         ctx.preview:highlight({ ft = ft })
       end,
       layout = { preset = "ivy", backdrop = false },
