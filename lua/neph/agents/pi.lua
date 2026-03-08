@@ -30,7 +30,11 @@ return {
       { dir = "pi", src_dirs = { ".", "../lib" }, check = "dist/pi.js" },
     },
     files = {
-      { dst = "~/.pi/agent/extensions/nvim/index.ts", content = 'export { default } from "./dist/pi.js";', mode = "create_only" },
+      {
+        dst = "~/.pi/agent/extensions/nvim/index.ts",
+        content = 'export { default } from "./dist/pi.js";',
+        mode = "create_only",
+      },
     },
   },
 }

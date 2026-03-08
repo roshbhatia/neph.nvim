@@ -213,8 +213,11 @@ function M.send(termname, text, opts)
   if td.pane_id then
     local full_text = opts.submit and (text .. "\n") or text
     local job_id = vim.fn.jobstart({
-      "wezterm", "cli", "send-text",
-      "--pane-id", tostring(td.pane_id),
+      "wezterm",
+      "cli",
+      "send-text",
+      "--pane-id",
+      tostring(td.pane_id),
       "--no-paste",
     }, {
       on_exit = vim.schedule_wrap(function(_, code)
@@ -252,20 +255,24 @@ function M.ensure_active_and_send(text)
     local name = active_terminal
     local timer = vim.loop.new_timer()
     pending_timers[name] = timer
-    timer:start(50, 50, vim.schedule_wrap(function()
-      retries = retries + 1
-      if M.exists(name) then
-        timer:stop()
-        timer:close()
-        pending_timers[name] = nil
-        M.send(name, text, { submit = true })
-      elseif retries >= max_retries then
-        timer:stop()
-        timer:close()
-        pending_timers[name] = nil
-        vim.notify("Neph: terminal failed to become ready", vim.log.levels.ERROR)
-      end
-    end))
+    timer:start(
+      50,
+      50,
+      vim.schedule_wrap(function()
+        retries = retries + 1
+        if M.exists(name) then
+          timer:stop()
+          timer:close()
+          pending_timers[name] = nil
+          M.send(name, text, { submit = true })
+        elseif retries >= max_retries then
+          timer:stop()
+          timer:close()
+          pending_timers[name] = nil
+          vim.notify("Neph: terminal failed to become ready", vim.log.levels.ERROR)
+        end
+      end)
+    )
   else
     M.focus(active_terminal)
     M.send(active_terminal, text, { submit = true })

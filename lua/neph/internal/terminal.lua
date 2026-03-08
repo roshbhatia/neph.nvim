@@ -25,18 +25,22 @@ function M.ensure_and_send(termname, text)
     local retries = 0
     local max_retries = 15
     local timer = vim.loop.new_timer()
-    timer:start(25, 50, vim.schedule_wrap(function()
-      retries = retries + 1
-      if session.is_visible(termname) then
-        timer:stop()
-        timer:close()
-        session.send(termname, text, { submit = true })
-      elseif retries >= max_retries then
-        timer:stop()
-        timer:close()
-        vim.notify("Neph: terminal did not become ready in time", vim.log.levels.ERROR)
-      end
-    end))
+    timer:start(
+      25,
+      50,
+      vim.schedule_wrap(function()
+        retries = retries + 1
+        if session.is_visible(termname) then
+          timer:stop()
+          timer:close()
+          session.send(termname, text, { submit = true })
+        elseif retries >= max_retries then
+          timer:stop()
+          timer:close()
+          vim.notify("Neph: terminal did not become ready in time", vim.log.levels.ERROR)
+        end
+      end)
+    )
   else
     session.focus(termname)
     session.send(termname, text, { submit = true })

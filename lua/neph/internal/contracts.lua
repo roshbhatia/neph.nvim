@@ -32,13 +32,17 @@ function M.validate_agent(def)
       error(string.format("neph: agent '%s' missing required field '%s'", name, field))
     end
     if type(def[field]) ~= expected_type then
-      error(string.format("neph: agent '%s' field '%s' must be %s, got %s", name, field, expected_type, type(def[field])))
+      error(
+        string.format("neph: agent '%s' field '%s' must be %s, got %s", name, field, expected_type, type(def[field]))
+      )
     end
   end
 
   for field, expected_type in pairs(AGENT_OPTIONAL_FIELDS) do
     if def[field] ~= nil and type(def[field]) ~= expected_type then
-      error(string.format("neph: agent '%s' field '%s' must be %s, got %s", name, field, expected_type, type(def[field])))
+      error(
+        string.format("neph: agent '%s' field '%s' must be %s, got %s", name, field, expected_type, type(def[field]))
+      )
     end
   end
 
@@ -118,7 +122,14 @@ function M.validate_tools(def)
       end
       local mode = f.mode or "create_only"
       if not VALID_FILE_MODES[mode] then
-        error(string.format("neph: agent '%s' tools.files[%d] invalid mode '%s' (expected create_only or overwrite)", name, i, mode))
+        error(
+          string.format(
+            "neph: agent '%s' tools.files[%d] invalid mode '%s' (expected create_only or overwrite)",
+            name,
+            i,
+            mode
+          )
+        )
       end
     end
   end

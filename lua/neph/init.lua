@@ -41,7 +41,10 @@ function M.setup(opts)
   -- Validate and wire agents
   local agents = config.current.agents or {}
   if #agents == 0 then
-    vim.notify("neph: no agents registered — pass agents = { require('neph.agents.claude'), ... } in setup()", vim.log.levels.WARN)
+    vim.notify(
+      "neph: no agents registered — pass agents = { require('neph.agents.claude'), ... } in setup()",
+      vim.log.levels.WARN
+    )
   end
   for _, agent in ipairs(agents) do
     contracts.validate_agent(agent)

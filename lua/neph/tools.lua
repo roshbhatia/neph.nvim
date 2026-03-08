@@ -183,18 +183,25 @@ local function build_install_script(root, manifests)
     local tool_dir = root .. "/tools/" .. b.dir
     table.insert(lines, string.format("if [ -f '%s/package.json' ]; then", tool_dir))
     table.insert(lines, string.format("  NEEDS_BUILD=0; CHECK='%s/%s'", tool_dir, b.check))
-    table.insert(lines, "  if [ ! -f \"$CHECK\" ]; then NEEDS_BUILD=1; else")
+    table.insert(lines, '  if [ ! -f "$CHECK" ]; then NEEDS_BUILD=1; else')
     for _, sd in ipairs(b.src_dirs) do
-      table.insert(lines, string.format(
-        "    if [ -n \"$(find '%s/%s' -name '*.ts' -newer \"$CHECK\" 2>/dev/null | head -1)\" ]; then NEEDS_BUILD=1; fi",
-        tool_dir, sd
-      ))
+      table.insert(
+        lines,
+        string.format(
+          "    if [ -n \"$(find '%s/%s' -name '*.ts' -newer \"$CHECK\" 2>/dev/null | head -1)\" ]; then NEEDS_BUILD=1; fi",
+          tool_dir,
+          sd
+        )
+      )
     end
     table.insert(lines, "  fi")
-    table.insert(lines, string.format(
-      "  if [ \"$NEEDS_BUILD\" = 1 ]; then cd '%s' && npm install --ignore-scripts 2>/dev/null && npm run build 2>&1; fi",
-      tool_dir
-    ))
+    table.insert(
+      lines,
+      string.format(
+        "  if [ \"$NEEDS_BUILD\" = 1 ]; then cd '%s' && npm install --ignore-scripts 2>/dev/null && npm run build 2>&1; fi",
+        tool_dir
+      )
+    )
     table.insert(lines, "fi")
   end
 

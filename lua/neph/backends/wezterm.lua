@@ -63,18 +63,22 @@ local function wait_for_pane(pane_id, on_ready, retries)
   local max = retries or 5
   local attempts = 0
   local timer = vim.loop.new_timer()
-  timer:start(100, 100, vim.schedule_wrap(function()
-    attempts = attempts + 1
-    if get_pane_info(pane_id) then
-      timer:stop()
-      timer:close()
-      on_ready(true)
-    elseif attempts >= max then
-      timer:stop()
-      timer:close()
-      on_ready(false)
-    end
-  end))
+  timer:start(
+    100,
+    100,
+    vim.schedule_wrap(function()
+      attempts = attempts + 1
+      if get_pane_info(pane_id) then
+        timer:stop()
+        timer:close()
+        on_ready(true)
+      elseif attempts >= max then
+        timer:stop()
+        timer:close()
+        on_ready(false)
+      end
+    end)
+  )
 end
 
 local function activate_pane(pane_id)
