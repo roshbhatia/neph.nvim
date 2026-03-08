@@ -312,6 +312,8 @@ local function escape_replacement(s)
 end
 
 --- Expand all +token placeholders in *input* using *state*.
+--- Supports escape syntax: \+token is preserved as literal +token.
+--- Failed expansions (nil provider result) are stripped.
 ---@param input  string
 ---@param state? neph.Context|table
 ---@return string
@@ -332,13 +334,77 @@ function M.apply(input, state)
     end
   end
 
-  local result = input
-  for token in input:gmatch("%+([%w_]+)") do
-    local value = ctx:get(token)
-    if value then
-      result = result:gsub("%+" .. escape_pattern(token), escape_replacement(value))
+  -- Build result by walking the input and handling each token occurrence.
+  -- This avoids double-expansion and handles escapes correctly.
+  local parts = {}
+  local pos = 1
+  local len = #input
+
+  while pos <= len do
+    -- Check for escaped token: \+word
+    if input:sub(pos, pos) == "\\" and pos + 1 <= len and input:sub(pos + 1, pos + 1) == "+" then
+      local token_match = input:match("^%+([%w_]+)", pos + 1)
+      if token_match then
+        -- Escaped: emit literal +token (consume backslash)
+        table.insert(parts, "+" .. token_match)
+        pos = pos + 1 + 1 + #token_match -- skip \+token
+      else
+        table.insert(parts, "\\")
+        pos = pos + 1
+      end
+    elseif input:sub(pos, pos) == "+" then
+      local token_match = input:match("^%+([%w_]+)", pos)
+      if token_match then
+        local value = ctx:get(token_match)
+        if value then
+          table.insert(parts, value)
+        end
+        if not value then
+          -- Token stripped. Collapse surrounding whitespace:
+          -- Remove trailing whitespace from previous part, skip leading whitespace
+          -- after the token, then insert a single space if between content.
+          local after = pos + 1 + #token_match
+          -- Skip whitespace after stripped token
+          while after <= len and input:sub(after, after) == " " do
+            after = after + 1
+          end
+          -- Trim trailing whitespace from all trailing empty/whitespace parts
+          while #parts > 0 and parts[#parts]:match("^%s*$") do
+            table.remove(parts)
+          end
+          if #parts > 0 then
+            parts[#parts] = parts[#parts]:gsub("%s+$", "")
+          end
+          -- Insert a single space if there's content on both sides
+          local has_before = #parts > 0 and parts[#parts] ~= ""
+          local has_after = after <= len
+          if has_before and has_after then
+            table.insert(parts, " ")
+          end
+          pos = after
+        else
+          pos = pos + 1 + #token_match
+        end
+      else
+        table.insert(parts, "+")
+        pos = pos + 1
+      end
+    else
+      -- Find next interesting character
+      local next_special = input:find("[\\+]", pos)
+      if next_special then
+        table.insert(parts, input:sub(pos, next_special - 1))
+        pos = next_special
+      else
+        table.insert(parts, input:sub(pos))
+        pos = len + 1
+      end
     end
   end
+
+  local result = table.concat(parts)
+  -- Trim leading/trailing whitespace
+  result = result:match("^%s*(.-)%s*$")
   return result
 end
 

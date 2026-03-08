@@ -3,7 +3,7 @@ import { createWriteTool, createEditTool } from "@mariozechner/pi-coding-agent";
 import { readFileSync } from "node:fs";
 import { resolve, relative, basename } from "node:path";
 import process from "node:process";
-import { createNephQueue, review } from "../lib/neph-run";
+import { createNephQueue, nephRun, NEPH_TIMEOUT_MS, review } from "../lib/neph-run";
 
 // Neovim integration for pi.
 //
@@ -23,6 +23,33 @@ import { createNephQueue, review } from "../lib/neph-run";
 export default function (pi: ExtensionAPI) {
   let toolsRegistered = false;
   const neph = createNephQueue();
+  let promptPollTimer: ReturnType<typeof setInterval> | undefined;
+
+  /** Poll vim.g.neph_pending_prompt and deliver via pi.sendUserMessage(). */
+  function startPromptPoll() {
+    if (promptPollTimer) return;
+    promptPollTimer = setInterval(async () => {
+      try {
+        const raw = await nephRun(["get", "neph_pending_prompt"], undefined, NEPH_TIMEOUT_MS);
+        const res = JSON.parse(raw);
+        if (res?.ok && res?.result?.value) {
+          const prompt = res.result.value;
+          // Clear the global before sending to avoid re-delivery
+          await nephRun(["unset", "neph_pending_prompt"], undefined, NEPH_TIMEOUT_MS);
+          pi.sendUserMessage(typeof prompt === "string" ? prompt : String(prompt));
+        }
+      } catch {
+        // nvim may have closed or neph not available — ignore
+      }
+    }, 500);
+  }
+
+  function stopPromptPoll() {
+    if (promptPollTimer) {
+      clearInterval(promptPollTimer);
+      promptPollTimer = undefined;
+    }
+  }
 
   function registerTools() {
     if (toolsRegistered) return;
@@ -160,9 +187,12 @@ export default function (pi: ExtensionAPI) {
     ctx.ui.setStatus("nvim", " >> ");
     neph("set", "pi_active", "true");
     registerTools();
+    startPromptPoll();
   });
 
   pi.on("session_shutdown", () => {
+    stopPromptPoll();
+    neph("unset", "neph_pending_prompt");
     neph("unset", "pi_active");
     neph("unset", "pi_running");
   });

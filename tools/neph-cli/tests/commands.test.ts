@@ -67,6 +67,15 @@ describe('review command', () => {
     stdoutSpy.mockRestore();
   });
 
+  it('handles get command routing to status.get', async () => {
+    const transport = new FakeTransport();
+    const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    await runCommand(transport, 'get', ['get', 'my_var']);
+    expect(transport.calls[0].args[0]).toBe('status.get');
+    expect(transport.calls[0].args[1]).toEqual({ name: 'my_var' });
+    stdoutSpy.mockRestore();
+  });
+
   it('exits with error for unknown command', async () => {
     const transport = new FakeTransport();
     const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);

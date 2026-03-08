@@ -18,6 +18,7 @@ local M = {}
 ---@field args        string[]              Command-line arguments
 ---@field full_cmd    string                Computed full command string (set at runtime)
 ---@field integration neph.AgentIntegration|nil  Hook/extension integration metadata (nil = terminal-only)
+---@field send_adapter (fun(td:table,text:string,opts:table):boolean|nil)|nil  Custom send function (nil = use default)
 
 ---@type neph.AgentDef[]
 local agents = {
@@ -116,6 +117,18 @@ local agents = {
   {
     name = "pi",
     label = "Pi",
+    ---@param _td table
+    ---@param text string
+    ---@param opts table
+    ---@return boolean|nil
+    send_adapter = function(_td, text, opts)
+      if not vim.g.pi_active then
+        return false
+      end
+      local full = opts and opts.submit and (text .. "\n") or text
+      vim.g.neph_pending_prompt = full
+      return true
+    end,
     icon = "  ",
     cmd = "pi",
     args = { "--continue" },
@@ -166,12 +179,28 @@ function M.merge(extra)
   end)
 end
 
---- Return all agents whose executable is present on PATH.
+-- Helper: check if agent is in the enabled_agents allowlist
+---@param name string
+---@return boolean
+local function is_enabled(name)
+  local enabled = require("neph.config").current.enabled_agents
+  if not enabled then
+    return true -- no allowlist = all enabled
+  end
+  for _, n in ipairs(enabled) do
+    if n == name then
+      return true
+    end
+  end
+  return false
+end
+
+--- Return all agents whose executable is present on PATH and are enabled.
 ---@return neph.AgentDef[]
 function M.get_all()
   local result = {}
   for _, agent in ipairs(agents) do
-    if is_available(agent.cmd) then
+    if is_available(agent.cmd) and is_enabled(agent.name) then
       agent.full_cmd = build_cmd(agent)
       table.insert(result, agent)
     end
@@ -179,7 +208,7 @@ function M.get_all()
   return result
 end
 
---- Return a single agent by name (nil if not found / not available).
+--- Return a single agent by name (nil if not found / not available / not enabled).
 ---@param name string
 ---@return neph.AgentDef|nil
 function M.get_by_name(name)
@@ -187,7 +216,7 @@ function M.get_by_name(name)
     return nil
   end
   for _, agent in ipairs(agents) do
-    if agent.name == name and is_available(agent.cmd) then
+    if agent.name == name and is_available(agent.cmd) and is_enabled(agent.name) then
       agent.full_cmd = build_cmd(agent)
       return agent
     end

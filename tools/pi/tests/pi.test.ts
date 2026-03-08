@@ -72,6 +72,7 @@ function makePI() {
   const stub = {
     on(event: string, handler: Function) { (handlers[event] ??= []).push(handler); },
     registerTool(spec: { name: string; [k: string]: any }) { tools[spec.name] = spec; },
+    sendUserMessage: vi.fn(),
     async emit(event: string, ...args: any[]) {
       const fns = handlers[event] ?? [];
       return Promise.all(fns.map((fn) => fn(...args)));
@@ -109,8 +110,10 @@ beforeEach(() => {
   piExtension(pi as any);
 });
 
-afterEach(() => {
-  // Always restore real timers in case a test used fake timers
+afterEach(async () => {
+  // Stop prompt polling and restore timers
+  await pi.emit("session_shutdown");
+  await drainQueue(5);
   vi.useRealTimers();
 });
 
@@ -419,6 +422,81 @@ describe("lifecycle events", () => {
 
     await pi.emit("agent_end", {}, { ui: pi.ui });
     expect(pi.ui.setStatus).toHaveBeenCalledWith("nvim-reading", "");
+  });
+});
+
+// ── Prompt poll tests ─────────────────────────────────────────────────────────
+
+describe("prompt polling", () => {
+  it("calls sendUserMessage when neph_pending_prompt has a value", async () => {
+    // Make "get" return a pending prompt value, "unset" succeeds
+    spawnMock.mockImplementation((_cmd: string, args: string[]) => {
+      if (args[0] === "get" && args[1] === "neph_pending_prompt") {
+        return makeChild({
+          stdout: JSON.stringify({ ok: true, result: { value: "fix the bug" } }),
+        });
+      }
+      return makeChild({ stdout: JSON.stringify({ ok: true }) });
+    });
+
+    await activate();
+    // Wait for at least one poll cycle (500ms interval + processing)
+    await new Promise<void>((r) => setTimeout(r, 800));
+
+    expect(pi.sendUserMessage).toHaveBeenCalledWith("fix the bug");
+
+    // Should also have called unset to clear the pending prompt
+    const unsetCall = spawnMock.mock.calls.find(
+      ([, a]: [string, string[]]) => a[0] === "unset" && a[1] === "neph_pending_prompt"
+    );
+    expect(unsetCall).toBeDefined();
+
+    // Cleanup: shutdown to stop polling
+    await pi.emit("session_shutdown");
+    await drainQueue();
+  });
+
+  it("does not call sendUserMessage when no pending prompt", async () => {
+    spawnMock.mockImplementation((_cmd: string, args: string[]) => {
+      if (args[0] === "get") {
+        return makeChild({
+          stdout: JSON.stringify({ ok: true, result: { value: null } }),
+        });
+      }
+      return makeChild({ stdout: "" });
+    });
+
+    await activate();
+    await new Promise<void>((r) => setTimeout(r, 800));
+
+    expect(pi.sendUserMessage).not.toHaveBeenCalled();
+
+    await pi.emit("session_shutdown");
+    await drainQueue();
+  });
+
+  it("stops polling on session_shutdown", async () => {
+    spawnMock.mockImplementation(() => makeChild({ stdout: "" }));
+    await activate();
+
+    // Shutdown should stop polling
+    await pi.emit("session_shutdown");
+    await drainQueue(15);
+
+    // Count get calls after shutdown settles
+    const countBefore = spawnMock.mock.calls.filter(
+      ([, a]: [string, string[]]) => a[0] === "get"
+    ).length;
+
+    // Wait another full poll interval
+    await new Promise<void>((r) => setTimeout(r, 800));
+
+    const countAfter = spawnMock.mock.calls.filter(
+      ([, a]: [string, string[]]) => a[0] === "get"
+    ).length;
+
+    // No new get calls should have been made after shutdown
+    expect(countAfter).toBe(countBefore);
   });
 });
 

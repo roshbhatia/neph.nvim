@@ -67,19 +67,19 @@ end
 --- Open the ask prompt. In visual mode, prefills with +selection context.
 function M.ask()
   local mode = vim.fn.mode()
-  local default = mode:match("[vV]") and " +selection: " or " +cursor: "
+  local default = mode:match("[vV]") and "+selection " or "+cursor "
   input_for_active("Ask", default)
 end
 
 --- Open the fix-diagnostics prompt.
 function M.fix()
-  input_for_active("Fix diagnostics", " Fix +diagnostics: ")
+  input_for_active("Fix diagnostics", "Fix +diagnostics ")
 end
 
 --- Open the comment prompt. In visual mode, prefills with +selection context.
 function M.comment()
   local mode = vim.fn.mode()
-  local default = mode:match("[vV]") and " Comment +selection: " or " Comment +cursor: "
+  local default = mode:match("[vV]") and "Comment +selection " or "Comment +cursor "
   input_for_active("Comment", default)
 end
 

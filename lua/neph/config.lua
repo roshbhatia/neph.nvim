@@ -17,6 +17,7 @@ local M = {}
 ---@field env?            table<string,string> Extra environment variables forwarded to every agent
 ---@field file_refresh?   neph.FileRefreshConfig
 ---@field agents?         neph.AgentDef[]      Override / extend the built-in agent list
+---@field enabled_agents? string[]             Allowlist of agent names; only these get hooks/extensions installed (nil = all)
 ---@field multiplexer?    "snacks"|"wezterm"|"tmux"|"zellij"  Terminal backend (default: "snacks")
 ---@field review_signs?   neph.ReviewSignsConfig  Sign icons for diff review UI
 
