@@ -310,10 +310,10 @@ describe("edit tool override", () => {
     expect(reviewCall).toBeUndefined();
   });
 
-  it("applies accepted content via createEditTool execute (not createWriteTool)", async () => {
+  it("applies accepted content via createWriteTool (full file content, not partial edit)", async () => {
     readFileSyncMock.mockReturnValue("hello world");
-    const mockEditExecute = vi.fn().mockResolvedValue({ content: [{ type: "text", text: "edited" }], details: {} });
-    const mockWriteExecute = vi.fn();
+    const mockEditExecute = vi.fn();
+    const mockWriteExecute = vi.fn().mockResolvedValue({ content: [{ type: "text", text: "written" }], details: {} });
     createEditToolMock.mockReturnValue({ parameters: {}, execute: mockEditExecute });
     createWriteToolMock.mockReturnValue({ parameters: {}, execute: mockWriteExecute });
 
@@ -324,9 +324,9 @@ describe("edit tool override", () => {
 
     const editTool = pi.tools["edit"];
     const result = await editTool.execute("id", { path: "/f.ts", oldText: "world", newText: "universe" }, null, vi.fn(), { cwd: "/" });
-    expect(mockEditExecute).toHaveBeenCalled();
-    expect(mockWriteExecute).not.toHaveBeenCalled();
-    expect(result.content[0].text).toBe("edited");
+    expect(mockWriteExecute).toHaveBeenCalledWith("id", expect.objectContaining({ content: "hello universe" }), null, expect.any(Function));
+    expect(mockEditExecute).not.toHaveBeenCalled();
+    expect(result.content[0].text).toBe("written");
   });
 
   it("returns rejection text when preview rejects", async () => {

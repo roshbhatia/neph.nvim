@@ -129,10 +129,10 @@ export default function (pi: ExtensionAPI) {
         }
 
         const finalContent = result.content ?? newContent;
-        // Delegate final write to createEditTool so the agent gets a proper diff result
-        const writeResult = await createEditTool(ctx.cwd).execute(
+        // Write the full reconstructed content (not a partial edit replacement)
+        const writeResult = await createWriteTool(ctx.cwd).execute(
           toolCallId,
-          { path: params.path as string, oldText, newText: finalContent },
+          { path: params.path as string, content: finalContent },
           signal,
           onUpdate,
         );

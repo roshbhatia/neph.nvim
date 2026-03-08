@@ -12,6 +12,22 @@ export interface GatePayload {
   content: string;
 }
 
+/** Read a file and apply an edit (old → new replacement), returning full content. */
+function reconstructEdit(filePath: string, oldStr: string, newStr: string): string | null {
+  const resolved = path.resolve(filePath);
+  let current: string;
+  try {
+    current = fs.readFileSync(resolved, 'utf-8');
+  } catch {
+    // New file or unreadable — just return new content
+    return newStr;
+  }
+  if (!current.includes(oldStr)) {
+    return null; // old_str not found — let the agent handle the error
+  }
+  return current.replace(oldStr, newStr);
+}
+
 // --- Agent-specific stdin normalizers ---
 
 export function parseClaude(input: unknown): GatePayload | null {
@@ -29,11 +45,13 @@ export function parseClaude(input: unknown): GatePayload | null {
     return { filePath, content: (toolInput.content as string) ?? '' };
   }
 
-  // Edit: old_str/new_str — send both for review to reconstruct
+  // Edit: read file and reconstruct full content with old_str → new_str applied
   const oldStr = toolInput.old_str as string | undefined;
   const newStr = toolInput.new_str as string | undefined;
   if (oldStr !== undefined && newStr !== undefined) {
-    return { filePath, content: JSON.stringify({ old_str: oldStr, new_str: newStr }) };
+    const content = reconstructEdit(filePath, oldStr, newStr);
+    if (content === null) return null; // old_str not found, fail-open
+    return { filePath, content };
   }
   return null;
 }
@@ -71,7 +89,20 @@ export function parseGemini(input: unknown): GatePayload | null {
   const filePath = toolInput.filepath as string | undefined;
   if (!filePath) return null;
 
-  return { filePath, content: (toolInput.content as string) ?? (toolInput.new_string as string) ?? '' };
+  if (toolName === 'write_file') {
+    return { filePath, content: (toolInput.content as string) ?? '' };
+  }
+
+  // edit_file: reconstruct full content from old_string → new_string
+  const oldStr = toolInput.old_string as string | undefined;
+  const newStr = toolInput.new_string as string | undefined;
+  if (oldStr !== undefined && newStr !== undefined) {
+    const content = reconstructEdit(filePath, oldStr, newStr);
+    if (content === null) return null;
+    return { filePath, content };
+  }
+  // Fallback: if only content is provided, use it directly
+  return { filePath, content: (toolInput.content as string) ?? '' };
 }
 
 export function parseCursor(input: unknown): GatePayload | null {
@@ -200,7 +231,7 @@ export async function runGate(
         request_id: requestId,
         result_path: resultPath,
         channel_id: 0,
-        path: payload.filePath,
+        path: path.resolve(payload.filePath),
         content: payload.content,
       }
     ]).catch(async () => {
