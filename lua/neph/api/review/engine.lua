@@ -101,7 +101,13 @@ function M.apply_decisions(old_lines, new_lines, decisions)
         table.insert(new_hunk_lines, new_lines[j])
       end
 
+      -- For pure insertions (count_a == 0), start_a is the line after which
+      -- to insert, so we insert at start_a + 1. For replacements/deletions,
+      -- start_a is the first line to replace.
       local replace_start = start_a + offset
+      if count_a == 0 then
+        replace_start = replace_start + 1
+      end
 
       -- Remove count_a lines
       for _ = 1, count_a do
