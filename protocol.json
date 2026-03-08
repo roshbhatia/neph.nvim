@@ -13,6 +13,10 @@
       "params": ["name"],
       "async": false
     },
+    "status.get": {
+      "params": ["name"],
+      "async": false
+    },
     "buffers.check": {
       "params": [],
       "async": false
