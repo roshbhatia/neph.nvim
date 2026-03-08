@@ -2,7 +2,7 @@
 return {
   name = "cursor",
   label = "Cursor",
-  icon = "",
+  icon = "",
   cmd = "cursor-agent",
   args = {},
   integration = {

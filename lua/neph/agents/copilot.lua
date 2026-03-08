@@ -2,7 +2,7 @@
 return {
   name = "copilot",
   label = "Copilot",
-  icon = "",
+  icon = "",
   cmd = "copilot",
   args = { "--allow-all-paths" },
   integration = {
