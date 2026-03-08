@@ -45,7 +45,7 @@ function M.setup(config)
   timer = vim.loop.new_timer()
   if timer then
     timer:start(
-      0,
+      cfg.timer_interval or 1000,
       cfg.timer_interval or 1000,
       vim.schedule_wrap(function()
         vim.cmd("silent! checktime")

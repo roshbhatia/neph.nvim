@@ -173,43 +173,6 @@ local function collect_builds(root)
   return pending
 end
 
---- Run builds asynchronously via vim.fn.jobstart.
----@param pending {dir: string, cmd: string}[]
----@param callback fun()|nil  Called when all builds complete
-local function build_async(pending, callback)
-  if #pending == 0 then
-    if callback then
-      callback()
-    end
-    return
-  end
-  local remaining = #pending
-  for _, b in ipairs(pending) do
-    vim.fn.jobstart({ "sh", "-c", b.cmd }, {
-      on_exit = vim.schedule_wrap(function(_, code)
-        if code ~= 0 then
-          vim.notify("Neph: build failed for " .. b.dir, vim.log.levels.WARN)
-        end
-        remaining = remaining - 1
-        if remaining == 0 and callback then
-          callback()
-        end
-      end),
-    })
-  end
-end
-
---- Synchronous build (for M.install() backward compat).
----@param root string
-local function build_if_needed(root)
-  local pending = collect_builds(root)
-  for _, b in ipairs(pending) do
-    local result = vim.fn.system({ "sh", "-c", b.cmd })
-    if vim.v.shell_error ~= 0 then
-      vim.notify("Neph: build failed for " .. b.dir .. ": " .. result, vim.log.levels.WARN)
-    end
-  end
-end
 
 --- Check if an agent is in the enabled list (nil = all enabled).
 ---@param agent string|nil  Agent name (nil = always enabled, e.g. neph CLI)
@@ -230,38 +193,46 @@ local function is_agent_enabled(agent, enabled)
   return false
 end
 
---- Create symlinks and merge JSON for all enabled tools.
+--- Build a shell script that does all symlinks + builds in one shot.
+--- Runs entirely in a background job — zero blocking on the main thread.
 ---@param root string  Plugin root path
-local function link_and_merge(root)
+---@param pending {dir: string, cmd: string}[]
+---@return string
+local function build_install_script(root, pending)
   local enabled = require("neph.config").current.enabled_agents
+  local lines = { "#!/bin/sh", "set -e" }
 
+  -- Symlinks
   for _, tool in ipairs(TOOLS) do
-    if not is_agent_enabled(tool.agent, enabled) then
-      goto continue_tool
+    if is_agent_enabled(tool.agent, enabled) then
+      local src = root .. "/tools/" .. tool.src
+      local dst = vim.fn.expand(tool.dst)
+      table.insert(lines, string.format("mkdir -p %s", vim.fn.shellescape(vim.fn.fnamemodify(dst, ":h"))))
+      table.insert(lines, string.format("[ -e %s ] && ln -sfn %s %s || true", vim.fn.shellescape(src), vim.fn.shellescape(src), vim.fn.shellescape(dst)))
     end
-    local src = root .. "/tools/" .. tool.src
-    local dst = vim.fn.expand(tool.dst)
-
-    local exists = vim.fn.filereadable(src) == 1 or vim.fn.isdirectory(src) == 1
-    if not exists then
-      -- Silently skip missing tools (common when dist not yet built)
-    else
-      vim.fn.mkdir(vim.fn.fnamemodify(dst, ":h"), "p")
-      vim.fn.system({ "ln", "-sfn", src, dst })
-    end
-    ::continue_tool::
   end
 
+  -- Builds
+  for _, b in ipairs(pending) do
+    table.insert(lines, b.cmd .. " || true")
+  end
+
+  return table.concat(lines, "\n")
+end
+
+--- JSON merges and pi wrapper (must run on main thread for vim.fn access).
+---@param root string  Plugin root path
+local function do_json_merges(root)
+  local enabled = require("neph.config").current.enabled_agents
+
   for _, spec in ipairs(MERGE_TOOLS) do
-    if not is_agent_enabled(spec.agent, enabled) then
-      goto continue_merge
+    if is_agent_enabled(spec.agent, enabled) then
+      local src = root .. "/tools/" .. spec.src
+      local dst = vim.fn.expand(spec.dst)
+      if vim.fn.filereadable(src) == 1 then
+        json_merge(src, dst, spec.key)
+      end
     end
-    local src = root .. "/tools/" .. spec.src
-    local dst = vim.fn.expand(spec.dst)
-    if vim.fn.filereadable(src) == 1 then
-      json_merge(src, dst, spec.key)
-    end
-    ::continue_merge::
   end
 
   if is_agent_enabled("pi", enabled) then
@@ -273,31 +244,30 @@ local function link_and_merge(root)
   end
 end
 
---- Non-blocking install. Builds run as background jobs; symlinks happen after.
+--- Non-blocking install. Everything runs in a single background job.
 function M.install_async()
   local root = plugin_root()
   local pending = collect_builds(root)
+  local script = build_install_script(root, pending)
 
-  if #pending == 0 then
-    -- No builds needed — just link (fast, <100ms)
-    link_and_merge(root)
-    return
-  end
-
-  -- Kick off builds in background, link after they complete
-  build_async(pending, function()
-    link_and_merge(root)
-  end)
-
-  -- Link what we can now (dist may already exist for some tools)
-  link_and_merge(root)
+  vim.fn.jobstart({ "sh", "-c", script }, {
+    on_exit = vim.schedule_wrap(function(_, code)
+      if code ~= 0 then
+        vim.notify("Neph: tool install had errors", vim.log.levels.WARN)
+      end
+      -- JSON merges need vim.fn — run on main thread after job completes
+      do_json_merges(root)
+    end),
+  })
 end
 
 --- Synchronous install (blocking). Use install_async() for startup.
 function M.install()
   local root = plugin_root()
-  build_if_needed(root)
-  link_and_merge(root)
+  local pending = collect_builds(root)
+  local script = build_install_script(root, pending)
+  vim.fn.system({ "sh", "-c", script })
+  do_json_merges(root)
 end
 
 return M
