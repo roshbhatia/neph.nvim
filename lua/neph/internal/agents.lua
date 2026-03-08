@@ -139,11 +139,17 @@ local agents = {
   },
 }
 
--- Helper: check if executable is on PATH
+-- Helper: check if executable is on PATH (cached for session lifetime)
+---@type table<string, boolean>
+local executable_cache = {}
+
 ---@param cmd string
 ---@return boolean
 local function is_available(cmd)
-  return vim.fn.executable(cmd) == 1
+  if executable_cache[cmd] == nil then
+    executable_cache[cmd] = vim.fn.executable(cmd) == 1
+  end
+  return executable_cache[cmd]
 end
 
 -- Helper: build the full command string from an agent def

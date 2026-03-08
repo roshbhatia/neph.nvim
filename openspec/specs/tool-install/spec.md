@@ -8,21 +8,22 @@ neph.nvim SHALL include `tools/core/shim.py` (Python) and `tools/pi/pi.ts` (Type
 - **THEN** `tools/core/shim.py` and `tools/pi/pi.ts` are present on disk under the plugin's install directory
 
 ### Requirement: Auto-symlink on setup
-neph.nvim's `M.setup()` SHALL symlink `tools/core/shim.py` to `~/.local/bin/shim` and `tools/pi/pi.ts` to `~/.pi/agent/extensions/nvim.ts`, creating parent directories as needed.
+neph.nvim's `M.setup()` SHALL defer tool installation to a UIEnter autocmd. The install SHALL check a stamp file first and skip entirely if the plugin directory has not changed. When install runs, all filesystem operations (mkdir, ln, npm build) SHALL execute in a single background shell job via `vim.fn.jobstart()`.
 
 #### Scenario: Symlinks created on first setup
-- **WHEN** `require("neph").setup()` is called and the tool files exist
-- **THEN** `~/.local/bin/shim` is a symlink pointing to `tools/core/shim.py`
-- **THEN** `~/.pi/agent/extensions/nvim.ts` is a symlink pointing to `tools/pi/pi.ts`
+- **WHEN** `require("neph").setup()` is called and no stamp file exists
+- **THEN** symlinks are created asynchronously after UIEnter fires
+- **AND** the Neovim event loop is not blocked during installation
+
+#### Scenario: Stamp-based skip on subsequent startups
+- **WHEN** `require("neph").setup()` is called and the stamp file is newer than the tools/ directory
+- **THEN** no installation work is performed
+- **AND** setup completes in under 1ms
 
 #### Scenario: Symlinks are force-updated
-- **WHEN** `require("neph").setup()` is called and symlinks already exist
-- **THEN** the existing symlinks are replaced (`ln -sf`) without error
-
-#### Scenario: Missing tool file is skipped with warning
-- **WHEN** `require("neph").setup()` is called but a tool file is not found
-- **THEN** no symlink is created for that file
-- **THEN** a `vim.notify` warning is emitted indicating the missing file
+- **WHEN** the tools/ directory is newer than the stamp file
+- **THEN** symlinks are re-created via a background shell job
+- **AND** the stamp file is touched after successful completion
 
 ## REMOVED Requirements
 
