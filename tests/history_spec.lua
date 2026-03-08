@@ -37,6 +37,13 @@ describe("neph.history", function()
       assert.equals(0, #entries)
     end)
 
+    it("handles multiline prompts", function()
+      history.save(test_agent, "line1\nline2\nline3")
+      local entries = history.load(test_agent)
+      assert.equals(1, #entries)
+      assert.equals("line1\nline2\nline3", entries[1].prompt)
+    end)
+
     it("each entry has timestamp and prompt fields", function()
       history.save(test_agent, "check fields")
       local entries = history.load(test_agent)

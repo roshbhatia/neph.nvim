@@ -76,11 +76,11 @@ export function nephRun(
 export function createNephQueue(): (...args: string[]) => void {
   let queue: Promise<void> = Promise.resolve();
   return (...args: string[]): void => {
-    queue = queue.then(() => {
+    queue = queue.then(() =>
       nephRun(args, undefined, NEPH_TIMEOUT_MS).catch(() => {
         /* nvim may have closed */
-      });
-    });
+      }),
+    );
   };
 }
 
