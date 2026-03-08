@@ -31,6 +31,7 @@ function reconstructEdit(filePath: string, oldStr: string, newStr: string): stri
 // --- Agent-specific stdin normalizers ---
 
 export function parseClaude(input: unknown): GatePayload | null {
+  if (!input || typeof input !== 'object') return null;
   const data = input as Record<string, unknown>;
   const toolName = data.tool_name as string | undefined;
   if (toolName !== 'Write' && toolName !== 'Edit') return null;
@@ -57,6 +58,7 @@ export function parseClaude(input: unknown): GatePayload | null {
 }
 
 export function parseCopilot(input: unknown): GatePayload | null {
+  if (!input || typeof input !== 'object') return null;
   const data = input as Record<string, unknown>;
   const toolName = data.toolName as string | undefined;
   if (toolName !== 'edit' && toolName !== 'create') return null;
@@ -78,6 +80,7 @@ export function parseCopilot(input: unknown): GatePayload | null {
 }
 
 export function parseGemini(input: unknown): GatePayload | null {
+  if (!input || typeof input !== 'object') return null;
   const data = input as Record<string, unknown>;
   const toolName = data.tool_name as string | undefined;
   if (toolName !== 'write_file' && toolName !== 'edit_file') return null;
@@ -106,6 +109,7 @@ export function parseGemini(input: unknown): GatePayload | null {
 }
 
 export function parseCursor(input: unknown): GatePayload | null {
+  if (!input || typeof input !== 'object') return null;
   const data = input as Record<string, unknown>;
   const filePath = data.file_path as string | undefined;
   if (!filePath) return null;
