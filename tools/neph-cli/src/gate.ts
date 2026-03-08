@@ -203,12 +203,12 @@ export async function runGate(
   };
 
   return new Promise<number>((resolve) => {
-    const handleResult = (data: string) => {
+    const handleResult = async (data: string) => {
       try {
         const json = JSON.parse(data);
         if (json.request_id === requestId) {
           const decision = json.decision as string;
-          cleanup();
+          await cleanup();
           resolve(decision === 'reject' ? 2 : 0);
         }
       } catch {}
