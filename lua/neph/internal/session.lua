@@ -246,6 +246,7 @@ function M.ensure_active_and_send(text)
     vim.notify("Neph: no active terminal – pick one with <leader>jj", vim.log.levels.WARN)
     return
   end
+  require("neph.internal.terminal").set_last_prompt(active_terminal, text)
   if not M.exists(active_terminal) then
     M.open(active_terminal)
     M.focus(active_terminal)
