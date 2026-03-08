@@ -56,4 +56,15 @@ function M.setup(config)
   vim.o.updatetime = cfg.updatetime or 750
 end
 
+--- Stop the polling timer and clear the autocmd group.
+--- Safe to call multiple times (idempotent).
+function M.teardown()
+  if timer then
+    pcall(timer.stop, timer)
+    pcall(timer.close, timer)
+    timer = nil
+  end
+  pcall(vim.api.nvim_del_augroup_by_name, "NephFileRefresh")
+end
+
 return M

@@ -15,8 +15,7 @@ local function get_current_pane()
 end
 
 local function cmd_exists(cmd)
-  local r = vim.fn.system(string.format("command -v %s >/dev/null 2>&1 && echo ok || echo fail", cmd))
-  return vim.trim(r) == "ok"
+  return vim.fn.executable(cmd) == 1
 end
 
 local function list_panes()
@@ -56,14 +55,26 @@ local function pane_exists(pane_id)
   return info.window_id == parent.window_id and info.tab_id == parent.tab_id
 end
 
-local function wait_for_pane(pane_id, retries)
-  for _ = 1, (retries or 5) do
+--- Wait for a pane to appear, then call on_ready(true) or on_ready(false).
+---@param pane_id number
+---@param on_ready fun(ok: boolean)
+---@param retries? number
+local function wait_for_pane(pane_id, on_ready, retries)
+  local max = retries or 5
+  local attempts = 0
+  local timer = vim.loop.new_timer()
+  timer:start(100, 100, vim.schedule_wrap(function()
+    attempts = attempts + 1
     if get_pane_info(pane_id) then
-      return true
+      timer:stop()
+      timer:close()
+      on_ready(true)
+    elseif attempts >= max then
+      timer:stop()
+      timer:close()
+      on_ready(false)
     end
-    vim.fn.system("sleep 0.1")
-  end
-  return false
+  end))
 end
 
 local function activate_pane(pane_id)
@@ -128,14 +139,19 @@ function M.open(termname, agent_config, cwd)
     return nil
   end
 
-  if not wait_for_pane(pane_id, 5) then
-    vim.notify("Neph/wezterm: pane did not appear within timeout", vim.log.levels.ERROR)
-    pane_errors[pane_id] = (pane_errors[pane_id] or 0) + 1
-    return nil
-  end
-
+  -- Return immediately — pane ID is known from split-pane output.
+  -- Verify pane health asynchronously.
+  local td = { pane_id = pane_id, cmd = agent_config.cmd, cwd = cwd, name = termname, created_at = os.time() }
   pane_errors[pane_id] = 0
-  return { pane_id = pane_id, cmd = agent_config.cmd, cwd = cwd, name = termname, created_at = os.time() }
+
+  wait_for_pane(pane_id, function(ok)
+    if not ok then
+      vim.notify("Neph/wezterm: pane did not appear within timeout", vim.log.levels.WARN)
+      pane_errors[pane_id] = (pane_errors[pane_id] or 0) + 1
+    end
+  end, 5)
+
+  return td
 end
 
 function M.focus(term_data)

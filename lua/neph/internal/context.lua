@@ -41,18 +41,13 @@ function M.get_git_root()
     return git_root_cache[cwd] or nil
   end
 
-  local handle = io.popen("git rev-parse --show-toplevel 2>/dev/null")
-  if not handle then
+  local root = vim.fn.system("git rev-parse --show-toplevel 2>/dev/null")
+  if vim.v.shell_error ~= 0 then
     git_root_cache[cwd] = false
     return nil
   end
 
-  local root = handle:read("*a")
-  handle:close()
-
-  if root then
-    root = root:gsub("^%s*(.-)%s*$", "%1")
-  end
+  root = vim.trim(root)
 
   git_root_cache[cwd] = (root and root ~= "") and root or false
   return git_root_cache[cwd] or nil

@@ -16,7 +16,7 @@
 - [x] 2.3 Wire UI to call engine for envelope construction on finalize
 - [x] 2.4 Implement atomic result write: write `.tmp`, `os.rename()` to final path
 - [x] 2.5 Add request_id to rpcnotify payload
-- [ ] 2.6 Manual QA: verify existing review flow (accept, reject, partial, manual close) works unchanged
+- [x] 2.6 Manual QA: verify existing review flow (accept, reject, partial, manual close) works unchanged
 
 ## 3. Lua API Modules
 
@@ -87,7 +87,7 @@
 - [x] 10.4 Update `Taskfile.yml` — add `test:cli` target for neph-cli vitest
 - [x] 10.5 Update `tools/Taskfile.yml` — replace `test:core` (pytest) with `test:neph` (vitest)
 - [x] 10.6 Update `tools/Taskfile.yml` — replace `lint:core` (flake8) with `lint:neph` (eslint or deno lint)
-- [ ] 10.7 Verify full `task ci` passes in Dagger locally before any push
+- [x] 10.7 Verify full `task ci` passes in Dagger locally before any push
 
 ## 11. Cleanup
 

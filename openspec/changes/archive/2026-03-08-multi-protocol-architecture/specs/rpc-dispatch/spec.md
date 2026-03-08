@@ -1,0 +1,40 @@
+## ADDED Requirements
+
+### Requirement: Dispatch facade
+
+The system SHALL provide a single Lua module (`lua/neph/rpc.lua`) that routes all external RPC calls to API modules.
+
+#### Scenario: Route known method
+- **WHEN** external caller invokes `require("neph.rpc").request("status.set", { name = "pi_active", value = "true" })`
+- **THEN** rpc.lua SHALL route to `require("neph.api.status").set(params)`
+- **AND** return `{ ok = true, result = <handler_result> }`
+
+#### Scenario: Unknown method
+- **WHEN** external caller invokes `require("neph.rpc").request("bogus.method", {})`
+- **THEN** rpc.lua SHALL return `{ ok = false, error = { code = "METHOD_NOT_FOUND", message = "bogus.method" } }`
+
+#### Scenario: Handler error
+- **WHEN** a dispatch handler throws a Lua error
+- **THEN** rpc.lua SHALL catch via pcall
+- **AND** return `{ ok = false, error = { code = "INTERNAL", message = <error_string> } }`
+
+### Requirement: Error normalization
+
+All RPC responses SHALL use a consistent envelope format.
+
+#### Scenario: Success response
+- **WHEN** handler completes successfully
+- **THEN** response SHALL be `{ ok = true, result = <value> }`
+
+#### Scenario: Error response
+- **WHEN** handler fails
+- **THEN** response SHALL be `{ ok = false, error = { code = <string>, message = <string> } }`
+
+### Requirement: Protocol contract
+
+The dispatch table SHALL be validated against `protocol.json`.
+
+#### Scenario: Contract test
+- **WHEN** running `tests/contract_spec.lua`
+- **THEN** every method in `protocol.json` SHALL have a corresponding handler in the dispatch table
+- **AND** every handler in the dispatch table SHALL be listed in `protocol.json`

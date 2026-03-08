@@ -18,6 +18,8 @@ local terminals = {}
 local active_terminal = nil
 ---@type integer|nil
 local augroup = nil
+---@type table<string, userdata>  termname → pending retry timer
+local pending_timers = {}
 
 -- ---------------------------------------------------------------------------
 -- Backend detection
@@ -87,6 +89,16 @@ function M.setup(opts)
           end
         end
         backend.cleanup_all(terminals)
+        -- Clean up all pending timers
+        for name, pt in pairs(pending_timers) do
+          pcall(pt.stop, pt)
+          pcall(pt.close, pt)
+          pending_timers[name] = nil
+        end
+        -- Tear down file refresh polling
+        pcall(function()
+          require("neph.internal.file_refresh").teardown()
+        end)
       end,
     })
   end
@@ -180,6 +192,14 @@ function M.activate(termname)
 end
 
 function M.kill_session(termname)
+  -- Cancel any pending retry timer
+  local pt = pending_timers[termname]
+  if pt then
+    pcall(pt.stop, pt)
+    pcall(pt.close, pt)
+    pending_timers[termname] = nil
+  end
+
   local td = terminals[termname]
   if td and backend then
     backend.kill(td)
@@ -215,11 +235,21 @@ function M.send(termname, text, opts)
 
   -- Default send: WezTerm pane or native terminal via chansend
   if td.pane_id then
-    vim.fn.system(
-      string.format("wezterm cli send-text --pane-id %d --no-paste %s", td.pane_id, vim.fn.shellescape(text))
-    )
-    if opts.submit then
-      vim.fn.system(string.format("wezterm cli send-text --pane-id %d --no-paste '\n'", td.pane_id))
+    local full_text = opts.submit and (text .. "\n") or text
+    local job_id = vim.fn.jobstart({
+      "wezterm", "cli", "send-text",
+      "--pane-id", tostring(td.pane_id),
+      "--no-paste",
+    }, {
+      on_exit = vim.schedule_wrap(function(_, code)
+        if code ~= 0 then
+          vim.notify("Neph: wezterm send-text failed (exit " .. code .. ")", vim.log.levels.WARN)
+        end
+      end),
+    })
+    if job_id > 0 then
+      vim.fn.chansend(job_id, full_text)
+      vim.fn.chanclose(job_id, "stdin")
     end
   elseif td.buf and vim.api.nvim_buf_is_valid(td.buf) then
     local chan = vim.b[td.buf].terminal_job_id
@@ -245,15 +275,18 @@ function M.ensure_active_and_send(text)
     local max_retries = 20
     local name = active_terminal
     local timer = vim.loop.new_timer()
+    pending_timers[name] = timer
     timer:start(50, 50, vim.schedule_wrap(function()
       retries = retries + 1
       if M.exists(name) then
         timer:stop()
         timer:close()
+        pending_timers[name] = nil
         M.send(name, text, { submit = true })
       elseif retries >= max_retries then
         timer:stop()
         timer:close()
+        pending_timers[name] = nil
         vim.notify("Neph: terminal failed to become ready", vim.log.levels.ERROR)
       end
     end))
