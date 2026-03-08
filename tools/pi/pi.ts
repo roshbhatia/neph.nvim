@@ -2,6 +2,7 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { createWriteTool, createEditTool } from "@mariozechner/pi-coding-agent";
 import { readFileSync } from "node:fs";
 import { resolve, relative, basename } from "node:path";
+import process from "node:process";
 import { createNephQueue, review } from "../lib/neph-run";
 
 // Neovim integration for pi.
