@@ -5,12 +5,44 @@ on:
   pull_request:
 
 jobs:
-  ci:
+  lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: denoland/setup-deno@v2
+      - uses: cachix/install-nix-action@v30
         with:
-          deno-version: v2.x
-      - name: Dagger
-        run: deno run -A .fluentci/ci.ts
+          nix_path: nixpkgs=channel:nixos-unstable
+      - uses: DeterminateSystems/magic-nix-cache-action@v8
+      - name: Lint
+        run: nix develop --no-write-lock-file -c task lint
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v30
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+      - uses: DeterminateSystems/magic-nix-cache-action@v8
+      - name: Install & Build
+        run: |
+          nix develop --no-write-lock-file -c sh -c "npm ci --prefix tools/neph-cli && npm ci --prefix tools/pi && npm ci --prefix tools/lib"
+          nix develop --no-write-lock-file -c task tools:build
+      - name: Test
+        run: nix develop --no-write-lock-file -c task test
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v30
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+      - uses: DeterminateSystems/magic-nix-cache-action@v8
+      - name: Install & Build
+        run: |
+          nix develop --no-write-lock-file -c sh -c "npm ci --prefix tools/neph-cli && npm ci --prefix tools/pi && npm ci --prefix tools/lib"
+          nix develop --no-write-lock-file -c task tools:build
+          nix develop --no-write-lock-file -c sh -c "mkdir -p ~/.local/bin && ln -sf $(pwd)/tools/neph-cli/dist/index.js ~/.local/bin/neph && chmod +x ~/.local/bin/neph"
+      - name: E2E Tests
+        run: nix develop --no-write-lock-file -c task test:e2e

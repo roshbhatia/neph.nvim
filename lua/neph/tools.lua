@@ -54,11 +54,30 @@ local MERGE_TOOLS = {
   { src = "gemini/settings.json", dst = "~/.gemini/settings.json", key = "hooks" },
 }
 
---- Merge a single key from source JSON into destination JSON file.
---- If destination doesn't exist, writes the full source content.
+--- Check if a hook entry already exists in a list (match on matcher + first command).
+---@param list table[]  Existing hook entries
+---@param entry table   Entry to check
+---@return boolean
+local function hook_entry_exists(list, entry)
+  for _, existing in ipairs(list) do
+    if existing.matcher == entry.matcher then
+      -- Same matcher — check if commands match
+      if existing.hooks and entry.hooks and #existing.hooks > 0 and #entry.hooks > 0 then
+        if existing.hooks[1].command == entry.hooks[1].command then
+          return true
+        end
+      end
+    end
+  end
+  return false
+end
+
+--- Additively merge hooks from source JSON into destination JSON file.
+--- Existing hooks in destination are preserved. Neph hooks are appended
+--- only if not already present (idempotent). Non-hook keys are untouched.
 ---@param src_path string  Absolute path to source JSON
 ---@param dst_path string  Absolute path to destination JSON
----@param key      string  JSON key to merge
+---@param key      string  JSON key to merge (e.g. "hooks")
 local function json_merge(src_path, dst_path, key)
   local src_content = vim.fn.readfile(src_path)
   if not src_content or #src_content == 0 then
@@ -80,7 +99,22 @@ local function json_merge(src_path, dst_path, key)
     end
   end
 
-  dst_json[key] = src_json[key]
+  -- Additive merge: for each event type in source hooks, append entries
+  -- that don't already exist in the destination
+  if not dst_json[key] then
+    dst_json[key] = {}
+  end
+  for event_type, entries in pairs(src_json[key]) do
+    if not dst_json[key][event_type] then
+      dst_json[key][event_type] = {}
+    end
+    for _, entry in ipairs(entries) do
+      if not hook_entry_exists(dst_json[key][event_type], entry) then
+        table.insert(dst_json[key][event_type], entry)
+      end
+    end
+  end
+
   vim.fn.mkdir(vim.fn.fnamemodify(dst_path, ":h"), "p")
   vim.fn.writefile({ vim.json.encode(dst_json) }, dst_path)
 end
