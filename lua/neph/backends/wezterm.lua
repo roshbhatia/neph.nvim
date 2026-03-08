@@ -44,11 +44,22 @@ local function get_pane_info(pane_id)
 end
 
 local function pane_exists(pane_id)
-  local info = get_pane_info(pane_id)
+  local panes = list_panes()
+  if not panes then
+    return false
+  end
+  local info, parent
+  for _, p in ipairs(panes) do
+    if p.pane_id == pane_id then
+      info = p
+    end
+    if p.pane_id == parent_pane_id then
+      parent = p
+    end
+  end
   if not info then
     return false
   end
-  local parent = get_pane_info(parent_pane_id)
   if not parent then
     return true
   end
@@ -62,7 +73,7 @@ end
 local function wait_for_pane(pane_id, on_ready, retries)
   local max = retries or 5
   local attempts = 0
-  local timer = vim.loop.new_timer()
+  local timer = vim.uv.new_timer()
   timer:start(
     100,
     100,
@@ -123,7 +134,8 @@ function M.open(termname, agent_config, cwd)
   end
   local env_str = table.concat(env_parts, " ")
 
-  local full_cmd = env_str ~= "" and (env_str .. " " .. agent_config.cmd) or agent_config.cmd
+  local agent_cmd = agent_config.full_cmd or agent_config.cmd
+  local full_cmd = env_str ~= "" and (env_str .. " " .. agent_cmd) or agent_cmd
   local spawn_cmd = string.format(
     "wezterm cli split-pane --pane-id %d --right --percent 50 --cwd %s -- sh -c %s 2>&1",
     parent_pane_id,
@@ -189,8 +201,10 @@ end
 
 function M.kill(term_data)
   if term_data.pane_id then
+    pane_errors[term_data.pane_id] = nil
     kill_pane(term_data.pane_id)
   end
+  term_data.pane_id = nil
 end
 
 function M.cleanup_all(terminals)

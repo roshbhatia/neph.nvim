@@ -125,31 +125,31 @@ export async function runCommand(transport: NvimTransport | null, command: strin
       await transport.close();
     };
 
-    const handleResult = (data: string) => {
+    const handleResult = async (data: string) => {
       try {
         const json = JSON.parse(data);
         if (json.request_id === requestId) {
           process.stdout.write(data + '\n');
-          cleanup();
+          await cleanup();
           process.exit(0);
         }
       } catch {}
     };
 
-    transport.onNotification('neph:review_done', (args: any) => {
+    transport.onNotification('neph:review_done', async (args: any) => {
       const payload = args[0];
       if (payload && payload.request_id === requestId) {
         if (fs.existsSync(resultPath)) {
           const result = fs.readFileSync(resultPath, 'utf8');
-          handleResult(result);
+          await handleResult(result);
         }
       }
     });
 
-    const watcher = fs.watch(os.tmpdir(), (event, filename) => {
+    const watcher = fs.watch(os.tmpdir(), async (event, filename) => {
       if (filename === path.basename(resultPath) && fs.existsSync(resultPath)) {
         const result = fs.readFileSync(resultPath, 'utf8');
-        handleResult(result);
+        await handleResult(result);
       }
     });
 
@@ -237,6 +237,11 @@ if (require.main === module) {
   const transport = socketPath ? new SocketTransport(socketPath) : null;
   const args = process.argv.slice(2);
   const command = args[0];
+
+  if (!command) {
+    process.stderr.write('Usage: neph <command> [args...]\nCommands: review, set, unset, get, checktime, close-tab, status, spec, gate\n');
+    process.exit(1);
+  }
 
   readStdin().then(stdin => {
     runCommand(transport, command, args, stdin).catch(err => {
