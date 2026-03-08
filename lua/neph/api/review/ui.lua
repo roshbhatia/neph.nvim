@@ -119,41 +119,29 @@ function M.start_review(session, ui_state, on_done)
     local old_hunk_lines = vim.api.nvim_buf_get_lines(ui_state.left_buf, hunk.start_line - 1, hunk.end_line, false)
     local ft = vim.bo[ui_state.left_buf].filetype
 
-    local items = {
-      { text = "Accept — use proposed change", action = "accept", preview_lines = new_hunk_lines },
-      { text = "Reject — keep current", action = "reject", preview_lines = old_hunk_lines },
-      { text = "Accept all remaining", action = "accept_all", preview_lines = new_hunk_lines },
-      { text = "Reject all remaining", action = "reject_all", preview_lines = old_hunk_lines },
+    -- Preview lines keyed by action for lookup from picker items
+    local previews = {
+      accept = new_hunk_lines,
+      reject = old_hunk_lines,
+      accept_all = new_hunk_lines,
+      reject_all = old_hunk_lines,
     }
 
-    Snacks.picker.select(items, {
-      prompt = string.format("Hunk %d/%d", idx, total),
-      format_item = function(item)
-        return item.text
-      end,
-      preview = function(ctx)
-        ctx.preview:set_lines(ctx.item.preview_lines)
-        ctx.preview:highlight({ ft = ft })
-      end,
-      layout = { preset = "ivy", backdrop = false },
-    }, function(choice)
-      if not choice then
-        vim.ui.input({ prompt = "Reject all remaining hunks - reason: " }, function(reason)
-          session.reject_all(reason or "User cancelled review")
-          prompt_next()
-        end)
-        return
-      end
-
-      if choice.action == "accept" then
+    local function handle_choice(action)
+      if action == "accept" then
         M.unplace_sign(ui_state.left_buf, hunk.start_line, ui_state.sign_ids)
         M.place_sign(ui_state.left_buf, "neph_accept", hunk.start_line, ui_state.sign_ids)
         session.accept()
         prompt_next()
-      elseif choice.action == "reject" then
+      elseif action == "reject" then
         vim.ui.input({ prompt = "Reject reason (optional): " }, function(reason)
+          if reason == nil then
+            -- Esc pressed — go back to choice menu
+            prompt_next()
+            return
+          end
           M.unplace_sign(ui_state.left_buf, hunk.start_line, ui_state.sign_ids)
-          if reason and reason ~= "" then
+          if reason ~= "" then
             M.place_sign(ui_state.left_buf, "neph_commented", hunk.start_line, ui_state.sign_ids)
           else
             M.place_sign(ui_state.left_buf, "neph_reject", hunk.start_line, ui_state.sign_ids)
@@ -161,16 +149,61 @@ function M.start_review(session, ui_state, on_done)
           session.reject(reason)
           prompt_next()
         end)
-      elseif choice.action == "accept_all" then
+      elseif action == "accept_all" then
         session.accept_all()
         prompt_next()
-      elseif choice.action == "reject_all" then
+      elseif action == "reject_all" then
         vim.ui.input({ prompt = "Reject all - reason: " }, function(reason)
+          if reason == nil then
+            -- Esc pressed — go back to choice menu
+            prompt_next()
+            return
+          end
           session.reject_all(reason)
           prompt_next()
         end)
       end
-    end)
+    end
+
+    Snacks.picker({
+      title = string.format("Hunk %d/%d", idx, total),
+      layout = {
+        preset = "ivy",
+        preview = true,
+      },
+      finder = function()
+        return {
+          { text = "Accept — use proposed change", action = "accept" },
+          { text = "Reject — keep current", action = "reject" },
+          { text = "Accept all remaining", action = "accept_all" },
+          { text = "Reject all remaining", action = "reject_all" },
+        }
+      end,
+      format = function(item)
+        return { { item.text } }
+      end,
+      preview = function(ctx)
+        local lines = previews[ctx.item.action] or {}
+        ctx.preview:set_lines(lines)
+        ctx.preview:highlight({ ft = ft })
+      end,
+      confirm = function(picker, item)
+        picker:close()
+        if item then
+          handle_choice(item.action)
+        else
+          -- Cancelled — reject all remaining
+          vim.ui.input({ prompt = "Reject all remaining hunks - reason: " }, function(reason)
+            if reason == nil then
+              prompt_next()
+              return
+            end
+            session.reject_all(reason or "User cancelled review")
+            prompt_next()
+          end)
+        end
+      end,
+    })
   end
 
   prompt_next()
