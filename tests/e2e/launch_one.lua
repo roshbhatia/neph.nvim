@@ -6,7 +6,7 @@
 vim.opt.runtimepath:prepend(vim.fn.getcwd())
 
 -- Load snacks.nvim if available (required by native backend)
-local snacks_path = vim.fn.stdpath("data") .. "/lazy/snacks.nvim"
+local snacks_path = os.getenv("SNACKS_PATH") or (vim.fn.stdpath("data") .. "/lazy/snacks.nvim")
 if vim.fn.isdirectory(snacks_path) == 1 then
   vim.opt.runtimepath:prepend(snacks_path)
 end

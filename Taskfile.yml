@@ -29,16 +29,18 @@ tasks:
       - nvim --headless --cmd 'set rtp+=.' -l tests/e2e/run.lua
       - bash tests/e2e/agent_launch.sh
 
+  check:
+    desc: Fast local lint check (no tests, no builds)
+    cmds:
+      - stylua --check lua/ tests/
+      - cmd: luacheck lua/ tests/ --globals vim Snacks describe it before_each after_each assert
+        ignore_error: true
+
   ci:
     desc: Run lint + test
     cmds:
       - task lint
       - task test
-
-  dagger:
-    desc: Run the Dagger CI pipeline in a container
-    cmds:
-      - deno run -A .fluentci/ci.ts
 
   docs:
     desc: Generate vimdoc from EmmyLua annotations

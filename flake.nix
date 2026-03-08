@@ -2,28 +2,34 @@
   inputs = {
     nixpkgs.url = "nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
-    dagger.url = "github:dagger/nix";
-    dagger.inputs.nixpkgs.follows = "nixpkgs";
   };
 
   outputs =
     {
       nixpkgs,
       flake-utils,
-      dagger,
       ...
     }:
     flake-utils.lib.eachDefaultSystem (
       system:
       let
         pkgs = import nixpkgs { inherit system; };
+
+        # Fetch snacks.nvim if not in nixpkgs
+        snacks-nvim = pkgs.vimPlugins.snacks-nvim or (pkgs.vimUtils.buildVimPlugin {
+          pname = "snacks.nvim";
+          version = "2024-01-01";
+          src = pkgs.fetchFromGitHub {
+            owner = "folke";
+            repo = "snacks.nvim";
+            rev = "main";
+            sha256 = pkgs.lib.fakeSha256;
+          };
+        });
       in
       {
         devShells.default = pkgs.mkShell {
           buildInputs = [
-            # Dagger CLI (from dagger flake)
-            dagger.packages.${system}.dagger
-
             # Runtime
             pkgs.nodejs_20
             pkgs.deno
@@ -39,10 +45,12 @@
             pkgs.neovim
             pkgs.vimPlugins.plenary-nvim
             pkgs.vimPlugins.mini-nvim
+            snacks-nvim
           ];
 
           shellHook = ''
             export PLENARY_PATH=${pkgs.vimPlugins.plenary-nvim}
+            export SNACKS_PATH=${snacks-nvim}
           '';
         };
       }
