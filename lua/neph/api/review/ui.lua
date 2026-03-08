@@ -97,24 +97,6 @@ function M.show_hints(buf, hunk_range, idx, total)
   })
 end
 
-local CONTEXT_LINES = 3
-local preview_ns = vim.api.nvim_create_namespace("neph_review_preview")
-
---- Build preview lines with context around a hunk range, returning
---- the lines and the 0-indexed range of changed lines within them.
----@param buf integer  Buffer to read from
----@param hunk_start integer  1-indexed start line of hunk
----@param hunk_end integer  1-indexed end line of hunk (inclusive)
----@return string[] lines, integer ctx_offset  (offset of first changed line in returned array)
-local function build_preview_with_context(buf, hunk_start, hunk_end)
-  local total = vim.api.nvim_buf_line_count(buf)
-  local ctx_start = math.max(1, hunk_start - CONTEXT_LINES)
-  local ctx_end = math.min(total, hunk_end + CONTEXT_LINES)
-  local lines = vim.api.nvim_buf_get_lines(buf, ctx_start - 1, ctx_end, false)
-  local offset = hunk_start - ctx_start -- 0-indexed offset into lines
-  return lines, offset
-end
-
 function M.start_review(session, ui_state, on_done)
   local function prompt_next()
     if session.is_done() then
@@ -133,107 +115,47 @@ function M.start_review(session, ui_state, on_done)
     M.place_sign(ui_state.left_buf, "neph_current", hunk.start_a, ui_state.sign_ids)
     M.show_hints(ui_state.right_buf, hunk, idx, total)
 
-    local ft = vim.bo[ui_state.left_buf].filetype
+    local actions = { "accept", "reject", "accept_all", "reject_all" }
+    local choice = vim.fn.inputlist({
+      string.format("Hunk %d/%d:", idx, total),
+      "1. Accept  — use proposed change",
+      "2. Reject  — keep current",
+      "3. Accept all remaining",
+      "4. Reject all remaining",
+    })
 
-    -- Build preview with context for each action
-    local new_ctx_lines, new_ctx_offset = build_preview_with_context(ui_state.right_buf, hunk.start_b, hunk.end_b)
-    local old_ctx_lines, old_ctx_offset = build_preview_with_context(ui_state.left_buf, hunk.start_a, hunk.end_a)
-    local new_hunk_count = hunk.end_b - hunk.start_b + 1
-    local old_hunk_count = hunk.end_a - hunk.start_a + 1
-
-    local previews = {
-      accept = { lines = new_ctx_lines, offset = new_ctx_offset, count = new_hunk_count, hl = "DiffAdd" },
-      reject = { lines = old_ctx_lines, offset = old_ctx_offset, count = old_hunk_count, hl = nil },
-      accept_all = { lines = new_ctx_lines, offset = new_ctx_offset, count = new_hunk_count, hl = "DiffAdd" },
-      reject_all = { lines = old_ctx_lines, offset = old_ctx_offset, count = old_hunk_count, hl = nil },
-    }
-
-    local function handle_choice(action)
-      if action == "accept" then
-        M.unplace_sign(ui_state.left_buf, hunk.start_a, ui_state.sign_ids)
-        M.place_sign(ui_state.left_buf, "neph_accept", hunk.start_a, ui_state.sign_ids)
-        session.accept()
-        prompt_next()
-      elseif action == "reject" then
-        vim.ui.input({ prompt = "Reject reason (optional): " }, function(reason)
-          if reason == nil then
-            prompt_next()
-            return
-          end
-          M.unplace_sign(ui_state.left_buf, hunk.start_a, ui_state.sign_ids)
-          if reason ~= "" then
-            M.place_sign(ui_state.left_buf, "neph_commented", hunk.start_a, ui_state.sign_ids)
-          else
-            M.place_sign(ui_state.left_buf, "neph_reject", hunk.start_a, ui_state.sign_ids)
-          end
-          session.reject(reason)
-          prompt_next()
-        end)
-      elseif action == "accept_all" then
-        session.accept_all()
-        prompt_next()
-      elseif action == "reject_all" then
-        vim.ui.input({ prompt = "Reject all - reason: " }, function(reason)
-          if reason == nil then
-            prompt_next()
-            return
-          end
-          session.reject_all(reason)
-          prompt_next()
-        end)
-      end
+    if choice < 1 or choice > 4 then
+      -- Escaped or invalid — reject all remaining with no reason
+      session.reject_all()
+      prompt_next()
+      return
     end
 
-    Snacks.picker({
-      title = string.format("Hunk %d/%d", idx, total),
-      layout = {
-        preset = "ivy",
-        preview = true,
-      },
-      finder = function()
-        return {
-          { text = "Accept — use proposed change", action = "accept" },
-          { text = "Reject — keep current", action = "reject" },
-          { text = "Accept all remaining", action = "accept_all" },
-          { text = "Reject all remaining", action = "reject_all" },
-        }
-      end,
-      format = function(item)
-        return { { item.text } }
-      end,
-      preview = function(ctx)
-        local p = previews[ctx.item.action]
-        if not p then
-          return
-        end
-        ctx.preview:set_lines(p.lines)
-        ctx.preview:highlight({ ft = ft })
-        -- Add diff color highlights on the changed lines
-        if p.hl then
-          local buf = ctx.preview.buf
-          for i = 0, p.count - 1 do
-            vim.api.nvim_buf_add_highlight(buf, preview_ns, p.hl, p.offset + i, 0, -1)
-          end
-        end
-      end,
-      confirm = function(picker, item)
-        picker:close()
-        vim.schedule(function()
-          if item then
-            handle_choice(item.action)
-          else
-            vim.ui.input({ prompt = "Reject all remaining hunks - reason: " }, function(reason)
-              if reason == nil then
-                prompt_next()
-                return
-              end
-              session.reject_all(reason)
-              prompt_next()
-            end)
-          end
-        end)
-      end,
-    })
+    local action = actions[choice]
+
+    if action == "accept" then
+      M.unplace_sign(ui_state.left_buf, hunk.start_a, ui_state.sign_ids)
+      M.place_sign(ui_state.left_buf, "neph_accept", hunk.start_a, ui_state.sign_ids)
+      session.accept()
+      prompt_next()
+    elseif action == "reject" then
+      local reason = vim.fn.input("Reject reason (optional): ")
+      M.unplace_sign(ui_state.left_buf, hunk.start_a, ui_state.sign_ids)
+      if reason ~= "" then
+        M.place_sign(ui_state.left_buf, "neph_commented", hunk.start_a, ui_state.sign_ids)
+      else
+        M.place_sign(ui_state.left_buf, "neph_reject", hunk.start_a, ui_state.sign_ids)
+      end
+      session.reject(reason)
+      prompt_next()
+    elseif action == "accept_all" then
+      session.accept_all()
+      prompt_next()
+    elseif action == "reject_all" then
+      local reason = vim.fn.input("Reject all - reason: ")
+      session.reject_all(reason)
+      prompt_next()
+    end
   end
 
   prompt_next()

@@ -204,9 +204,11 @@ export async function runGate(
 
   return new Promise<number>((resolve) => {
     const handleResult = async (data: string) => {
+      if (done) return;
       try {
         const json = JSON.parse(data);
         if (json.request_id === requestId) {
+          watcher.close();
           const decision = json.decision as string;
           await cleanup();
           resolve(decision === 'reject' ? 2 : 0);

@@ -126,9 +126,11 @@ export async function runCommand(transport: NvimTransport | null, command: strin
     };
 
     const handleResult = async (data: string) => {
+      if (done) return;
       try {
         const json = JSON.parse(data);
         if (json.request_id === requestId) {
+          watcher.close();
           process.stdout.write(data + '\n');
           await cleanup();
           process.exit(0);

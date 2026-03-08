@@ -42,7 +42,11 @@ end
 local function build_cmd(agent)
   local args = agent.args or {}
   if #args > 0 then
-    return agent.cmd .. " " .. table.concat(args, " ")
+    local escaped = {}
+    for i, arg in ipairs(args) do
+      escaped[i] = vim.fn.shellescape(arg)
+    end
+    return agent.cmd .. " " .. table.concat(escaped, " ")
   end
   return agent.cmd
 end

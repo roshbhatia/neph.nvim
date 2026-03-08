@@ -35,7 +35,7 @@ function M.request(method, params)
   end
   local ok, result = pcall(handler, params or {})
   if not ok then
-    return { ok = false, error = { code = "INTERNAL", message = result } }
+    return { ok = false, error = { code = "INTERNAL", message = tostring(result) } }
   end
   return { ok = true, result = result }
 end

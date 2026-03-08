@@ -182,6 +182,7 @@ function M.hide(term_data)
   if not term_data.pane_id then
     return
   end
+  pane_errors[term_data.pane_id] = nil
   if pane_exists(term_data.pane_id) then
     kill_pane(term_data.pane_id)
   end
@@ -210,6 +211,7 @@ end
 function M.cleanup_all(terminals)
   for _, td in pairs(terminals) do
     if td.pane_id then
+      pane_errors[td.pane_id] = nil
       kill_pane(td.pane_id)
     end
   end

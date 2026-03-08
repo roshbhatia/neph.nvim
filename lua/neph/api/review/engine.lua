@@ -94,40 +94,36 @@ function M.apply_decisions(old_lines, new_lines, decisions)
     return table.concat(old_lines, "\n")
   end
 
-  local result_lines = vim.deepcopy(old_lines)
-  local offset = 0
-
+  -- Collect accepted patches, then apply in reverse order so indices stay valid
+  -- without needing an offset accumulator. This also avoids O(n²) shifting from
+  -- repeated table.remove in forward order.
+  local patches = {}
   for i, hunk in ipairs(diff_result) do
     local decision = decisions[i]
     if decision and decision.decision == "accept" then
       local start_a, count_a, start_b, count_b = unpack(hunk)
-
-      local new_hunk_lines = {}
+      local lines = {}
       for j = start_b, start_b + count_b - 1 do
-        table.insert(new_hunk_lines, new_lines[j])
+        lines[#lines + 1] = new_lines[j]
       end
+      patches[#patches + 1] = { start_a = start_a, count_a = count_a, lines = lines }
+    end
+  end
 
-      -- For pure insertions (count_a == 0), start_a is the line after which
-      -- to insert, so we insert at start_a + 1. For replacements/deletions,
-      -- start_a is the first line to replace.
-      local replace_start = start_a + offset
-      if count_a == 0 then
-        replace_start = replace_start + 1
+  local result_lines = vim.deepcopy(old_lines)
+  for i = #patches, 1, -1 do
+    local p = patches[i]
+    local pos = p.start_a
+    if p.count_a == 0 then
+      pos = pos + 1
+    end
+    for _ = 1, p.count_a do
+      if pos <= #result_lines then
+        table.remove(result_lines, pos)
       end
-
-      -- Remove count_a lines
-      for _ = 1, count_a do
-        if replace_start <= #result_lines then
-          table.remove(result_lines, replace_start)
-        end
-      end
-
-      -- Insert count_b lines
-      for j = #new_hunk_lines, 1, -1 do
-        table.insert(result_lines, replace_start, new_hunk_lines[j])
-      end
-
-      offset = offset + (count_b - count_a)
+    end
+    for j = #p.lines, 1, -1 do
+      table.insert(result_lines, pos, p.lines[j])
     end
   end
 

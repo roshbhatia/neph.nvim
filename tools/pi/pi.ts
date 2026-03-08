@@ -28,7 +28,10 @@ export default function (pi: ExtensionAPI) {
   /** Poll vim.g.neph_pending_prompt and deliver via pi.sendUserMessage(). */
   function startPromptPoll() {
     if (promptPollTimer) return;
+    let polling = false;
     promptPollTimer = setInterval(async () => {
+      if (polling) return; // skip if previous poll is still in-flight
+      polling = true;
       try {
         const raw = await nephRun(["get", "neph_pending_prompt"], undefined, NEPH_TIMEOUT_MS);
         const res = JSON.parse(raw);
@@ -40,6 +43,8 @@ export default function (pi: ExtensionAPI) {
         }
       } catch {
         // nvim may have closed or neph not available — ignore
+      } finally {
+        polling = false;
       }
     }, 500);
   }

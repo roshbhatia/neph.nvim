@@ -53,12 +53,15 @@ function M.open(params)
     M.write_result(result_path, channel_id, request_id, envelope)
   end)
 
-  -- Handle manual tab close
+  -- Handle manual tab close — check if our specific tabpage is gone,
+  -- since TabClosed patterns use positional tab numbers which shift.
   vim.api.nvim_create_autocmd("TabClosed", {
-    pattern = tostring(vim.api.nvim_tabpage_get_number(ui_state.tab)),
     once = true,
     callback = function()
-      -- If result file wasn't written yet, it means user closed tab prematurely
+      if vim.api.nvim_tabpage_is_valid(ui_state.tab) then
+        return true -- not our tab; re-register
+      end
+      -- If result file wasn't written yet, user closed tab prematurely
       local rf = io.open(result_path, "r")
       if not rf then
         M.write_result(result_path, channel_id, request_id, {

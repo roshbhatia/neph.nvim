@@ -254,6 +254,12 @@ function M.ensure_active_and_send(text)
     local retries = 0
     local max_retries = 20
     local name = active_terminal
+    -- Cancel any existing retry timer for this terminal
+    local existing = pending_timers[name]
+    if existing then
+      pcall(existing.stop, existing)
+      pcall(existing.close, existing)
+    end
     local timer = vim.uv.new_timer()
     pending_timers[name] = timer
     timer:start(

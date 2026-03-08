@@ -1,7 +1,7 @@
 ---@mod neph.history Prompt history management
 ---@brief [[
 --- Persists sent prompts per agent as JSON files under stdpath("data")
---- and exposes a Snacks picker to browse/copy them.
+--- and exposes a vim.ui.select picker to browse/copy them.
 ---@brief ]]
 
 local M = {}
@@ -61,7 +61,8 @@ end
 
 M.load_history = M.load
 
---- Show a Snacks picker with history for *termname* (or all agents when nil).
+--- Show a picker with history for *termname* (or all agents when nil).
+--- Selected entry is copied to the + register.
 ---@param termname? string
 function M.pick(termname)
   local data = {}
@@ -88,19 +89,22 @@ function M.pick(termname)
     end)
   end
 
-  Snacks.picker.pick({
+  if #data == 0 then
+    vim.notify("Neph: no history entries", vim.log.levels.INFO)
+    return
+  end
+
+  vim.ui.select(data, {
     prompt = termname and (termname .. " History") or "Neph – AI History",
-    items = data,
-    format = "text",
-    layout = "default",
-    preview = false,
-    confirm = function(_, item)
-      if item then
-        vim.fn.setreg("+", item.prompt)
-        vim.notify("Copied: " .. item.prompt:sub(1, 60), vim.log.levels.INFO)
-      end
+    format_item = function(item)
+      return item.text
     end,
-  })
+  }, function(item)
+    if item then
+      vim.fn.setreg("+", item.prompt)
+      vim.notify("Copied: " .. item.prompt:sub(1, 60), vim.log.levels.INFO)
+    end
+  end)
 end
 
 M.create_history_picker = M.pick
