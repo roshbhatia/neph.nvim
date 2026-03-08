@@ -17,7 +17,7 @@ tasks:
       - npm run build
 
   test:
-    deps: [test:neph, test:lib]
+    deps: [test:neph, test:lib, test:pi]
 
   test:neph:
     dir: neph-cli
@@ -26,6 +26,11 @@ tasks:
 
   test:lib:
     dir: lib
+    cmds:
+      - npx vitest --run
+
+  test:pi:
+    dir: pi
     cmds:
       - npx vitest --run
 

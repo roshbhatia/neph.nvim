@@ -1,0 +1,4 @@
+{
+  "toolName": "edit",
+  "toolArgs": "{\"filepath\":\"/tmp/test-file.ts\",\"content\":\"export const hello = 'copilot';\\n\"}"
+}

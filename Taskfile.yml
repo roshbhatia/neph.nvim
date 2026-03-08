@@ -30,11 +30,12 @@ tasks:
       - bash tests/e2e/agent_launch.sh
 
   check:
-    desc: Fast local lint check (no tests, no builds)
+    desc: Fast local lint + type check (no tests, no builds)
     cmds:
       - stylua --check lua/ tests/
       - cmd: luacheck lua/ tests/ --globals vim Snacks describe it before_each after_each assert
         ignore_error: true
+      - npx --prefix tools/neph-cli tsc --noEmit
 
   ci:
     desc: Run lint + test

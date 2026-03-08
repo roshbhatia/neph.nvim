@@ -1,0 +1,7 @@
+{
+  "tool_name": "write_file",
+  "tool_input": {
+    "filepath": "/tmp/test-file.ts",
+    "content": "export const hello = 'gemini';\n"
+  }
+}

@@ -1,0 +1,4 @@
+#!/bin/sh
+# Fast local checks before pushing.
+# Enable with: git config core.hooksPath .githooks
+task check

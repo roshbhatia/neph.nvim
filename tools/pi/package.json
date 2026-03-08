@@ -7,9 +7,11 @@
     ".": "./dist/pi.js"
   },
   "scripts": {
-    "build": "esbuild pi.ts --bundle --platform=node --format=esm --outfile=dist/pi.js --external:@mariozechner/pi-coding-agent"
+    "build": "esbuild pi.ts --bundle --platform=node --format=esm --outfile=dist/pi.js --external:@mariozechner/pi-coding-agent",
+    "test": "vitest"
   },
   "devDependencies": {
-    "esbuild": "^0.19.0"
+    "esbuild": "^0.19.0",
+    "vitest": "^1.0.0"
   }
 }
