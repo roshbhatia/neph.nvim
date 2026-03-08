@@ -1,5 +1,7 @@
 # neph.nvim
 
+[![CI](https://github.com/roshbhatia/neph.nvim/actions/workflows/ci.yml/badge.svg)](https://github.com/roshbhatia/neph.nvim/actions/workflows/ci.yml)
+
 > Consolidated AI agent terminal manager for Neovim.
 
 Neph.nvim provides a clean, universal bridge between AI agents and Neovim. It supports multiple agent backends (goose, claude, opencode, amp, copilot, gemini) and handles interactive diff reviews, state management, and tool discovery.
