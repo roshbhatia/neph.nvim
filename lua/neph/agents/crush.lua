@@ -2,7 +2,7 @@
 return {
   name = "crush",
   label = "Crush",
-  icon = "  ",
+  icon = "",
   cmd = "crush",
   args = {},
 }

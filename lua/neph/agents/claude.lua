@@ -2,7 +2,7 @@
 return {
   name = "claude",
   label = "Claude",
-  icon = "  ",
+  icon = "",
   cmd = "claude",
   args = { "--permission-mode", "plan" },
   integration = {

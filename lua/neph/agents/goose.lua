@@ -2,7 +2,7 @@
 return {
   name = "goose",
   label = "Goose",
-  icon = "  ",
+  icon = "",
   cmd = "goose",
   args = {},
 }

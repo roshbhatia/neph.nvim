@@ -2,7 +2,7 @@
 return {
   name = "gemini",
   label = "Gemini",
-  icon = " 󰊭 ",
+  icon = "󰊭",
   cmd = "gemini",
   args = {},
   integration = {

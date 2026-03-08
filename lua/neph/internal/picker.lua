@@ -25,7 +25,7 @@ function M.pick_agent()
   for _, agent in ipairs(agents.get_all()) do
     local is_active = agent.name == active
     table.insert(items, {
-      text = string.format("%s %s%s", agent.icon, agent.label, is_active and " (active)" or ""),
+      text = string.format(" %s  %s%s", agent.icon, agent.label, is_active and " (active)" or ""),
       icon = agent.icon,
       label = agent.label,
       name = agent.name,
@@ -39,7 +39,7 @@ function M.pick_agent()
     preview = false,
     format = function(item, _)
       return {
-        { item.icon .. " ", "SnacksPickerIcon" },
+        { " " .. item.icon .. "  ", "SnacksPickerIcon" },
         { item.label },
       }
     end,

@@ -197,7 +197,7 @@ end
 ---@param opts?       {action?:string, default?:string, on_confirm?:fun(text:string)}
 function M.create_input(termname, agent_icon, opts)
   opts = opts or {}
-  local title = string.format("%s  %s", agent_icon or "", opts.action or "Ask")
+  local title = string.format(" %s  %s", agent_icon or "", opts.action or "Ask")
 
   local initial_state = require("neph.internal.context").new()
   local hist = history.load(termname)

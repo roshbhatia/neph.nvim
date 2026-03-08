@@ -2,7 +2,7 @@
 return {
   name = "amp",
   label = "Amp",
-  icon = " 󰫤 ",
+  icon = "󰫤",
   cmd = "amp",
   args = { "--ide" },
   integration = {

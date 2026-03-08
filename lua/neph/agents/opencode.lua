@@ -2,7 +2,7 @@
 return {
   name = "opencode",
   label = "OpenCode",
-  icon = "  ",
+  icon = "",
   cmd = "opencode",
   args = { "--continue" },
   integration = {

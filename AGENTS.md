@@ -195,7 +195,7 @@ Each agent is a pure data table at `lua/neph/agents/<name>.lua` returning an `Ag
 return {
   name = "claude",
   label = "Claude",
-  icon = "  ",
+  icon = "",
   cmd = "claude",
   args = { "--permission-mode", "plan" },
   integration = {
@@ -565,7 +565,7 @@ if (command === 'diagnostics') {
 return {
   name = "aider",
   label = "Aider",
-  icon = " 󰚩 ",
+  icon = "󰚩",
   cmd = "aider",
   args = { "--yes" },
 }
