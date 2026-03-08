@@ -12,6 +12,7 @@ The protocol version is currently `neph-rpc/v1`.
 |--------|--------|--------|-------------|
 | `review.open` | `request_id`, `result_path`, `channel_id`, `path`, `content` | Yes | Opens an interactive diff review. |
 | `status.set` | `name`, `value` | No | Sets a `vim.g` global variable. |
+| `status.get` | `name` | No | Gets a `vim.g` global variable. |
 | `status.unset` | `name` | No | Unsets a `vim.g` global variable. |
 | `buffers.check` | (none) | No | Calls `:checktime` in Neovim. |
 | `tab.close` | (none) | No | Closes the current tab. |
@@ -38,6 +39,13 @@ The protocol version is currently `neph-rpc/v1`.
 **Params:**
 - `name` (string): The `vim.g` key.
 - `value` (any): The value to set (serialized via msgpack).
+
+### `status.get`
+
+**Params:**
+- `name` (string): The `vim.g` key to read.
+
+**Returns:** The current value of the variable, or `nil` if not set.
 
 ### `status.unset`
 

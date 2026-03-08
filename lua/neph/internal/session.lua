@@ -1,9 +1,7 @@
 ---@mod neph.session Session management
 ---@brief [[
---- Manages open agent terminal sessions.  Auto-detects the best backend:
----   1. SSH connections → always native (snacks.nvim splits)
----   2. WezTerm available → wezterm pane backend
----   3. Fallback → native backend
+--- Manages open agent terminal sessions.
+--- The backend is injected via setup(opts, backend_mod) — no auto-detection.
 ---@brief ]]
 
 local M = {}

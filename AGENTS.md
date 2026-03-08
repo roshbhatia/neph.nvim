@@ -4,7 +4,7 @@
 
 ## Project Overview
 
-**neph.nvim** is a Neovim plugin that provides a universal bridge between AI coding agents and Neovim. It manages multiple agent backends (crush, claude, goose, pi, etc.) and enables interactive diff reviews, state management, and tool discovery through a clean RPC interface.
+**neph.nvim** is a Neovim plugin that provides a universal bridge between AI coding agents and Neovim. Agents and backends are injected explicitly via `setup()` — no hardcoded lists, no string-enum config. It enables interactive diff reviews, state management, and tool discovery through a clean RPC interface.
 
 ### Key Components
 
@@ -77,11 +77,20 @@ task docs  # runs: nvim --headless -u NONE -l scripts/docgen.lua
 
 ```
 lua/neph/
-├── init.lua              # Main setup() entry point
+├── init.lua              # Main setup() entry point (DI wiring)
 ├── config.lua            # Configuration types and defaults
 ├── api.lua               # User-facing API (keybindings)
 ├── rpc.lua               # RPC dispatch facade (single entry point)
-├── tools.lua             # Auto-install companion tools
+├── tools.lua             # Generic tool manifest executor
+├── agents/               # Agent submodules (pure data tables)
+│   ├── all.lua           # Re-exports all 10 agents
+│   ├── claude.lua        # Claude agent definition
+│   ├── goose.lua         # Goose agent definition
+│   ├── pi.lua            # Pi agent (with send_adapter + tools manifest)
+│   └── ...               # amp, codex, copilot, crush, cursor, gemini, opencode
+├── backends/             # Backend modules (injected via setup)
+│   ├── snacks.lua        # snacks.nvim terminal backend
+│   └── wezterm.lua       # WezTerm pane backend
 ├── api/                  # RPC-exposed modules
 │   ├── buffers.lua       # Buffer/tab operations
 │   ├── status.lua        # vim.g status management
@@ -90,8 +99,8 @@ lua/neph/
 │       ├── engine.lua    # Pure hunk computation logic
 │       └── ui.lua        # Neovim UI layer (signs, picker)
 └── internal/             # Private implementation
-    ├── agents.lua        # Agent registry (crush, claude, etc.)
-    ├── backends/         # Terminal backend adapters
+    ├── agents.lua        # Agent accessor (thin wrapper over injected defs)
+    ├── contracts.lua     # Contract validation (agents, backends, tools)
     ├── completion.lua    # Cmdline completion
     ├── context.lua       # Editor state helpers
     ├── file_refresh.lua  # Auto-reload changed files
@@ -176,29 +185,36 @@ The diff review system is asynchronous and uses temp files + notifications:
 - Manages signs, virtual text, and `Snacks.picker` lifecycle
 - Calls engine functions for logic
 
-### 4. Agent Registration
+### 4. Agent Submodules
 
-Built-in agents are defined in `lua/neph/internal/agents.lua`:
+Each agent is a pure data table at `lua/neph/agents/<name>.lua` returning an `AgentDef`:
 
 ```lua
-local agents = {
-  {
-    name = "crush",
-    label = "Crush",
-    icon = "  ",
-    cmd = "crush",
-    args = {},
+-- lua/neph/agents/claude.lua
+---@type neph.AgentDef
+return {
+  name = "claude",
+  label = "Claude",
+  icon = "  ",
+  cmd = "claude",
+  args = { "--permission-mode", "plan" },
+  integration = {
+    type = "hook",
+    capabilities = { "review", "status", "checktime" },
   },
-  -- ... etc
+  tools = {
+    merges = {
+      { src = "claude/settings.json", dst = "~/.claude/settings.json", key = "hooks" },
+    },
+  },
 }
 ```
 
-**Adding a new agent:**
-1. Add entry to `agents` table
-2. Ensure `cmd` is executable via `vim.fn.executable(cmd)`
-3. The `full_cmd` field is computed at runtime
-
-**User override:** Users can extend/override via `setup({ agents = {...} })`.
+**Key points:**
+- Agents are injected via `setup({ agents = { ... } })` — no hardcoded list
+- `contracts.validate_agent()` runs at setup time — invalid agents fail loud
+- `full_cmd` is computed lazily by `internal/agents.lua` only for installed agents
+- `all.lua` re-exports all 10 built-in agents as a convenience
 
 ### 5. Context Placeholders
 
@@ -388,13 +404,13 @@ end
 
 ## Important Gotchas
 
-### 1. Lua LSP Warnings about `full_cmd`
+### 1. Contract Validation Fails Loud
 
-The LSP complains about missing `full_cmd` in agent definitions. **This is expected.** The field is populated at runtime by `build_full_cmd()` in `lua/neph/internal/agents.lua`.
+`setup()` validates every agent and the backend at init time using `contracts.validate_agent()` and `contracts.validate_backend()`. If an agent is missing required fields (name, label, icon, cmd) or a backend is missing required methods, setup throws immediately — not at runtime.
 
-**Why:** The `full_cmd` string is computed lazily (only for installed agents).
+**Why:** Catch wiring errors early. A typo in an agent submodule or an incomplete backend should never silently pass.
 
-**Fix:** Suppress the warning or annotate `full_cmd?` as optional in the type definition.
+**Impact:** If you see "neph: agent validation failed" on startup, check your agent definitions against the `neph.AgentDef` type in `lua/neph/internal/agents.lua`.
 
 ### 2. `protocol.json` is Source of Truth
 
@@ -429,16 +445,11 @@ The review UI uses Neovim signs to mark hunks. **Signs must be cleaned up when t
 
 ### 6. Snacks.nvim Dependency
 
-The native terminal backend (`multiplexer = "snacks"`) requires [folke/snacks.nvim](https://github.com/folke/snacks.nvim).
+The snacks backend (`neph.backends.snacks`) requires [folke/snacks.nvim](https://github.com/folke/snacks.nvim).
 
-**Check before using:** `lua/neph/internal/backends/snacks.lua`
+**Check before using:** `lua/neph/backends/snacks.lua`
 
-```lua
-local has_snacks = pcall(require, "snacks")
-if not has_snacks then
-  error("snacks.nvim not found")
-end
-```
+If snacks.nvim is not installed, the backend will error when `require`'d. Use the wezterm backend as an alternative if snacks.nvim is not available.
 
 ### 7. Luacheck Globals
 
@@ -471,7 +482,7 @@ The CI pipeline uses `flake.nix` to provide a deterministic environment with:
 
 ### 10. Agent Terminal State
 
-Each agent session stores state in `lua/neph/internal/session.lua`. **State is not persisted across Neovim restarts.**
+Each agent session stores state in `lua/neph/internal/session.lua`. The backend is injected via `setup()` — there is no auto-detection. **State is not persisted across Neovim restarts.**
 
 When adding session state, consider:
 - Should it be saved to disk?
@@ -547,24 +558,38 @@ if (command === 'diagnostics') {
 
 **Example:** Add support for "aider" agent.
 
-1. **Add to `lua/neph/internal/agents.lua`:**
+1. **Create `lua/neph/agents/aider.lua`:**
 
 ```lua
-local agents = {
-  -- ... existing agents
-  {
-    name = "aider",
-    label = "Aider",
-    icon = " 󰚩 ",
-    cmd = "aider",
-    args = { "--yes" },
-  },
+---@type neph.AgentDef
+return {
+  name = "aider",
+  label = "Aider",
+  icon = " 󰚩 ",
+  cmd = "aider",
+  args = { "--yes" },
 }
 ```
 
-2. **Test:** Open Neovim, run `:lua require("neph.internal.agents").list()` and verify "aider" appears if installed.
+2. **Add to `lua/neph/agents/all.lua`:** (if it should be in the default set)
 
-3. **Document:** Update README.md agent list.
+```lua
+return {
+  -- ... existing agents
+  require("neph.agents.aider"),
+}
+```
+
+3. **Users include it in setup:**
+
+```lua
+neph.setup({
+  agents = { require("neph.agents.aider"), ... },
+  backend = require("neph.backends.snacks"),
+})
+```
+
+4. **Add test:** Add `"aider"` to the agent list in `tests/agent_submodules_spec.lua`.
 
 ### Adding a New Placeholder
 
@@ -611,7 +636,14 @@ end
 {
   "roshbhatia/neph.nvim",
   dependencies = { "folke/snacks.nvim" },
-  opts = {},
+  opts = {
+    agents = {
+      require("neph.agents.claude"),
+      require("neph.agents.goose"),
+      -- or require("neph.agents.all") for all 10 agents
+    },
+    backend = require("neph.backends.snacks"),
+  },
 }
 ```
 
@@ -625,29 +657,29 @@ end
 4. **Testability first:** UI-free logic can be tested in headless Neovim
 5. **Zero config by default:** Works out-of-the-box with sensible defaults
 
-### Multi-Protocol Architecture (Planned)
+### Backend Modules
 
-See `openspec/changes/multi-protocol-architecture/` for ongoing architectural changes. The project is evolving toward a more modular protocol dispatch system.
+Backends are modules at `lua/neph/backends/<name>.lua` injected via `setup()`:
 
-**Key documents:**
-- `openspec/changes/multi-protocol-architecture/proposal.md` – High-level design
-- `openspec/changes/multi-protocol-architecture/tasks.md` – Implementation checklist
+- **snacks** (`neph.backends.snacks`): Native Neovim splits via snacks.nvim
+- **wezterm** (`neph.backends.wezterm`): WezTerm panes (requires `WEZTERM_PANE` env var)
 
-### Multiplexer Backends
+**Backend interface** (validated by `contracts.validate_backend()` at setup time):
 
-Neph supports multiple terminal backends:
-- **snacks** (default): Native Neovim splits via snacks.nvim
-- **wezterm**: WezTerm panes (experimental)
-- **tmux**: tmux splits (stub)
-- **zellij**: zellij panes (stub)
-
-**Backend adapter location:** `lua/neph/internal/backends/`
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `setup` | `(config)` | Initialize with neph config |
+| `open` | `(name, agent_cfg, cwd) → term_data` | Open a terminal for an agent |
+| `focus` | `(term_data) → boolean` | Focus an existing terminal |
+| `hide` | `(term_data)` | Hide/close a terminal |
+| `is_visible` | `(term_data) → boolean` | Check if terminal is visible |
+| `kill` | `(term_data)` | Kill a terminal process |
+| `cleanup_all` | `(terminals)` | Clean up all terminals on exit |
 
 **Adding a new backend:**
-1. Create `lua/neph/internal/backends/my_backend.lua`
-2. Implement interface: `open()`, `send()`, `close()`, `focus()`
-3. Add to `lua/neph/internal/terminal.lua` backend selection
-4. Add integration tests
+1. Create `lua/neph/backends/my_backend.lua` implementing all 7 methods above
+2. Users pass it as `backend = require("neph.backends.my_backend")` in `setup()`
+3. Contract validation runs automatically — missing methods fail at setup time
 
 ## Common Workflows
 
@@ -731,4 +763,4 @@ task docs
 
 ---
 
-**Last Updated:** 2026-03-06
+**Last Updated:** 2026-03-08
