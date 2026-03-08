@@ -29,8 +29,16 @@ describe("neph.config", function()
       assert.is_nil(cfg.defaults.agents)
     end)
 
-    it("has multiplexer = 'snacks'", function()
-      assert.equals("snacks", cfg.defaults.multiplexer)
+    it("has backend = nil", function()
+      assert.is_nil(cfg.defaults.backend)
+    end)
+
+    it("does not have multiplexer key", function()
+      assert.is_nil(cfg.defaults.multiplexer)
+    end)
+
+    it("does not have enabled_agents key", function()
+      assert.is_nil(cfg.defaults.enabled_agents)
     end)
   end)
 

@@ -22,38 +22,16 @@ local augroup = nil
 local pending_timers = {}
 
 -- ---------------------------------------------------------------------------
--- Backend detection
--- ---------------------------------------------------------------------------
-
----@return "snacks"|"wezterm"|"tmux"|"zellij"
-local function detect_backend()
-  return config.multiplexer or "snacks"
-end
-
--- ---------------------------------------------------------------------------
 -- Setup
 -- ---------------------------------------------------------------------------
 
 ---@param opts neph.Config
-function M.setup(opts)
+---@param backend_mod table  Injected backend module
+function M.setup(opts, backend_mod)
   config = opts or {}
   config.env = config.env or {}
 
-  local btype = detect_backend()
-  if btype == "wezterm" then
-    backend = require("neph.internal.backends.wezterm")
-  elseif btype == "tmux" then
-    -- Stub: warns and falls back to snacks
-    require("neph.internal.backends.tmux").setup(config)
-    backend = require("neph.internal.backends.native")
-  elseif btype == "zellij" then
-    -- Stub: warns and falls back to snacks
-    require("neph.internal.backends.zellij").setup(config)
-    backend = require("neph.internal.backends.native")
-  else
-    -- "snacks" (default) and any unrecognised value
-    backend = require("neph.internal.backends.native")
-  end
+  backend = backend_mod
   backend.setup(config)
 
   if not augroup then

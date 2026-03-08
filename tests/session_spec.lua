@@ -1,7 +1,7 @@
 ---@diagnostic disable: undefined-global
 -- session_spec.lua – unit tests for neph.session (no real terminals spawned)
 --
--- We stub out the backend so nothing tries to launch actual processes.
+-- We pass a stub backend directly via constructor injection.
 
 local session
 
@@ -33,13 +33,9 @@ describe("neph.session", function()
     package.loaded["neph.session"] = nil
     session = require("neph.internal.session")
 
-    -- Stub the backend detection to always use our fake backend
-    -- by monkey-patching the require inside setup
-    local _stub = make_stub_backend(true) -- luacheck: ignore _stub
-    -- Directly inject backend after setup
-    session.setup({ env = {} })
-    -- Override internal backend through a backdoor: call setup again with env
-    -- We can't easily replace the backend after setup, so we'll test the public API only
+    -- Inject stub backend directly
+    local stub_backend = make_stub_backend(true)
+    session.setup({ env = {} }, stub_backend)
   end)
 
   describe("get_active()", function()

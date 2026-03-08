@@ -1,33 +1,32 @@
-## ADDED Requirements
+## MODIFIED Requirements
 
 ### Requirement: Config agents key controls which agents are active
-`neph.Config` SHALL accept an optional `agents` key — a list of agent name strings. When provided, only agents in this list are registered. When omitted, all agents whose executable is found on PATH are registered (preserving current default behavior).
+`neph.Config` SHALL accept an `agents` key — an array of `AgentDef` tables (not strings). When provided, only these agents are registered. When omitted or nil, no agents are registered and a warning is emitted.
 
-#### Scenario: Explicit agent list
-- **GIVEN** config `{ agents = {"claude", "pi"} }`
-- **WHEN** `agents.get_all()` is called
-- **THEN** only claude and pi are returned (if their executables exist on PATH)
+#### Scenario: Explicit agent injection
+- **WHEN** `require("neph").setup({ agents = { require("neph.agents.claude"), require("neph.agents.pi") }, backend = ... })` is called
+- **THEN** only claude and pi are available via `agents.get_all()` (if their executables exist on PATH)
 
-#### Scenario: Default behavior (no agents key)
-- **GIVEN** config `{}` (no agents key)
-- **WHEN** `agents.get_all()` is called
-- **THEN** all agents whose executables are on PATH are returned (same as current behavior)
+#### Scenario: No agents provided
+- **WHEN** `require("neph").setup({ backend = ... })` is called without an `agents` key
+- **THEN** `agents.get_all()` returns an empty array
+- **AND** a `vim.notify` warning is emitted
 
 #### Scenario: Agent in list but not on PATH
-- **GIVEN** config `{ agents = {"claude", "nonexistent"} }`
-- **WHEN** `agents.get_all()` is called
-- **THEN** only claude is returned (nonexistent is silently skipped)
+- **WHEN** an agent with `cmd = "nonexistent"` is injected
+- **THEN** `agents.get_all()` excludes it
+- **AND** a `vim.notify` warning is emitted naming the agent and missing command
 
 ### Requirement: tools.install() is selective
-`tools.install()` SHALL only install bridge tooling (symlinks, config merges, extension copies) for agents that are active according to `config.agents`. The neph CLI bridge is always installed as it is universal.
+`tools.install()` SHALL only install bridge tooling for agents that are registered via injection. The neph CLI bridge is always installed as it is universal.
 
-#### Scenario: Only claude enabled
-- **GIVEN** config `{ agents = {"claude"} }`
-- **WHEN** `tools.install()` runs
-- **THEN** neph CLI is symlinked, claude settings.json is merged
-- **AND** pi extension is NOT symlinked, copilot hooks are NOT installed
+#### Scenario: Only claude registered
+- **WHEN** `agents = { require("neph.agents.claude") }` is configured
+- **THEN** neph CLI is symlinked, claude-specific tooling is installed
+- **AND** pi extension is NOT symlinked
 
-#### Scenario: All agents enabled (default)
-- **GIVEN** config `{}` (default)
-- **WHEN** `tools.install()` runs
-- **THEN** all available agent tooling is installed (same as current behavior)
+## REMOVED Requirements
+
+### Requirement: Config agents key controls which agents are active
+**Reason**: The old requirement defined `agents` as an optional list of agent name strings with fallback to "all agents on PATH". This is replaced by direct injection of AgentDef tables.
+**Migration**: Change `agents = {"claude", "pi"}` to `agents = { require("neph.agents.claude"), require("neph.agents.pi") }`.

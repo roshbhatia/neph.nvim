@@ -90,20 +90,15 @@ end
 -- Helpers
 -- ---------------------------------------------------------------------------
 
---- Check if an agent is in the enabled list (nil = all enabled).
+--- Check if an agent is registered (injected via setup).
 ---@param agent string|nil
----@param enabled string[]|nil
+---@param registered table<string, boolean>
 ---@return boolean
-local function is_agent_enabled(agent, enabled)
-  if not agent or not enabled then
-    return true
+local function is_agent_registered(agent, registered)
+  if not agent then
+    return true -- tools without an agent are always installed
   end
-  for _, name in ipairs(enabled) do
-    if name == agent then
-      return true
-    end
-  end
-  return false
+  return registered[agent] == true
 end
 
 --- Check if a hook entry already exists in a list.
@@ -174,13 +169,24 @@ end
 --- The entire script runs in a background job — zero main-thread blocking.
 ---@param root string
 ---@return string
+--- Build a set of registered agent names from the injected agents.
+---@return table<string, boolean>
+local function get_registered_agents()
+  local agents = require("neph.internal.agents").get_all()
+  local set = {}
+  for _, a in ipairs(agents) do
+    set[a.name] = true
+  end
+  return set
+end
+
 local function build_install_script(root)
-  local enabled = require("neph.config").current.enabled_agents
+  local registered = get_registered_agents()
   local lines = { "#!/bin/sh" }
 
   -- Symlinks
   for _, tool in ipairs(TOOLS) do
-    if is_agent_enabled(tool.agent, enabled) then
+    if is_agent_registered(tool.agent, registered) then
       local src = root .. "/tools/" .. tool.src
       local dst = vim.fn.expand(tool.dst)
       local dst_dir = vim.fn.fnamemodify(dst, ":h")
@@ -226,10 +232,10 @@ end
 --- JSON merges and pi wrapper (must run on main thread for vim.fn access).
 ---@param root string
 local function do_json_merges(root)
-  local enabled = require("neph.config").current.enabled_agents
+  local registered = get_registered_agents()
 
   for _, spec in ipairs(MERGE_TOOLS) do
-    if is_agent_enabled(spec.agent, enabled) then
+    if is_agent_registered(spec.agent, registered) then
       local src = root .. "/tools/" .. spec.src
       local dst = vim.fn.expand(spec.dst)
       if vim.fn.filereadable(src) == 1 then
@@ -238,7 +244,7 @@ local function do_json_merges(root)
     end
   end
 
-  if is_agent_enabled("pi", enabled) then
+  if is_agent_registered("pi", registered) then
     local pi_ext_dir = vim.fn.expand("~/.pi/agent/extensions/nvim")
     local pi_index = pi_ext_dir .. "/index.ts"
     if vim.fn.isdirectory(pi_ext_dir) == 1 and vim.fn.filereadable(pi_index) == 0 then
