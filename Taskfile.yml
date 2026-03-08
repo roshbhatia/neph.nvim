@@ -21,6 +21,13 @@ tasks:
           -c "PlenaryBustedDirectory tests/ {minimal_init='tests/minimal_init.lua'}" \
           -c 'qa!'
       - task tools:test
+      - task test:e2e
+
+  test:e2e:
+    desc: Run e2e tests (headless neovim smoke + agent launch)
+    cmds:
+      - nvim --headless --cmd 'set rtp+=.' -l tests/e2e/run.lua
+      - bash tests/e2e/agent_launch.sh
 
   ci:
     desc: Run lint + test

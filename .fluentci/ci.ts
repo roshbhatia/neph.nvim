@@ -24,6 +24,11 @@ connect(async (client: Client) => {
     .withExec([
       "nix", "develop", "--no-write-lock-file", "-c",
       "task", "tools:build",
+    ])
+    // Install neph symlink so e2e tests can find it
+    .withExec([
+      "nix", "develop", "--no-write-lock-file", "-c",
+      "sh", "-c", "mkdir -p ~/.local/bin && ln -sf /app/tools/neph-cli/dist/index.js ~/.local/bin/neph && chmod +x ~/.local/bin/neph",
     ]);
 
   try {
