@@ -82,8 +82,8 @@ local function json_merge(src_path, dst_path, key)
   if not src_content or #src_content == 0 then
     return
   end
-  local src_json = vim.json.decode(table.concat(src_content, "\n"))
-  if not src_json or not src_json[key] then
+  local ok_src, src_json = pcall(vim.json.decode, table.concat(src_content, "\n"))
+  if not ok_src or not src_json or not src_json[key] then
     return
   end
 
@@ -253,6 +253,7 @@ function M.install_async()
     on_exit = vim.schedule_wrap(function(_, code)
       if code ~= 0 then
         vim.notify("Neph: tool install had errors", vim.log.levels.WARN)
+        return
       end
       do_post_install(root, manifests)
       touch_stamp()

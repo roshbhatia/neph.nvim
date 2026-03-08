@@ -56,14 +56,20 @@ function M.setup(opts)
   require("neph.internal.completion").setup()
 
   -- Defer tool installation until after UI is rendered
-  vim.api.nvim_create_autocmd("UIEnter", {
-    once = true,
-    callback = function()
-      vim.schedule(function()
-        require("neph.tools").install_async()
-      end)
-    end,
-  })
+  if vim.v.vim_did_enter == 1 then
+    vim.schedule(function()
+      require("neph.tools").install_async()
+    end)
+  else
+    vim.api.nvim_create_autocmd("UIEnter", {
+      once = true,
+      callback = function()
+        vim.schedule(function()
+          require("neph.tools").install_async()
+        end)
+      end,
+    })
+  end
 end
 
 return M

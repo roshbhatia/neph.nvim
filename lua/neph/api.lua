@@ -38,6 +38,7 @@ local function input_for_active(action, default_text)
   end
   local agent = require("neph.internal.agents").get_by_name(active)
   if not agent then
+    vim.notify("Agent '" .. active .. "' not found", vim.log.levels.WARN)
     return
   end
   require("neph.internal.input").create_input(active, agent.icon, {
@@ -67,7 +68,7 @@ end
 --- Open the ask prompt. In visual mode, prefills with +selection context.
 function M.ask()
   local mode = vim.fn.mode()
-  local default = mode:match("[vV]") and "+selection " or "+cursor "
+  local default = mode:match("[vV\22]") and "+selection " or "+cursor "
   input_for_active("Ask", default)
 end
 
@@ -79,7 +80,7 @@ end
 --- Open the comment prompt. In visual mode, prefills with +selection context.
 function M.comment()
   local mode = vim.fn.mode()
-  local default = mode:match("[vV]") and "Comment +selection " or "Comment +cursor "
+  local default = mode:match("[vV\22]") and "Comment +selection " or "Comment +cursor "
   input_for_active("Comment", default)
 end
 
