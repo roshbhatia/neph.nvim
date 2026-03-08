@@ -196,7 +196,7 @@ describe('runGate', () => {
     expect(code).toBe(0);
   });
 
-  it('cursor agent calls checktime + statusline, returns 0', async () => {
+  it('cursor agent calls checktime + statusline + neph_connected, returns 0', async () => {
     const transport = new FakeTransport();
     const code = await runGate(transport, 'cursor', JSON.stringify({
       file_path: '/tmp/test.txt',
@@ -204,18 +204,21 @@ describe('runGate', () => {
       hook_event_name: 'afterFileEdit',
     }));
     expect(code).toBe(0);
-    // Should have called status.set, buffers.check, status.unset
-    expect(transport.calls.length).toBe(3);
-    expect(transport.calls[0].args[0]).toBe('status.set');
-    expect(transport.calls[1].args[0]).toBe('buffers.check');
-    expect(transport.calls[2].args[0]).toBe('status.unset');
+    // Should have called neph_connected set, cursor_active set, buffers.check, cursor_active unset, neph_connected unset
+    expect(transport.calls.length).toBe(5);
+    expect(transport.calls[0].args).toEqual(['status.set', { name: 'neph_connected', value: 'true' }]);
+    expect(transport.calls[1].args).toEqual(['status.set', { name: 'cursor_active', value: 'true' }]);
+    expect(transport.calls[2].args[0]).toBe('buffers.check');
+    expect(transport.calls[3].args).toEqual(['status.unset', { name: 'cursor_active' }]);
+    expect(transport.calls[4].args).toEqual(['status.unset', { name: 'neph_connected' }]);
   });
 
-  it('sets agent state key before review', async () => {
+  it('sets neph_connected and agent state key before review', async () => {
     const transport = new FakeTransport();
     // Trigger an RPC error to fail-open and avoid hanging
     transport.executeLua = vi.fn()
-      .mockResolvedValueOnce({ ok: true }) // status.set
+      .mockResolvedValueOnce({ ok: true }) // status.set neph_connected
+      .mockResolvedValueOnce({ ok: true }) // status.set claude_active
       .mockRejectedValueOnce(new Error('review failed')); // review.open
 
     const code = await runGate(transport, 'claude', JSON.stringify({
@@ -226,7 +229,19 @@ describe('runGate', () => {
     expect(code).toBe(0); // fail-open
     expect(transport.executeLua).toHaveBeenCalledWith(
       expect.any(String),
+      ['status.set', { name: 'neph_connected', value: 'true' }],
+    );
+    expect(transport.executeLua).toHaveBeenCalledWith(
+      expect.any(String),
       ['status.set', { name: 'claude_active', value: 'true' }],
     );
+  });
+
+  it('does not set neph_connected when transport is null', async () => {
+    const code = await runGate(null, 'claude', JSON.stringify({
+      tool_name: 'Write',
+      tool_input: { file_path: '/tmp/test.txt', content: 'hello' },
+    }));
+    expect(code).toBe(0); // fail-open, no transport calls
   });
 });

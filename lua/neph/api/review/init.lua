@@ -48,7 +48,13 @@ function M.open(params)
   local ui_state = ui.open_diff_tab(path, old_lines, new_lines)
   ui_state.sign_ids = {}
 
+  local result_written = false
+
   ui.start_review(session, ui_state, function(envelope)
+    if result_written then
+      return
+    end
+    result_written = true
     ui.cleanup(ui_state)
     M.write_result(result_path, channel_id, request_id, envelope)
   end)
@@ -61,19 +67,14 @@ function M.open(params)
       if vim.api.nvim_tabpage_is_valid(ui_state.tab) then
         return true -- not our tab; re-register
       end
-      -- If result file wasn't written yet, user closed tab prematurely
-      local rf = io.open(result_path, "r")
-      if not rf then
-        M.write_result(result_path, channel_id, request_id, {
-          schema = "review/v1",
-          decision = "reject",
-          content = "",
-          hunks = {},
-          reason = "User manually closed diff - review incomplete.",
-        })
-      else
-        rf:close()
+      if result_written then
+        return
       end
+      -- Tab closed before review finished — reject undecided, finalize
+      result_written = true
+      session.reject_all_remaining("User manually closed diff")
+      local envelope = session.finalize()
+      M.write_result(result_path, channel_id, request_id, envelope)
     end,
   })
 

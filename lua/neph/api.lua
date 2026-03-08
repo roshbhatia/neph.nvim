@@ -98,9 +98,4 @@ function M.resend()
   end
 end
 
---- Browse prompt history for the active agent (or all agents).
-function M.history()
-  require("neph.internal.history").pick(nil)
-end
-
 return M

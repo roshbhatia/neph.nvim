@@ -1,13 +1,12 @@
 ---@mod neph.input Multiline floating input
 ---@brief [[
---- A lightweight multiline prompt window that auto-resizes, supports
---- history navigation (up/down), and provides +token completion hints.
+--- A lightweight multiline prompt window that auto-resizes and
+--- provides +token completion hints.
 --- Heavily inspired by multinput.nvim.
 ---@brief ]]
 
 local M = {}
 
-local history = require("neph.internal.history")
 local placeholders = require("neph.internal.placeholders")
 
 -- ---------------------------------------------------------------------------
@@ -212,9 +211,6 @@ function M.create_input(termname, agent_icon, opts)
   local title = string.format(" %s  %s: ", agent_icon or "", opts.action or "Ask")
 
   local initial_state = require("neph.internal.context").new()
-  local hist = history.load(termname)
-  local cur_idx = history.get_current_history_index()
-  history.set_current_history_index(termname, #hist + 1)
 
   local cfg = {
     numbers = "never",
@@ -235,46 +231,8 @@ function M.create_input(termname, agent_icon, opts)
 
   local input = MultilineInput:new(cfg, function(value)
     if opts.on_confirm and value and value ~= "" then
-      history.save(termname, value)
       opts.on_confirm(placeholders.apply(value, initial_state))
     end
-  end)
-
-  vim.schedule(function()
-    if not vim.api.nvim_buf_is_valid(input.bufnr) then
-      return
-    end
-
-    local function fwd()
-      if cur_idx[termname] < #hist then
-        cur_idx[termname] = cur_idx[termname] + 1
-        local e = hist[cur_idx[termname]]
-        if e then
-          vim.api.nvim_buf_set_lines(input.bufnr, 0, -1, true, { e.prompt })
-          input:resize()
-        end
-      end
-    end
-
-    local function bwd()
-      if cur_idx[termname] > 1 then
-        cur_idx[termname] = cur_idx[termname] - 1
-        local e = hist[cur_idx[termname]]
-        if e then
-          vim.api.nvim_buf_set_lines(input.bufnr, 0, -1, true, { e.prompt })
-          input:resize()
-        end
-      elseif cur_idx[termname] == 1 then
-        cur_idx[termname] = #hist + 1
-        vim.api.nvim_buf_set_lines(input.bufnr, 0, -1, true, { "" })
-        input:resize()
-      end
-    end
-
-    vim.keymap.set("i", "<Up>", bwd, { buffer = input.bufnr, desc = "History backward" })
-    vim.keymap.set("i", "<Down>", fwd, { buffer = input.bufnr, desc = "History forward" })
-    vim.keymap.set("i", "<C-k>", bwd, { buffer = input.bufnr, desc = "History backward" })
-    vim.keymap.set("i", "<C-j>", fwd, { buffer = input.bufnr, desc = "History forward" })
   end)
 
   input:open(opts.default or "")

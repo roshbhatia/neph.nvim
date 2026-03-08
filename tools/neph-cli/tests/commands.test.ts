@@ -88,6 +88,34 @@ describe('review command', () => {
   });
 });
 
+describe('neph_connected status', () => {
+  it('review command sets neph_connected before review.open', async () => {
+    const transport = new FakeTransport();
+    // Make review.open fail so we don't hang waiting for result
+    transport.executeLua = vi.fn()
+      .mockResolvedValueOnce({ ok: true }) // status.set neph_connected
+      .mockResolvedValueOnce(42) // getChannelId (via nvim_get_api_info mock)
+      .mockRejectedValueOnce(new Error('review failed')); // review.open
+
+    // getChannelId calls executeLua internally, but FakeTransport may differ
+    // Override getChannelId to return a value
+    transport.getChannelId = vi.fn().mockResolvedValue(42);
+
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
+
+    await runCommand(transport, 'review', ['review', 'test.txt'], 'new content');
+
+    expect(transport.executeLua).toHaveBeenCalledWith(
+      expect.any(String),
+      ['status.set', { name: 'neph_connected', value: 'true' }],
+    );
+
+    stderrSpy.mockRestore();
+    exitSpy.mockRestore();
+  });
+});
+
 describe('error cases', () => {
   it('handles transport errors gracefully', async () => {
     const transport = new FakeTransport();

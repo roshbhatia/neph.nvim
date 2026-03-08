@@ -181,6 +181,173 @@ describe("neph.api.review.engine", function()
     end)
   end)
 
+  describe("random-access session", function()
+    -- Helper: produces N separate hunks by interleaving unchanged lines
+    -- e.g. 4 hunks: old={A,sep,B,sep,C,sep,D} new={W,sep,X,sep,Y,sep,Z}
+    local function make_multi_hunk(n)
+      local old, new = {}, {}
+      for i = 1, n do
+        old[#old + 1] = "old_" .. i
+        new[#new + 1] = "new_" .. i
+        if i < n then
+          old[#old + 1] = "sep_" .. i
+          new[#new + 1] = "sep_" .. i
+        end
+      end
+      return old, new
+    end
+
+    it("accept_at out of order", function()
+      local old, new = make_multi_hunk(4)
+      local session = engine.create_session(old, new)
+      assert.are.equal(4, session.get_total_hunks())
+
+      -- Accept hunk 3 first, then hunk 1
+      assert.is_true(session.accept_at(3))
+      assert.is_true(session.accept_at(1))
+
+      local d1 = session.get_decision(1)
+      local d3 = session.get_decision(3)
+      assert.are.equal("accept", d1.decision)
+      assert.are.equal("accept", d3.decision)
+      -- Hunk 2 and 4 still undecided
+      assert.is_nil(session.get_decision(2))
+      assert.is_nil(session.get_decision(4))
+    end)
+
+    it("reject_at with reason", function()
+      local old = { "A" }
+      local new = { "B" }
+      local session = engine.create_session(old, new)
+      assert.is_true(session.reject_at(1, "bad change"))
+      local d = session.get_decision(1)
+      assert.are.equal("reject", d.decision)
+      assert.are.equal("bad change", d.reason)
+    end)
+
+    it("accept_at/reject_at returns false for out-of-bounds", function()
+      local old = { "A" }
+      local new = { "B" }
+      local session = engine.create_session(old, new)
+      assert.is_false(session.accept_at(0))
+      assert.is_false(session.accept_at(2))
+      assert.is_false(session.reject_at(0))
+      assert.is_false(session.reject_at(2))
+    end)
+
+    it("is_complete with mixed states", function()
+      local old, new = make_multi_hunk(3)
+      local session = engine.create_session(old, new)
+      assert.are.equal(3, session.get_total_hunks())
+
+      assert.is_false(session.is_complete())
+      session.accept_at(1)
+      assert.is_false(session.is_complete())
+      session.reject_at(2, "nope")
+      assert.is_false(session.is_complete())
+      session.accept_at(3)
+      assert.is_true(session.is_complete())
+    end)
+
+    it("next_undecided finds first gap", function()
+      local old, new = make_multi_hunk(4)
+      local session = engine.create_session(old, new)
+      assert.are.equal(4, session.get_total_hunks())
+
+      assert.are.equal(1, session.next_undecided())
+      session.accept_at(1)
+      assert.are.equal(2, session.next_undecided())
+      session.accept_at(2)
+      assert.are.equal(3, session.next_undecided())
+      session.accept_at(4) -- skip 3
+      assert.are.equal(3, session.next_undecided())
+      session.accept_at(3)
+      assert.is_nil(session.next_undecided())
+    end)
+
+    it("next_undecided wraps around from given position", function()
+      local old, new = make_multi_hunk(3)
+      local session = engine.create_session(old, new)
+      assert.are.equal(3, session.get_total_hunks())
+
+      session.accept_at(2)
+      session.accept_at(3)
+      -- Starting from 2, should wrap and find 1
+      assert.are.equal(1, session.next_undecided(2))
+    end)
+
+    it("finalize treats undecided as rejected", function()
+      local old, new = make_multi_hunk(3)
+      local session = engine.create_session(old, new)
+      assert.are.equal(3, session.get_total_hunks())
+
+      session.accept_at(1)
+      -- Leave 2 and 3 undecided
+      local envelope = session.finalize()
+      assert.are.equal("partial", envelope.decision)
+      -- Hunks 2 and 3 should be rejected with "Undecided"
+      assert.are.equal("reject", envelope.hunks[2].decision)
+      assert.are.equal("Undecided", envelope.hunks[2].reason)
+      assert.are.equal("reject", envelope.hunks[3].decision)
+    end)
+
+    it("accept_all_remaining skips already-decided", function()
+      local old, new = make_multi_hunk(3)
+      local session = engine.create_session(old, new)
+      assert.are.equal(3, session.get_total_hunks())
+
+      session.reject_at(2, "keep this rejected")
+      session.accept_all_remaining()
+      assert.is_true(session.is_complete())
+
+      local d1 = session.get_decision(1)
+      local d2 = session.get_decision(2)
+      local d3 = session.get_decision(3)
+      assert.are.equal("accept", d1.decision)
+      assert.are.equal("reject", d2.decision)
+      assert.are.equal("keep this rejected", d2.reason)
+      assert.are.equal("accept", d3.decision)
+    end)
+
+    it("reject_all_remaining skips already-decided", function()
+      local old, new = make_multi_hunk(3)
+      local session = engine.create_session(old, new)
+      assert.are.equal(3, session.get_total_hunks())
+
+      session.accept_at(1)
+      session.reject_all_remaining("bulk reject")
+      assert.is_true(session.is_complete())
+
+      assert.are.equal("accept", session.get_decision(1).decision)
+      assert.are.equal("reject", session.get_decision(2).decision)
+      assert.are.equal("bulk reject", session.get_decision(2).reason)
+      assert.are.equal("reject", session.get_decision(3).decision)
+    end)
+
+    it("sequential methods still work (backward compat)", function()
+      local old, new = make_multi_hunk(2)
+      local session = engine.create_session(old, new)
+      assert.are.equal(2, session.get_total_hunks())
+
+      session.accept()
+      session.reject("no")
+      assert.is_true(session.is_done())
+      assert.is_true(session.is_complete())
+
+      local d1 = session.get_decision(1)
+      local d2 = session.get_decision(2)
+      assert.are.equal("accept", d1.decision)
+      assert.are.equal("reject", d2.decision)
+    end)
+
+    it("get_hunk_ranges returns all ranges", function()
+      local old, new = make_multi_hunk(3)
+      local session = engine.create_session(old, new)
+      local ranges = session.get_hunk_ranges()
+      assert.are.equal(session.get_total_hunks(), #ranges)
+    end)
+  end)
+
   describe("state machine edge cases", function()
     it("no hunks (identical input) → is_done immediately, finalize gives accept", function()
       local lines = { "same", "lines" }

@@ -19,6 +19,7 @@ local M = {}
 ---@field agents?         neph.AgentDef[]      Injected agent definitions (required)
 ---@field backend?        table                Injected backend module (required)
 ---@field review_signs?   neph.ReviewSignsConfig  Sign icons for diff review UI
+---@field review_keymaps? neph.ReviewKeymapsConfig  Keymaps for diff review UI
 
 ---@class neph.FileRefreshConfig
 ---@field enable?         boolean  Periodically call :checktime (default: true)
@@ -28,6 +29,13 @@ local M = {}
 ---@field reject?    string  Icon for rejected hunk (default: ✗)
 ---@field current?   string  Icon for current hunk (default: →)
 ---@field commented? string  Icon for rejected hunk with comment (default: 󰟶)
+
+---@class neph.ReviewKeymapsConfig
+---@field accept?      string  Accept current hunk (default: ga)
+---@field reject?      string  Reject current hunk (default: gr)
+---@field accept_all?  string  Accept all remaining (default: gA)
+---@field reject_all?  string  Reject all remaining (default: gR)
+---@field quit?        string  Quit review (default: q)
 
 ---@type neph.Config
 M.defaults = {
@@ -43,6 +51,13 @@ M.defaults = {
     reject = "✗",
     current = "→",
     commented = "󰟶",
+  },
+  review_keymaps = {
+    accept = "ga",
+    reject = "gr",
+    accept_all = "gA",
+    reject_all = "gR",
+    quit = "q",
   },
 }
 

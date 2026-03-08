@@ -172,10 +172,15 @@ end
 -- State machine session
 function M.create_session(old_lines, new_lines)
   local hunk_ranges = M.compute_hunks(old_lines, new_lines)
-  local decisions = {}
+  -- Random-access decisions array: nil = undecided, table = decided
+  local decisions_by_idx = {}
   local current_idx = 1
 
   local self = {}
+
+  function self.get_hunk_ranges()
+    return hunk_ranges
+  end
 
   function self.get_current_hunk()
     return hunk_ranges[current_idx], current_idx
@@ -185,11 +190,74 @@ function M.create_session(old_lines, new_lines)
     return #hunk_ranges
   end
 
+  -- Random-access methods
+  function self.accept_at(idx)
+    if idx < 1 or idx > #hunk_ranges then
+      return false
+    end
+    decisions_by_idx[idx] = { index = idx, decision = "accept" }
+    return true
+  end
+
+  function self.reject_at(idx, reason)
+    if idx < 1 or idx > #hunk_ranges then
+      return false
+    end
+    decisions_by_idx[idx] = { index = idx, decision = "reject", reason = reason }
+    return true
+  end
+
+  function self.get_decision(idx)
+    return decisions_by_idx[idx]
+  end
+
+  function self.is_complete()
+    for i = 1, #hunk_ranges do
+      if not decisions_by_idx[i] then
+        return false
+      end
+    end
+    return true
+  end
+
+  function self.next_undecided(from)
+    from = from or 1
+    for i = from, #hunk_ranges do
+      if not decisions_by_idx[i] then
+        return i
+      end
+    end
+    -- Wrap around
+    for i = 1, from - 1 do
+      if not decisions_by_idx[i] then
+        return i
+      end
+    end
+    return nil
+  end
+
+  function self.accept_all_remaining()
+    for i = 1, #hunk_ranges do
+      if not decisions_by_idx[i] then
+        decisions_by_idx[i] = { index = i, decision = "accept" }
+      end
+    end
+  end
+
+  function self.reject_all_remaining(reason)
+    for i = 1, #hunk_ranges do
+      if not decisions_by_idx[i] then
+        decisions_by_idx[i] = { index = i, decision = "reject", reason = reason }
+      end
+    end
+  end
+
+  -- Sequential methods (backward compat, delegate to random-access)
   function self.accept()
     if current_idx > #hunk_ranges then
       return false
     end
-    table.insert(decisions, { index = current_idx, decision = "accept" })
+    self.accept_at(current_idx)
     current_idx = current_idx + 1
     return true
   end
@@ -198,7 +266,7 @@ function M.create_session(old_lines, new_lines)
     if current_idx > #hunk_ranges then
       return false
     end
-    table.insert(decisions, { index = current_idx, decision = "reject", reason = reason })
+    self.reject_at(current_idx, reason)
     current_idx = current_idx + 1
     return true
   end
@@ -221,6 +289,17 @@ function M.create_session(old_lines, new_lines)
   end
 
   function self.finalize()
+    -- Treat undecided hunks as rejected (safety)
+    for i = 1, #hunk_ranges do
+      if not decisions_by_idx[i] then
+        decisions_by_idx[i] = { index = i, decision = "reject", reason = "Undecided" }
+      end
+    end
+    -- Build ordered decisions array for apply_decisions
+    local decisions = {}
+    for i = 1, #hunk_ranges do
+      decisions[i] = decisions_by_idx[i]
+    end
     local content = M.apply_decisions(old_lines, new_lines, decisions)
     return M.build_envelope(decisions, content)
   end

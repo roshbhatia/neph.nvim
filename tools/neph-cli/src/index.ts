@@ -122,6 +122,9 @@ export async function runCommand(transport: NvimTransport | null, command: strin
       if (fs.existsSync(resultPath)) {
         try { fs.unlinkSync(resultPath); } catch {}
       }
+      try {
+        await transport.executeLua(RPC_CALL, ['status.unset', { name: 'neph_connected' }]);
+      } catch {}
       await transport.close();
     };
 
@@ -156,6 +159,7 @@ export async function runCommand(transport: NvimTransport | null, command: strin
     });
 
     try {
+      await transport.executeLua(RPC_CALL, ['status.set', { name: 'neph_connected', value: 'true' }]);
       const channelId = await transport.getChannelId();
       await transport.executeLua(RPC_CALL, [
         'review.open',

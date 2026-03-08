@@ -165,9 +165,11 @@ export async function runGate(
   if (agent === 'cursor') {
     if (transport) {
       try {
+        await transport.executeLua(RPC_CALL, ['status.set', { name: 'neph_connected', value: 'true' }]);
         await transport.executeLua(RPC_CALL, ['status.set', { name: 'cursor_active', value: 'true' }]);
         await transport.executeLua(RPC_CALL, ['buffers.check', {}]);
         await transport.executeLua(RPC_CALL, ['status.unset', { name: 'cursor_active' }]);
+        await transport.executeLua(RPC_CALL, ['status.unset', { name: 'neph_connected' }]);
       } catch {}
       await transport.close();
     }
@@ -182,6 +184,7 @@ export async function runGate(
   // Set statusline state
   const stateKey = `${agent}_active`;
   try {
+    await transport.executeLua(RPC_CALL, ['status.set', { name: 'neph_connected', value: 'true' }]);
     await transport.executeLua(RPC_CALL, ['status.set', { name: stateKey, value: 'true' }]);
   } catch {}
 
@@ -198,6 +201,7 @@ export async function runGate(
     }
     try {
       await transport.executeLua(RPC_CALL, ['status.unset', { name: stateKey }]);
+      await transport.executeLua(RPC_CALL, ['status.unset', { name: 'neph_connected' }]);
     } catch {}
     await transport.close();
   };

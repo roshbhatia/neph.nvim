@@ -1,0 +1,6 @@
+## Tasks
+
+- [x] **Task 1: Add random-access methods to review engine session** — Add `decisions` array, `accept_at(idx)`, `reject_at(idx, reason?)`, `get_decision(idx)`, `is_complete()`, `accept_all_remaining()`, `reject_all_remaining(reason?)`. Keep backward-compatible sequential methods. Update `finalize()` to treat nil as reject. Add engine tests for random-access patterns.
+- [x] **Task 2: Replace inputlist with buffer-local keymaps in UI** — Remove inputlist loop, add `find_hunk_at_cursor()`, register `ga`/`gr`/`gA`/`gR`/`q` keymaps on left_buf, add winbar updates, update signs on each action, auto-finalize when complete. Add `review_keymaps` to config defaults. Add unit tests for `find_hunk_at_cursor` and winbar.
+- [x] **Task 3: Wire up finalization and cleanup** — On finalize: unmap keymaps, call `on_done(envelope)`, close tab. On TabClosed: reject undecided, finalize. On `q`: reject undecided with reason, finalize. Ensure cleanup removes signs, extmarks, winbar, keymaps. Add E2E test verifying envelope output.
+- [x] **Task 4: Update existing tests for new session API** — Update engine_spec.lua and engine_fuzz_test.lua for new session internals. Add fuzz cases for random-access patterns. Verify all existing tests pass.

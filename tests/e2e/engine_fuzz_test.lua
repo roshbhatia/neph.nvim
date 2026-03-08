@@ -202,5 +202,80 @@ return function(t)
       t.assert_eq(r1, false, "accept past end returns false")
       t.assert_eq(r2, false, "reject past end returns false")
     end)
+
+    -- Random-access session tests
+
+    t.it("random-access: accept_at/reject_at out of order", function()
+      -- Build input with separated hunks
+      local old = {}
+      local new = {}
+      for i = 1, 100 do
+        table.insert(old, "line" .. i)
+        if i % 20 == 0 then
+          table.insert(new, "CHANGED" .. i)
+        else
+          table.insert(new, "line" .. i)
+        end
+      end
+      local session = engine.create_session(old, new)
+      local total = session.get_total_hunks()
+      t.assert_truthy(total >= 3, "need multiple hunks")
+
+      -- Accept last, then first, then middle
+      session.accept_at(total)
+      session.reject_at(1, "no thanks")
+      for i = 2, total - 1 do
+        session.accept_at(i)
+      end
+      t.assert_truthy(session.is_complete(), "all decided")
+
+      local env = session.finalize()
+      t.assert_eq(env.decision, "partial", "mixed decisions = partial")
+      t.assert_truthy(env.reason and env.reason:find("no thanks"), "reason preserved")
+    end)
+
+    t.it("random-access: finalize rejects undecided hunks", function()
+      local old = { "A", "sep", "B" }
+      local new = { "X", "sep", "Y" }
+      local session = engine.create_session(old, new)
+      t.assert_eq(session.get_total_hunks(), 2)
+
+      session.accept_at(1) -- only decide first
+      local env = session.finalize()
+      t.assert_eq(env.hunks[2].decision, "reject", "undecided → reject")
+      t.assert_eq(env.hunks[2].reason, "Undecided")
+    end)
+
+    t.it("random-access: accept_all_remaining preserves existing", function()
+      local old = { "A", "sep", "B", "sep2", "C" }
+      local new = { "X", "sep", "Y", "sep2", "Z" }
+      local session = engine.create_session(old, new)
+      local total = session.get_total_hunks()
+      t.assert_truthy(total >= 2, "need multiple hunks")
+
+      session.reject_at(1, "keep rejected")
+      session.accept_all_remaining()
+      t.assert_truthy(session.is_complete())
+      t.assert_eq(session.get_decision(1).decision, "reject", "first stays rejected")
+      for i = 2, total do
+        t.assert_eq(session.get_decision(i).decision, "accept", "rest accepted")
+      end
+    end)
+
+    t.it("random-access: next_undecided wraps correctly", function()
+      local old = { "A", "sep", "B", "sep2", "C" }
+      local new = { "X", "sep", "Y", "sep2", "Z" }
+      local session = engine.create_session(old, new)
+      local total = session.get_total_hunks()
+      t.assert_truthy(total >= 3, "need 3+ hunks")
+
+      -- Decide all except first
+      for i = 2, total do
+        session.accept_at(i)
+      end
+      -- next_undecided from position 2 should wrap to 1
+      local next = session.next_undecided(2)
+      t.assert_eq(next, 1, "should wrap to first undecided")
+    end)
   end)
 end

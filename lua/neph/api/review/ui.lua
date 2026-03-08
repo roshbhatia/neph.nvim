@@ -36,7 +36,6 @@ function M.open_diff_tab(path, old_lines, new_lines)
   end
 
   local left_win = vim.api.nvim_get_current_win()
-  vim.wo[left_win].winbar = "%#DiagnosticInfo# CURRENT %* " .. basename
   vim.cmd("diffthis")
 
   -- Right: proposed
@@ -53,10 +52,9 @@ function M.open_diff_tab(path, old_lines, new_lines)
     vim.bo[right_buf].filetype = ft
   end
 
-  local right_win = vim.api.nvim_get_current_win()
-  vim.wo[right_win].winbar = "%#DiagnosticWarn# PROPOSED %* " .. basename
   vim.cmd("diffthis")
 
+  local right_win = vim.api.nvim_get_current_win()
   vim.cmd("wincmd h") -- focus left
 
   return {
@@ -97,68 +95,220 @@ function M.show_hints(buf, hunk_range, idx, total)
   })
 end
 
-function M.start_review(session, ui_state, on_done)
-  local function prompt_next()
-    if session.is_done() then
-      on_done(session.finalize())
-      return
+--- Find which hunk the cursor is on or nearest to (old-side lines).
+---@param hunks HunkRange[]
+---@param cursor_line integer  1-indexed cursor line
+---@return integer  hunk index (1-based)
+function M.find_hunk_at_cursor(hunks, cursor_line)
+  if #hunks == 0 then
+    return 1
+  end
+  -- Exact match: cursor is within a hunk's old-side range
+  for i, h in ipairs(hunks) do
+    if cursor_line >= h.start_a and cursor_line <= h.end_a then
+      return i
     end
-
-    local hunk, idx = session.get_current_hunk()
-    local total = session.get_total_hunks()
-
-    -- Move cursor to hunk (old-side coords for left buffer)
-    vim.api.nvim_set_current_win(ui_state.left_win)
-    vim.api.nvim_win_set_cursor(ui_state.left_win, { hunk.start_a, 0 })
-    vim.cmd("normal! zz")
-
-    M.place_sign(ui_state.left_buf, "neph_current", hunk.start_a, ui_state.sign_ids)
-    M.show_hints(ui_state.right_buf, hunk, idx, total)
-
-    local actions = { "accept", "reject", "accept_all", "reject_all" }
-    local choice = vim.fn.inputlist({
-      string.format("Hunk %d/%d:", idx, total),
-      "1. Accept  — use proposed change",
-      "2. Reject  — keep current",
-      "3. Accept all remaining",
-      "4. Reject all remaining",
-    })
-
-    if choice < 1 or choice > 4 then
-      -- Escaped or invalid — reject all remaining with no reason
-      session.reject_all()
-      prompt_next()
-      return
+  end
+  -- Fallback: nearest hunk
+  local best, best_dist = 1, math.huge
+  for i, h in ipairs(hunks) do
+    local dist = math.min(math.abs(cursor_line - h.start_a), math.abs(cursor_line - h.end_a))
+    if dist < best_dist then
+      best, best_dist = i, dist
     end
+  end
+  return best
+end
 
-    local action = actions[choice]
-
-    if action == "accept" then
-      M.unplace_sign(ui_state.left_buf, hunk.start_a, ui_state.sign_ids)
-      M.place_sign(ui_state.left_buf, "neph_accept", hunk.start_a, ui_state.sign_ids)
-      session.accept()
-      prompt_next()
-    elseif action == "reject" then
-      local reason = vim.fn.input("Reject reason (optional): ")
-      M.unplace_sign(ui_state.left_buf, hunk.start_a, ui_state.sign_ids)
-      if reason ~= "" then
-        M.place_sign(ui_state.left_buf, "neph_commented", hunk.start_a, ui_state.sign_ids)
-      else
-        M.place_sign(ui_state.left_buf, "neph_reject", hunk.start_a, ui_state.sign_ids)
-      end
-      session.reject(reason)
-      prompt_next()
-    elseif action == "accept_all" then
-      session.accept_all()
-      prompt_next()
-    elseif action == "reject_all" then
-      local reason = vim.fn.input("Reject all - reason: ")
-      session.reject_all(reason)
-      prompt_next()
+--- Build winbar string showing hunk status and keymaps.
+---@param idx integer  current hunk index
+---@param total integer  total hunks
+---@param decision HunkDecision?  decision for current hunk
+---@param keymaps neph.ReviewKeymapsConfig
+---@return string
+function M.build_winbar(idx, total, decision, keymaps)
+  local status = "undecided"
+  local hl = "DiagnosticInfo"
+  if decision then
+    if decision.decision == "accept" then
+      status = "accepted"
+      hl = "DiagnosticOk"
+    elseif decision.decision == "reject" then
+      status = decision.reason and decision.reason ~= "" and ("rejected: " .. decision.reason) or "rejected"
+      hl = "DiagnosticError"
     end
   end
 
-  prompt_next()
+  return string.format(
+    "%%#%s# Hunk %d/%d: %s %%*  %s=accept  %s=reject  %s=all  %s=reject-all  %s=quit",
+    hl,
+    idx,
+    total,
+    status,
+    keymaps.accept,
+    keymaps.reject,
+    keymaps.accept_all,
+    keymaps.reject_all,
+    keymaps.quit
+  )
+end
+
+--- Update signs and winbar for the current review state.
+local function refresh_ui(session, ui_state, keymaps)
+  local hunks = session.get_hunk_ranges()
+  local total = session.get_total_hunks()
+
+  if not vim.api.nvim_win_is_valid(ui_state.left_win) then
+    return
+  end
+
+  -- Determine current hunk from cursor position
+  local cursor_line = vim.api.nvim_win_get_cursor(ui_state.left_win)[1]
+  local idx = M.find_hunk_at_cursor(hunks, cursor_line)
+
+  -- Update signs for all hunks
+  for i, h in ipairs(hunks) do
+    local d = session.get_decision(i)
+    if d then
+      if d.decision == "accept" then
+        M.place_sign(ui_state.left_buf, "neph_accept", h.start_a, ui_state.sign_ids)
+      elseif d.reason and d.reason ~= "" then
+        M.place_sign(ui_state.left_buf, "neph_commented", h.start_a, ui_state.sign_ids)
+      else
+        M.place_sign(ui_state.left_buf, "neph_reject", h.start_a, ui_state.sign_ids)
+      end
+    elseif i == idx then
+      M.place_sign(ui_state.left_buf, "neph_current", h.start_a, ui_state.sign_ids)
+    else
+      M.unplace_sign(ui_state.left_buf, h.start_a, ui_state.sign_ids)
+    end
+  end
+
+  -- Update hints on right buffer
+  M.show_hints(ui_state.right_buf, hunks[idx], idx, total)
+
+  -- Update winbar
+  local decision = session.get_decision(idx)
+  vim.wo[ui_state.left_win].winbar = M.build_winbar(idx, total, decision, keymaps)
+  if vim.api.nvim_win_is_valid(ui_state.right_win) then
+    vim.wo[ui_state.right_win].winbar = "%#DiagnosticWarn# PROPOSED %*"
+  end
+end
+
+--- Jump cursor to a specific hunk on the left buffer.
+local function jump_to_hunk(ui_state, hunks, idx)
+  if not hunks[idx] then
+    return
+  end
+  if vim.api.nvim_win_is_valid(ui_state.left_win) then
+    vim.api.nvim_set_current_win(ui_state.left_win)
+    vim.api.nvim_win_set_cursor(ui_state.left_win, { hunks[idx].start_a, 0 })
+    vim.cmd("normal! zz")
+  end
+end
+
+--- Remove all buffer-local keymaps registered for review.
+local function unmap_keymaps(buf, keymaps)
+  for _, lhs in pairs(keymaps) do
+    pcall(vim.keymap.del, "n", lhs, { buffer = buf })
+  end
+end
+
+function M.start_review(session, ui_state, on_done)
+  local config = vim.g.neph_config or {}
+  local keymaps = vim.tbl_extend("force", {
+    accept = "ga",
+    reject = "gr",
+    accept_all = "gA",
+    reject_all = "gR",
+    quit = "q",
+  }, config.review_keymaps or {})
+
+  local finalized = false
+  local buf = ui_state.left_buf
+
+  local function do_finalize()
+    if finalized then
+      return
+    end
+    finalized = true
+    unmap_keymaps(buf, keymaps)
+    on_done(session.finalize())
+  end
+
+  local function after_action()
+    if session.is_complete() then
+      do_finalize()
+      return
+    end
+    -- Jump to next undecided hunk
+    local hunks = session.get_hunk_ranges()
+    local cursor_line = vim.api.nvim_win_get_cursor(ui_state.left_win)[1]
+    local current_idx = M.find_hunk_at_cursor(hunks, cursor_line)
+    local next_idx = session.next_undecided(current_idx)
+    if next_idx then
+      jump_to_hunk(ui_state, hunks, next_idx)
+    end
+    refresh_ui(session, ui_state, keymaps)
+  end
+
+  -- ga: accept current hunk
+  vim.keymap.set("n", keymaps.accept, function()
+    local hunks = session.get_hunk_ranges()
+    local cursor_line = vim.api.nvim_win_get_cursor(ui_state.left_win)[1]
+    local idx = M.find_hunk_at_cursor(hunks, cursor_line)
+    session.accept_at(idx)
+    after_action()
+  end, { buffer = buf, desc = "Neph: accept hunk" })
+
+  -- gr: reject current hunk
+  vim.keymap.set("n", keymaps.reject, function()
+    vim.ui.input({ prompt = "Reject reason (optional): " }, function(reason)
+      local hunks = session.get_hunk_ranges()
+      local cursor_line = vim.api.nvim_win_get_cursor(ui_state.left_win)[1]
+      local idx = M.find_hunk_at_cursor(hunks, cursor_line)
+      session.reject_at(idx, reason and reason ~= "" and reason or nil)
+      after_action()
+    end)
+  end, { buffer = buf, desc = "Neph: reject hunk" })
+
+  -- gA: accept all remaining
+  vim.keymap.set("n", keymaps.accept_all, function()
+    session.accept_all_remaining()
+    do_finalize()
+  end, { buffer = buf, desc = "Neph: accept all remaining" })
+
+  -- gR: reject all remaining
+  vim.keymap.set("n", keymaps.reject_all, function()
+    vim.ui.input({ prompt = "Reject all remaining - reason: " }, function(reason)
+      session.reject_all_remaining(reason and reason ~= "" and reason or nil)
+      do_finalize()
+    end)
+  end, { buffer = buf, desc = "Neph: reject all remaining" })
+
+  -- q: quit (reject undecided, finalize)
+  vim.keymap.set("n", keymaps.quit, function()
+    session.reject_all_remaining("User exited review")
+    do_finalize()
+  end, { buffer = buf, desc = "Neph: quit review" })
+
+  -- Initial: jump to first hunk and refresh UI
+  local hunks = session.get_hunk_ranges()
+  if #hunks > 0 then
+    jump_to_hunk(ui_state, hunks, 1)
+  end
+  refresh_ui(session, ui_state, keymaps)
+
+  -- Update winbar on cursor movement
+  vim.api.nvim_create_autocmd("CursorMoved", {
+    buffer = buf,
+    callback = function()
+      if finalized then
+        return true -- remove autocmd
+      end
+      refresh_ui(session, ui_state, keymaps)
+    end,
+  })
 end
 
 function M.cleanup(ui_state)
