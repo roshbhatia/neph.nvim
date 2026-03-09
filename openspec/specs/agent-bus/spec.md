@@ -20,6 +20,12 @@
 - **AND** "unknown" is not a registered agent with `type = "extension"`
 - **THEN** the call SHALL return `{ok = false, error = "unknown agent"}`
 
+#### Scenario: Gemini companion registers as extension agent
+- **WHEN** the gemini companion sidecar calls `bus.register({name = "gemini", channel = 7})`
+- **AND** the gemini agent definition has `type = "extension"`
+- **THEN** the bus SHALL store channel ID 7 for agent "gemini"
+- **AND** `vim.g.gemini_active` SHALL be set to `true`
+
 ### Requirement: Push-based prompt delivery
 The bus SHALL deliver prompts to extension agents via `vim.rpcnotify(channel_id, "neph:prompt", text, opts)`. Delivery SHALL be instant (no polling, no process spawn).
 

@@ -1,0 +1,79 @@
+## ADDED Requirements
+
+### Requirement: MCP HTTP server lifecycle
+The companion server SHALL run as a TypeScript sidecar process managed by neph. It SHALL start an HTTP server on a dynamically assigned port (port 0) and accept MCP JSON-RPC 2.0 requests.
+
+#### Scenario: Server starts on dynamic port
+- **WHEN** the companion sidecar process is launched
+- **THEN** it SHALL bind an HTTP server to port 0 (OS-assigned)
+- **AND** the actual port SHALL be available for discovery file creation
+
+#### Scenario: Server handles JSON-RPC 2.0 requests
+- **WHEN** a POST request arrives at the server endpoint
+- **AND** the body contains a valid JSON-RPC 2.0 message
+- **THEN** the server SHALL route to the appropriate tool handler
+- **AND** respond with a JSON-RPC 2.0 result
+
+#### Scenario: Server rejects invalid requests
+- **WHEN** a request arrives with malformed JSON or missing JSON-RPC fields
+- **THEN** the server SHALL respond with a JSON-RPC 2.0 error (code -32700 or -32600)
+
+### Requirement: Discovery file management
+The companion SHALL write a discovery file to `os.tmpdir()/gemini/ide/` on startup and remove it on shutdown.
+
+#### Scenario: Discovery file created on startup
+- **WHEN** the MCP server is listening on a port
+- **THEN** the companion SHALL create `gemini-ide-server-{PID}-{PORT}.json` in the gemini/ide temp directory
+- **AND** the file SHALL contain `port`, `workspacePath`, `authToken`, and `ideInfo` fields
+- **AND** `ideInfo.name` SHALL be `"neovim"` and `ideInfo.displayName` SHALL be `"Neovim (neph)"`
+
+#### Scenario: Discovery file cleaned up on shutdown
+- **WHEN** the companion process receives SIGTERM or SIGINT
+- **THEN** it SHALL delete the discovery file before exiting
+
+#### Scenario: Discovery file cleaned up on Neovim exit
+- **WHEN** VimLeavePre fires in Neovim
+- **THEN** neph SHALL terminate the companion sidecar process
+- **AND** the sidecar SHALL clean up its discovery file
+
+### Requirement: Bearer token authentication
+The companion SHALL generate a cryptographically random token and validate it on every request.
+
+#### Scenario: Valid token accepted
+- **WHEN** a request includes `Authorization: Bearer {token}` matching the generated token
+- **THEN** the server SHALL process the request normally
+
+#### Scenario: Missing or invalid token rejected
+- **WHEN** a request is missing the Authorization header or has an incorrect token
+- **THEN** the server SHALL respond with HTTP 401 Unauthorized
+- **AND** SHALL NOT process the MCP message
+
+### Requirement: Neovim connection via NephClient
+The companion sidecar SHALL connect to Neovim via NephClient and register on the agent bus as "gemini".
+
+#### Scenario: Sidecar connects and registers
+- **WHEN** the sidecar process starts with NVIM_SOCKET_PATH set
+- **THEN** it SHALL create a NephClient, connect to the socket, and call `register("gemini")`
+- **AND** `vim.g.gemini_active` SHALL be set to `true`
+
+#### Scenario: Sidecar reconnects after socket disconnect
+- **WHEN** the Neovim socket disconnects unexpectedly
+- **THEN** NephClient's built-in reconnect logic SHALL re-establish the connection
+- **AND** SHALL re-register as "gemini" on the bus
+
+### Requirement: Sidecar process management from Lua
+neph SHALL spawn and manage the companion sidecar process lifecycle.
+
+#### Scenario: Sidecar starts with Gemini terminal session
+- **WHEN** a Gemini agent terminal session is opened via neph
+- **THEN** neph SHALL spawn the companion sidecar via `vim.fn.jobstart()`
+- **AND** pass `NVIM_SOCKET_PATH` and workspace root as environment/arguments
+
+#### Scenario: Sidecar stops with Gemini terminal session
+- **WHEN** the Gemini terminal session is closed or killed
+- **THEN** neph SHALL send SIGTERM to the companion sidecar process
+
+#### Scenario: Sidecar respawns on crash
+- **WHEN** the companion sidecar process exits unexpectedly
+- **AND** the Gemini terminal session is still active
+- **THEN** neph SHALL respawn the companion sidecar after a brief delay
