@@ -13,7 +13,7 @@ describe("neph.agents submodules", function()
     end)
   end
 
-  local extension_agents = { "amp", "opencode", "pi" }
+  local extension_agents = { "amp", "gemini", "opencode", "pi" }
   for _, name in ipairs(extension_agents) do
     it(name .. " has type = extension", function()
       local def = require("neph.agents." .. name)
@@ -21,7 +21,7 @@ describe("neph.agents submodules", function()
     end)
   end
 
-  local hook_agents = { "claude", "copilot", "cursor", "gemini" }
+  local hook_agents = { "claude", "copilot", "cursor" }
   for _, name in ipairs(hook_agents) do
     it(name .. " has type = hook", function()
       local def = require("neph.agents." .. name)

@@ -31,6 +31,7 @@ export class NephClient {
   private channelId: number | null = null;
   private socketPath: string | null = null;
   private promptCallback: ((text: string) => void) | null = null;
+  private notificationCallbacks: Map<string, ((args: unknown[]) => void)[]> = new Map();
   private reconnecting = false;
   private disconnected = false;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -55,12 +56,18 @@ export class NephClient {
     this.connectionState = ConnectionState.CONNECTED;
     log("neph-client", `connected to ${path} (channel=${this.channelId}) state: ${this.connectionState}`);
 
-    // Listen for prompt notifications
+    // Listen for notifications
     this.client.on("notification", (method: string, args: unknown[]) => {
       if (method === "neph:prompt" && this.promptCallback) {
         const text = args[0];
         log("neph-client", `received prompt (len=${String(text).length})`);
         this.promptCallback(typeof text === "string" ? text : String(text));
+      }
+      const callbacks = this.notificationCallbacks.get(method);
+      if (callbacks) {
+        for (const cb of callbacks) {
+          cb(args);
+        }
       }
     });
 
@@ -96,6 +103,12 @@ export class NephClient {
 
   onPrompt(callback: (text: string) => void): void {
     this.promptCallback = callback;
+  }
+
+  onNotification(method: string, callback: (args: unknown[]) => void): void {
+    const existing = this.notificationCallbacks.get(method) ?? [];
+    existing.push(callback);
+    this.notificationCallbacks.set(method, existing);
   }
 
   async setStatus(name: string, value: string): Promise<void> {

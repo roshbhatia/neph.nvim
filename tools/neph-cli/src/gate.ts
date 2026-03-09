@@ -71,18 +71,6 @@ export const SCHEMAS: Record<string, AgentSchema> = {
     },
     preprocess: preprocessCopilot,
   },
-  gemini: {
-    writeTools: ['write_file'],
-    editTools: ['edit_file'],
-    fields: {
-      toolName: 'tool_name',
-      toolInput: 'tool_input',
-      filePath: 'filepath',
-      content: 'content',
-      oldText: 'old_string',
-      newText: 'new_string',
-    },
-  },
   cursor: {
     writeTools: [],
     editTools: [],
@@ -196,10 +184,6 @@ export function parseCopilot(input: unknown): GatePayload | null {
   return parseWithSchema(SCHEMAS.copilot, input, 'copilot');
 }
 
-export function parseGemini(input: unknown): GatePayload | null {
-  return parseWithSchema(SCHEMAS.gemini, input, 'gemini');
-}
-
 export function parseCursor(input: unknown): GatePayload | null {
   return parseWithSchema(SCHEMAS.cursor, input, 'cursor');
 }
@@ -207,7 +191,6 @@ export function parseCursor(input: unknown): GatePayload | null {
 const PARSERS: Record<string, (input: unknown) => GatePayload | null> = {
   claude: parseClaude,
   copilot: parseCopilot,
-  gemini: parseGemini,
   cursor: parseCursor,
 };
 

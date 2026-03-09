@@ -70,6 +70,10 @@ function M.setup(opts, backend_mod)
         pcall(function()
           require("neph.internal.bus").cleanup_all()
         end)
+        -- Clean up companion sidecar
+        pcall(function()
+          require("neph.internal.companion").teardown()
+        end)
         backend.cleanup_all(terminals)
         -- Clean up all pending timers
         for name, pt in pairs(pending_timers) do
@@ -119,6 +123,13 @@ function M.open(termname)
     -- Terminal-only agents: set vim.g state (extension agents are managed by bus)
     if not agent.type then
       vim.g[termname .. "_active"] = true
+    end
+    -- Start companion sidecar for agents that need it
+    if agent.type == "extension" and agent.name == "gemini" then
+      local companion = require("neph.internal.companion")
+      local tools = require("neph.tools")
+      companion.start_sidecar(tools.get_root(), cwd)
+      companion.setup_autocmds("gemini")
     end
   end
 end
@@ -202,6 +213,12 @@ function M.kill_session(termname)
   -- Extension agents: unregister from bus
   if agent and agent.type == "extension" then
     require("neph.internal.bus").unregister(termname)
+  end
+  -- Stop companion sidecar if this was gemini
+  if agent and agent.name == "gemini" then
+    pcall(function()
+      require("neph.internal.companion").teardown()
+    end)
   end
 end
 

@@ -5,10 +5,10 @@ return {
   icon = "󰊭",
   cmd = "gemini",
   args = {},
-  type = "hook",
+  type = "extension",
   tools = {
-    merges = {
-      { src = "gemini/settings.json", dst = "~/.gemini/settings.json", key = "hooks" },
+    builds = {
+      { dir = "gemini", src_dirs = { "src", "../lib" }, check = "dist/companion.js" },
     },
   },
 }
