@@ -52,8 +52,12 @@ function makePI() {
   const handlers: Record<string, Function[]> = {};
   const tools: Record<string, any> = {};
   const stub = {
-    on(event: string, handler: Function) { (handlers[event] ??= []).push(handler); },
-    registerTool(spec: { name: string; [k: string]: any }) { tools[spec.name] = spec; },
+    on(event: string, handler: Function) {
+      (handlers[event] ??= []).push(handler);
+    },
+    registerTool(spec: { name: string; [k: string]: any }) {
+      tools[spec.name] = spec;
+    },
     sendUserMessage: vi.fn(),
     async emit(event: string, ...args: any[]) {
       const fns = handlers[event] ?? [];
@@ -93,11 +97,17 @@ beforeEach(() => {
 
   createWriteToolMock.mockReturnValue({
     parameters: {},
-    execute: vi.fn().mockResolvedValue({ content: [{ type: "text", text: "written" }], details: {} }),
+    execute: vi.fn().mockResolvedValue({
+      content: [{ type: "text", text: "written" }],
+      details: {},
+    }),
   });
   createEditToolMock.mockReturnValue({
     parameters: {},
-    execute: vi.fn().mockResolvedValue({ content: [{ type: "text", text: "edited" }], details: {} }),
+    execute: vi.fn().mockResolvedValue({
+      content: [{ type: "text", text: "edited" }],
+      details: {},
+    }),
   });
 
   piExtension(pi as any);
@@ -121,13 +131,15 @@ describe("connection lifecycle", () => {
   it("session_start registers onPrompt callback", async () => {
     await activate();
 
-    expect(mockNephInstance.onPrompt).toHaveBeenCalledWith(expect.any(Function));
+    expect(mockNephInstance.onPrompt).toHaveBeenCalledWith(
+      expect.any(Function),
+    );
   });
 
   it("session_start sets nvim status", async () => {
     await activate();
 
-    expect(pi.ui.setStatus).toHaveBeenCalledWith("nvim", "👽 neph");
+    expect(pi.ui.setStatus).toHaveBeenCalledWith("nvim", "🗿NEPH");
   });
 
   it("session_start registers write and edit tools", async () => {
@@ -168,7 +180,10 @@ describe("status events", () => {
 
     await pi.emit("agent_start");
 
-    expect(mockNephInstance.setStatus).toHaveBeenCalledWith("pi_running", "true");
+    expect(mockNephInstance.setStatus).toHaveBeenCalledWith(
+      "pi_running",
+      "true",
+    );
   });
 
   it("agent_end unsets pi_running and pi_reading, calls checktime", async () => {
@@ -188,18 +203,32 @@ describe("status events", () => {
     await activate();
     mockNephInstance.setStatus.mockClear();
 
-    await pi.emit("tool_call", { toolName: "read", input: { path: "/foo/bar.ts" } }, { ui: pi.ui, cwd: "/foo" });
+    await pi.emit(
+      "tool_call",
+      { toolName: "read", input: { path: "/foo/bar.ts" } },
+      { ui: pi.ui, cwd: "/foo" },
+    );
 
-    expect(mockNephInstance.setStatus).toHaveBeenCalledWith("pi_reading", "bar.ts");
+    expect(mockNephInstance.setStatus).toHaveBeenCalledWith(
+      "pi_reading",
+      "bar.ts",
+    );
   });
 
   it("tool_call with read sets ctx.ui.setStatus with short path", async () => {
     await activate();
     pi.ui.setStatus.mockClear();
 
-    await pi.emit("tool_call", { toolName: "read", input: { path: "bar.ts" } }, { ui: pi.ui, cwd: "/foo" });
+    await pi.emit(
+      "tool_call",
+      { toolName: "read", input: { path: "bar.ts" } },
+      { ui: pi.ui, cwd: "/foo" },
+    );
 
-    expect(pi.ui.setStatus).toHaveBeenCalledWith("nvim-reading", expect.stringContaining("bar.ts"));
+    expect(pi.ui.setStatus).toHaveBeenCalledWith(
+      "nvim-reading",
+      expect.stringContaining("bar.ts"),
+    );
   });
 
   it("tool_result with write/edit calls checktime", async () => {
@@ -215,7 +244,9 @@ describe("status events", () => {
 // ── review() via NephClient tests ───────────────────────────────────────────
 
 describe("review via NephClient", () => {
-  beforeEach(async () => { await activate(); });
+  beforeEach(async () => {
+    await activate();
+  });
 
   it("returns accept decision from NephClient review", async () => {
     mockNephInstance.review.mockResolvedValue({
@@ -226,7 +257,13 @@ describe("review via NephClient", () => {
     });
 
     const writeTool = pi.tools["write"];
-    const result = await writeTool.execute("id", { path: "/tmp/a.ts", content: "new" }, null, vi.fn(), { cwd: "/tmp" });
+    const result = await writeTool.execute(
+      "id",
+      { path: "/tmp/a.ts", content: "new" },
+      null,
+      vi.fn(),
+      { cwd: "/tmp" },
+    );
     expect(result.content[0].text).toBe("written");
   });
 
@@ -240,7 +277,13 @@ describe("review via NephClient", () => {
     });
 
     const writeTool = pi.tools["write"];
-    const result = await writeTool.execute("id", { path: "/tmp/b.ts", content: "new" }, null, vi.fn(), { cwd: "/tmp" });
+    const result = await writeTool.execute(
+      "id",
+      { path: "/tmp/b.ts", content: "new" },
+      null,
+      vi.fn(),
+      { cwd: "/tmp" },
+    );
     expect(result.content[0].text).toMatch(/rejected.*too noisy/i);
   });
 
@@ -253,20 +296,37 @@ describe("review via NephClient", () => {
     });
 
     const writeTool = pi.tools["write"];
-    await writeTool.execute("id", { path: "x.ts", content: "proposed content" }, null, vi.fn(), { cwd: "/tmp" });
+    await writeTool.execute(
+      "id",
+      { path: "x.ts", content: "proposed content" },
+      null,
+      vi.fn(),
+      { cwd: "/tmp" },
+    );
 
-    expect(mockNephInstance.review).toHaveBeenCalledWith("/tmp/x.ts", "proposed content");
+    expect(mockNephInstance.review).toHaveBeenCalledWith(
+      "/tmp/x.ts",
+      "proposed content",
+    );
   });
 });
 
 // ── write tool override tests ─────────────────────────────────────────────────
 
 describe("write tool override", () => {
-  beforeEach(async () => { await activate(); });
+  beforeEach(async () => {
+    await activate();
+  });
 
   it("calls createWriteTool execute with accepted content", async () => {
-    const mockExecute = vi.fn().mockResolvedValue({ content: [{ type: "text", text: "written" }], details: {} });
-    createWriteToolMock.mockReturnValue({ parameters: {}, execute: mockExecute });
+    const mockExecute = vi.fn().mockResolvedValue({
+      content: [{ type: "text", text: "written" }],
+      details: {},
+    });
+    createWriteToolMock.mockReturnValue({
+      parameters: {},
+      execute: mockExecute,
+    });
 
     mockNephInstance.review.mockResolvedValue({
       schema: "review/v1",
@@ -276,13 +336,27 @@ describe("write tool override", () => {
     });
 
     const writeTool = pi.tools["write"];
-    await writeTool.execute("id", { path: "/f.ts", content: "new" }, null, vi.fn(), { cwd: "/" });
-    expect(mockExecute).toHaveBeenCalledWith("id", expect.objectContaining({ content: "accepted!" }), null, expect.any(Function));
+    await writeTool.execute(
+      "id",
+      { path: "/f.ts", content: "new" },
+      null,
+      vi.fn(),
+      { cwd: "/" },
+    );
+    expect(mockExecute).toHaveBeenCalledWith(
+      "id",
+      expect.objectContaining({ content: "accepted!" }),
+      null,
+      expect.any(Function),
+    );
   });
 
   it("does not call execute when rejected", async () => {
     const mockExecute = vi.fn();
-    createWriteToolMock.mockReturnValue({ parameters: {}, execute: mockExecute });
+    createWriteToolMock.mockReturnValue({
+      parameters: {},
+      execute: mockExecute,
+    });
 
     mockNephInstance.review.mockResolvedValue({
       schema: "review/v1",
@@ -293,7 +367,13 @@ describe("write tool override", () => {
     });
 
     const writeTool = pi.tools["write"];
-    const result = await writeTool.execute("id", { path: "/f.ts", content: "new" }, null, vi.fn(), { cwd: "/" });
+    const result = await writeTool.execute(
+      "id",
+      { path: "/f.ts", content: "new" },
+      null,
+      vi.fn(),
+      { cwd: "/" },
+    );
 
     expect(mockExecute).not.toHaveBeenCalled();
     expect(result.content[0].text).toMatch(/rejected.*nope/i);
@@ -302,20 +382,34 @@ describe("write tool override", () => {
   it("surfaces partial rejection notes for decision:partial", async () => {
     createWriteToolMock.mockReturnValue({
       parameters: {},
-      execute: vi.fn().mockResolvedValue({ content: [{ type: "text", text: "written" }], details: {} }),
+      execute: vi.fn().mockResolvedValue({
+        content: [{ type: "text", text: "written" }],
+        details: {},
+      }),
     });
 
     mockNephInstance.review.mockResolvedValue({
       schema: "review/v1",
       decision: "partial",
       content: "ok",
-      hunks: [{ index: 1, decision: "accept" }, { index: 2, decision: "reject", reason: "hunk 2 skipped" }],
+      hunks: [
+        { index: 1, decision: "accept" },
+        { index: 2, decision: "reject", reason: "hunk 2 skipped" },
+      ],
       reason: "hunk 2 skipped",
     });
 
     const writeTool = pi.tools["write"];
-    const result = await writeTool.execute("id", { path: "/f.ts", content: "new" }, null, vi.fn(), { cwd: "/" });
-    const texts = (result.content as { text: string }[]).map((c: { text: string }) => c.text);
+    const result = await writeTool.execute(
+      "id",
+      { path: "/f.ts", content: "new" },
+      null,
+      vi.fn(),
+      { cwd: "/" },
+    );
+    const texts = (result.content as { text: string }[]).map(
+      (c: { text: string }) => c.text,
+    );
     expect(texts.some((t: string) => t.includes("hunk 2 skipped"))).toBe(true);
   });
 });
@@ -323,19 +417,35 @@ describe("write tool override", () => {
 // ── edit tool override tests ──────────────────────────────────────────────────
 
 describe("edit tool override", () => {
-  beforeEach(async () => { await activate(); });
+  beforeEach(async () => {
+    await activate();
+  });
 
   it("returns error when file cannot be read", async () => {
-    readFileSyncMock.mockImplementation(() => { throw new Error("ENOENT"); });
+    readFileSyncMock.mockImplementation(() => {
+      throw new Error("ENOENT");
+    });
     const editTool = pi.tools["edit"];
-    const result = await editTool.execute("id", { path: "/missing.ts", oldText: "x", newText: "y" }, null, vi.fn(), { cwd: "/" });
+    const result = await editTool.execute(
+      "id",
+      { path: "/missing.ts", oldText: "x", newText: "y" },
+      null,
+      vi.fn(),
+      { cwd: "/" },
+    );
     expect(result.content[0].text).toMatch(/cannot read/i);
   });
 
   it("returns error when oldText is not found, does not call review", async () => {
     readFileSyncMock.mockReturnValue("hello world");
     const editTool = pi.tools["edit"];
-    const result = await editTool.execute("id", { path: "/f.ts", oldText: "not present", newText: "y" }, null, vi.fn(), { cwd: "/" });
+    const result = await editTool.execute(
+      "id",
+      { path: "/f.ts", oldText: "not present", newText: "y" },
+      null,
+      vi.fn(),
+      { cwd: "/" },
+    );
     expect(result.content[0].text).toMatch(/edit failed/i);
     expect(mockNephInstance.review).not.toHaveBeenCalled();
   });
@@ -343,9 +453,18 @@ describe("edit tool override", () => {
   it("applies accepted content via createWriteTool (full file content)", async () => {
     readFileSyncMock.mockReturnValue("hello world");
     const mockEditExecute = vi.fn();
-    const mockWriteExecute = vi.fn().mockResolvedValue({ content: [{ type: "text", text: "written" }], details: {} });
-    createEditToolMock.mockReturnValue({ parameters: {}, execute: mockEditExecute });
-    createWriteToolMock.mockReturnValue({ parameters: {}, execute: mockWriteExecute });
+    const mockWriteExecute = vi.fn().mockResolvedValue({
+      content: [{ type: "text", text: "written" }],
+      details: {},
+    });
+    createEditToolMock.mockReturnValue({
+      parameters: {},
+      execute: mockEditExecute,
+    });
+    createWriteToolMock.mockReturnValue({
+      parameters: {},
+      execute: mockWriteExecute,
+    });
 
     mockNephInstance.review.mockResolvedValue({
       schema: "review/v1",
@@ -355,8 +474,19 @@ describe("edit tool override", () => {
     });
 
     const editTool = pi.tools["edit"];
-    const result = await editTool.execute("id", { path: "/f.ts", oldText: "world", newText: "universe" }, null, vi.fn(), { cwd: "/" });
-    expect(mockWriteExecute).toHaveBeenCalledWith("id", expect.objectContaining({ content: "hello universe" }), null, expect.any(Function));
+    const result = await editTool.execute(
+      "id",
+      { path: "/f.ts", oldText: "world", newText: "universe" },
+      null,
+      vi.fn(),
+      { cwd: "/" },
+    );
+    expect(mockWriteExecute).toHaveBeenCalledWith(
+      "id",
+      expect.objectContaining({ content: "hello universe" }),
+      null,
+      expect.any(Function),
+    );
     expect(mockEditExecute).not.toHaveBeenCalled();
     expect(result.content[0].text).toBe("written");
   });
@@ -374,7 +504,13 @@ describe("edit tool override", () => {
     });
 
     const editTool = pi.tools["edit"];
-    const result = await editTool.execute("id", { path: "/f.ts", oldText: "world", newText: "x" }, null, vi.fn(), { cwd: "/" });
+    const result = await editTool.execute(
+      "id",
+      { path: "/f.ts", oldText: "world", newText: "x" },
+      null,
+      vi.fn(),
+      { cwd: "/" },
+    );
     expect(result.content[0].text).toMatch(/rejected.*bad change/i);
   });
 });

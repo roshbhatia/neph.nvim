@@ -157,13 +157,16 @@ export default function (pi: ExtensionAPI) {
   // --- Session lifecycle ---
 
   pi.on("session_start", async (_event, ctx) => {
-    ctx.ui.setStatus("nvim", "👽 neph");
+    ctx.ui.setStatus("nvim", "🗿NEPH");
     try {
       await neph.connect();
       await neph.register("pi");
       log("pi", "connected and registered with bus");
     } catch (e) {
-      log("pi", `connection failed: ${e instanceof Error ? e.message : String(e)}`);
+      log(
+        "pi",
+        `connection failed: ${e instanceof Error ? e.message : String(e)}`,
+      );
     }
     registerTools();
 
