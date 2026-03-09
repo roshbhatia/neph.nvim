@@ -49,11 +49,11 @@ describe("neph.api.review.ui", function()
 
   describe("build_winbar", function()
     local keymaps = {
-      accept = "ga",
-      reject = "gr",
-      accept_all = "gA",
-      reject_all = "gR",
-      undo = "gu",
+      accept = "<localleader>a",
+      reject = "<localleader>r",
+      accept_all = "<localleader>A",
+      reject_all = "<localleader>R",
+      undo = "<localleader>u",
       submit = "<CR>",
       quit = "q",
     }
@@ -62,7 +62,7 @@ describe("neph.api.review.ui", function()
       local bar = ui.build_winbar(2, 5, nil, keymaps)
       assert.truthy(bar:find("Hunk 2/5"))
       assert.truthy(bar:find("undecided"))
-      assert.truthy(bar:find("ga=accept"))
+      assert.truthy(bar:find("<localleader>a=accept"))
     end)
 
     it("shows accepted for accept decision", function()

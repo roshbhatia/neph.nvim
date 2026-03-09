@@ -283,11 +283,11 @@ end
 function M.start_review(session, ui_state, on_done)
   local config = vim.g.neph_config or {}
   local keymaps = vim.tbl_extend("force", {
-    accept = "ga",
-    reject = "gr",
-    accept_all = "gA",
-    reject_all = "gR",
-    undo = "gu",
+    accept = "<localleader>a",
+    reject = "<localleader>r",
+    accept_all = "<localleader>A",
+    reject_all = "<localleader>R",
+    undo = "<localleader>u",
     submit = "<CR>",
     quit = "q",
   }, config.review_keymaps or {})
