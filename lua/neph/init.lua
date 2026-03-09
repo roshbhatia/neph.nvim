@@ -253,17 +253,17 @@ function M.setup(opts)
     end,
   })
 
-  -- Defer tool installation until after UI is rendered
+  -- Check if tools need updating (lightweight version check, no auto-install)
   if vim.v.vim_did_enter == 1 then
     vim.schedule(function()
-      require("neph.tools").install_async()
+      require("neph.tools").check_version()
     end)
   else
     vim.api.nvim_create_autocmd("UIEnter", {
       once = true,
       callback = function()
         vim.schedule(function()
-          require("neph.tools").install_async()
+          require("neph.tools").check_version()
         end)
       end,
     })

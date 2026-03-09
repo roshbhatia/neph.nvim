@@ -34,23 +34,54 @@ local function stamp_path(name)
   return vim.fn.stdpath("data") .. "/neph_install_" .. name .. ".stamp"
 end
 
+--- Compute a version fingerprint for the tools directory.
+--- Uses the plugin directory's git HEAD if available, falls back to tools/ mtime.
+---@param root string
+---@return string
+local function plugin_version(root)
+  -- Try git HEAD first (fast: just reads a file)
+  local head_file = root .. "/.git/HEAD"
+  if vim.fn.filereadable(head_file) == 1 then
+    local head = vim.fn.readfile(head_file)
+    if head and #head > 0 then
+      local ref = head[1]:match("^ref: (.+)$")
+      if ref then
+        local ref_file = root .. "/.git/" .. ref
+        if vim.fn.filereadable(ref_file) == 1 then
+          local hash = vim.fn.readfile(ref_file)
+          if hash and #hash > 0 then
+            return vim.trim(hash[1])
+          end
+        end
+      else
+        -- Detached HEAD — the line IS the hash
+        return vim.trim(head[1])
+      end
+    end
+  end
+  -- Fallback: tools directory mtime
+  return tostring(vim.fn.getftime(root .. "/tools"))
+end
+
 ---@param root string
 ---@param name string
 ---@return boolean  true if install should be skipped
 local function is_agent_up_to_date(root, name)
   local sp = stamp_path(name)
-  local stamp_mt = vim.fn.getftime(sp)
-  if stamp_mt < 0 then
+  if vim.fn.filereadable(sp) == 0 then
     return false
   end
-  local tools_dir = root .. "/tools"
-  local tools_mt = vim.fn.getftime(tools_dir)
-  return tools_mt <= stamp_mt
+  local content = vim.fn.readfile(sp)
+  if not content or #content == 0 then
+    return false
+  end
+  return vim.trim(content[1]) == plugin_version(root)
 end
 
 local function touch_stamp(name)
+  local root = plugin_root()
   local sp = stamp_path(name)
-  vim.fn.writefile({ tostring(os.time()) }, sp)
+  vim.fn.writefile({ plugin_version(root) }, sp)
 end
 
 local function clear_stamp(name)
@@ -479,7 +510,7 @@ function M.uninstall_universal(root)
 end
 
 -- ---------------------------------------------------------------------------
--- Async startup install
+-- Async install (used by :NephTools install all)
 -- ---------------------------------------------------------------------------
 
 --- Non-blocking install. Each agent installs independently.
@@ -549,6 +580,35 @@ function M.install_async()
         end
       end
     end
+  end
+end
+
+-- ---------------------------------------------------------------------------
+-- Startup version check (lightweight, no I/O heavy operations)
+-- ---------------------------------------------------------------------------
+
+--- Check if tools need reinstalling and notify the user.
+--- Does NOT install anything — just reads stamp files and compares versions.
+function M.check_version()
+  local root = plugin_root()
+  local agents = require("neph.internal.agents").get_all()
+  local stale = {}
+
+  if not is_agent_up_to_date(root, UNIVERSAL_NAME) then
+    table.insert(stale, UNIVERSAL_NAME)
+  end
+
+  for _, agent in ipairs(agents) do
+    if agent.tools and not is_agent_up_to_date(root, agent.name) then
+      table.insert(stale, agent.name)
+    end
+  end
+
+  if #stale > 0 then
+    vim.notify(
+      "Neph: tools out of date (" .. table.concat(stale, ", ") .. ")\nRun :NephTools install all",
+      vim.log.levels.WARN
+    )
   end
 end
 
