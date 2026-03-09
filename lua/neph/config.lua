@@ -31,12 +31,13 @@ local M = {}
 ---@field commented? string  Icon for rejected hunk with comment (default: 󰟶)
 
 ---@class neph.ReviewKeymapsConfig
----@field accept?      string  Accept current hunk (default: <localleader>a)
----@field reject?      string  Reject current hunk (default: <localleader>r)
----@field accept_all?  string  Accept all remaining (default: <localleader>A)
----@field reject_all?  string  Reject all remaining (default: <localleader>R)
----@field undo?        string  Clear decision back to undecided (default: <localleader>u)
----@field submit?      string  Submit/finalize review (default: <CR>)
+---@field decide?      string  Accept/reject dialog for current hunk (default: <CR>)
+---@field accept?      string  Shortcut: accept current hunk (default: <localleader>a)
+---@field reject?      string  Shortcut: reject current hunk (default: <localleader>r)
+---@field accept_all?  string  Shortcut: accept all remaining (default: <localleader>A)
+---@field reject_all?  string  Shortcut: reject all remaining (default: <localleader>R)
+---@field undo?        string  Shortcut: clear decision (default: <localleader>u)
+---@field submit?      string  Submit/finalize review (default: <S-CR>)
 ---@field quit?        string  Quit review (default: q)
 
 ---@type neph.Config
@@ -55,12 +56,13 @@ M.defaults = {
     commented = "󰟶",
   },
   review_keymaps = {
+    decide = "<CR>",
     accept = "<localleader>a",
     reject = "<localleader>r",
     accept_all = "<localleader>A",
     reject_all = "<localleader>R",
     undo = "<localleader>u",
-    submit = "<CR>",
+    submit = "<S-CR>",
     quit = "q",
   },
 }

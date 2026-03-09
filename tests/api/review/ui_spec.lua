@@ -49,12 +49,13 @@ describe("neph.api.review.ui", function()
 
   describe("build_winbar", function()
     local keymaps = {
+      decide = "<CR>",
       accept = "<localleader>a",
       reject = "<localleader>r",
       accept_all = "<localleader>A",
       reject_all = "<localleader>R",
       undo = "<localleader>u",
-      submit = "<CR>",
+      submit = "<S-CR>",
       quit = "q",
     }
 
@@ -62,7 +63,7 @@ describe("neph.api.review.ui", function()
       local bar = ui.build_winbar(2, 5, nil, keymaps)
       assert.truthy(bar:find("Hunk 2/5"))
       assert.truthy(bar:find("undecided"))
-      assert.truthy(bar:find("<localleader>a=accept"))
+      assert.truthy(bar:find("=decide"))
     end)
 
     it("shows accepted for accept decision", function()
@@ -84,12 +85,13 @@ describe("neph.api.review.ui", function()
 
     it("includes submit keymap in display", function()
       local bar = ui.build_winbar(1, 1, nil, keymaps)
-      assert.truthy(bar:find("<CR>=submit"))
+      assert.truthy(bar:find("<S%-CR>=submit"))
       assert.truthy(bar:find("q=quit"))
     end)
 
     it("uses custom keymaps in display", function()
       local custom = {
+        decide = "<leader>d",
         accept = "<leader>a",
         reject = "<leader>r",
         accept_all = "<leader>A",
@@ -99,8 +101,9 @@ describe("neph.api.review.ui", function()
         quit = "<leader>q",
       }
       local bar = ui.build_winbar(1, 1, nil, custom)
-      assert.truthy(bar:find("<leader>a=accept"))
-      assert.truthy(bar:find("<leader>s=submit"))
+      -- display_key resolves <leader> to actual key (default \)
+      assert.truthy(bar:find("\\d=decide"))
+      assert.truthy(bar:find("\\s=submit"))
       assert.truthy(bar:find("<leader>q=quit"))
     end)
 

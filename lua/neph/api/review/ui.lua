@@ -151,6 +151,17 @@ function M.find_hunk_at_cursor(hunks, cursor_line)
   return best
 end
 
+--- Resolve a keymap notation string to a human-readable display form.
+--- Expands <localleader> to the actual key, and prettifies common notations.
+---@param lhs string
+---@return string
+local function display_key(lhs)
+  local ll = vim.g.maplocalleader or "\\"
+  local result = lhs:gsub("<[Ll]ocal[Ll]eader>", ll)
+  result = result:gsub("<[Ll]eader>", vim.g.mapleader or "\\")
+  return result
+end
+
 --- Build winbar string showing hunk status, tally, and keymaps.
 ---@param idx integer  current hunk index
 ---@param total integer  total hunks
@@ -177,15 +188,14 @@ function M.build_winbar(idx, total, decision, keymaps, tally)
   end
 
   return string.format(
-    "%%#DiagnosticWarn# CURRENT %%* %%#%s# Hunk %d/%d: %s %%*%s  %s=accept  %s=reject  %s=submit  %s=quit",
+    "%%#DiagnosticWarn# CURRENT %%* %%#%s# Hunk %d/%d: %s %%*%s  %s=decide  %s=submit  %s=quit",
     hl,
     idx,
     total,
     status,
     tally_str,
-    keymaps.accept,
-    keymaps.reject,
-    keymaps.submit or "<CR>",
+    display_key(keymaps.decide or "<CR>"),
+    display_key(keymaps.submit or "<S-CR>"),
     keymaps.quit
   )
 end
@@ -288,19 +298,30 @@ function M.start_review(session, ui_state, on_done)
     accept_all = "<localleader>A",
     reject_all = "<localleader>R",
     undo = "<localleader>u",
-    submit = "<CR>",
+    decide = "<CR>",
+    submit = "<S-CR>",
     quit = "q",
   }, config.review_keymaps or {})
 
   local finalized = false
   local buf = ui_state.left_buf
 
+  -- Collect all mapped lhs values for cleanup
+  local mapped_keys = {}
+
+  local function map(lhs, fn, desc)
+    vim.keymap.set("n", lhs, fn, { buffer = buf, desc = desc })
+    table.insert(mapped_keys, lhs)
+  end
+
   local function do_finalize()
     if finalized then
       return
     end
     finalized = true
-    unmap_keymaps(buf, keymaps)
+    for _, lhs in ipairs(mapped_keys) do
+      pcall(vim.keymap.del, "n", lhs, { buffer = buf })
+    end
     on_done(session.finalize())
   end
 
@@ -313,21 +334,50 @@ function M.start_review(session, ui_state, on_done)
     if next_idx then
       jump_to_hunk(ui_state, hunks, next_idx)
     end
-    -- Stay open regardless — no auto-finalize
     refresh_ui(session, ui_state, keymaps)
   end
 
-  -- ga: accept current hunk
-  vim.keymap.set("n", keymaps.accept, function()
+  -- <CR>: primary action — accept/reject dialog for current hunk
+  map(keymaps.decide, function()
+    local hunks = session.get_hunk_ranges()
+    local cursor_line = vim.api.nvim_win_get_cursor(ui_state.left_win)[1]
+    local idx = M.find_hunk_at_cursor(hunks, cursor_line)
+    local d = session.get_decision(idx)
+    local choices = { "Accept", "Reject", "Reject with reason" }
+    if d then
+      table.insert(choices, "Undo (back to undecided)")
+    end
+    table.insert(choices, "Cancel")
+    vim.ui.select(choices, { prompt = string.format("Hunk %d/%d:", idx, #hunks) }, function(choice)
+      if choice == "Accept" then
+        session.accept_at(idx)
+        after_action()
+      elseif choice == "Reject" then
+        session.reject_at(idx)
+        after_action()
+      elseif choice == "Reject with reason" then
+        vim.ui.input({ prompt = "Reason: " }, function(reason)
+          session.reject_at(idx, reason and reason ~= "" and reason or nil)
+          after_action()
+        end)
+      elseif choice == "Undo (back to undecided)" then
+        session.clear_at(idx)
+        refresh_ui(session, ui_state, keymaps)
+      end
+    end)
+  end, "Neph: decide on hunk")
+
+  -- Shortcut: accept current hunk
+  map(keymaps.accept, function()
     local hunks = session.get_hunk_ranges()
     local cursor_line = vim.api.nvim_win_get_cursor(ui_state.left_win)[1]
     local idx = M.find_hunk_at_cursor(hunks, cursor_line)
     session.accept_at(idx)
     after_action()
-  end, { buffer = buf, desc = "Neph: accept hunk" })
+  end, "Neph: accept hunk")
 
-  -- gr: reject current hunk
-  vim.keymap.set("n", keymaps.reject, function()
+  -- Shortcut: reject current hunk
+  map(keymaps.reject, function()
     vim.ui.input({ prompt = "Reject reason (optional): " }, function(reason)
       local hunks = session.get_hunk_ranges()
       local cursor_line = vim.api.nvim_win_get_cursor(ui_state.left_win)[1]
@@ -335,33 +385,33 @@ function M.start_review(session, ui_state, on_done)
       session.reject_at(idx, reason and reason ~= "" and reason or nil)
       after_action()
     end)
-  end, { buffer = buf, desc = "Neph: reject hunk" })
+  end, "Neph: reject hunk")
 
-  -- gA: accept all remaining (does NOT finalize)
-  vim.keymap.set("n", keymaps.accept_all, function()
+  -- Shortcut: accept all remaining
+  map(keymaps.accept_all, function()
     session.accept_all_remaining()
     refresh_ui(session, ui_state, keymaps)
-  end, { buffer = buf, desc = "Neph: accept all remaining" })
+  end, "Neph: accept all remaining")
 
-  -- gR: reject all remaining (does NOT finalize)
-  vim.keymap.set("n", keymaps.reject_all, function()
+  -- Shortcut: reject all remaining
+  map(keymaps.reject_all, function()
     vim.ui.input({ prompt = "Reject all remaining - reason: " }, function(reason)
       session.reject_all_remaining(reason and reason ~= "" and reason or nil)
       refresh_ui(session, ui_state, keymaps)
     end)
-  end, { buffer = buf, desc = "Neph: reject all remaining" })
+  end, "Neph: reject all remaining")
 
-  -- gu: clear decision back to undecided
-  vim.keymap.set("n", keymaps.undo, function()
+  -- Shortcut: clear decision back to undecided
+  map(keymaps.undo, function()
     local hunks = session.get_hunk_ranges()
     local cursor_line = vim.api.nvim_win_get_cursor(ui_state.left_win)[1]
     local idx = M.find_hunk_at_cursor(hunks, cursor_line)
     session.clear_at(idx)
     refresh_ui(session, ui_state, keymaps)
-  end, { buffer = buf, desc = "Neph: undo decision" })
+  end, "Neph: undo decision")
 
-  -- <CR>: submit/finalize review
-  vim.keymap.set("n", keymaps.submit, function()
+  -- <S-CR>: submit/finalize review
+  map(keymaps.submit, function()
     local tally = session.get_tally()
     if tally.undecided == 0 then
       do_finalize()
@@ -382,16 +432,15 @@ function M.start_review(session, ui_state, on_done)
             refresh_ui(session, ui_state, keymaps)
           end
         end
-        -- Cancel: do nothing
       end
     )
-  end, { buffer = buf, desc = "Neph: submit review" })
+  end, "Neph: submit review")
 
   -- q: quit (reject undecided, finalize)
-  vim.keymap.set("n", keymaps.quit, function()
+  map(keymaps.quit, function()
     session.reject_all_remaining("User exited review")
     do_finalize()
-  end, { buffer = buf, desc = "Neph: quit review" })
+  end, "Neph: quit review")
 
   -- Initial: jump to first hunk and refresh UI
   local hunks = session.get_hunk_ranges()
