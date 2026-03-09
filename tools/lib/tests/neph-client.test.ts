@@ -6,7 +6,7 @@ vi.mock("neovim", () => {
     request: vi.fn(),
     executeLua: vi.fn(),
     on: vi.fn(),
-    disconnect: vi.fn(),
+    close: vi.fn(),
   };
   return {
     attach: vi.fn(() => mockClient),

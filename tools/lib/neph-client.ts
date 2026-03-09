@@ -140,7 +140,7 @@ export class NephClient {
     }
     if (this.client) {
       try {
-        (this.client as unknown as { disconnect(): void }).disconnect();
+        this.client.close();
       } catch {
         // ignore
       }
