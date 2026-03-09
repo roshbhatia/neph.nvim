@@ -13,6 +13,7 @@ neph.nvim exposes `vim.g` variables that statusline plugins can consume to show 
 | `vim.g.cursor_active` | `"true"` or `nil` | Cursor wrote a file |
 | `vim.g.pi_active` | `"true"` or `nil` | Pi session is live |
 | `vim.g.pi_running` | `"true"` or `nil` | Pi is processing a turn |
+| `vim.g.pi_reading` | `string` or `nil` | Path of file currently being read by Pi |
 
 ## Recipes
 

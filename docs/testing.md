@@ -22,7 +22,7 @@ task test
 | `agents_spec.lua` | Agent accessor: init/get_all/get_by_name, executable filtering |
 | `config_spec.lua` | Config defaults, no removed fields (multiplexer, enabled_agents) |
 | `session_spec.lua` | Session management with stub backend injection |
-| `placeholders_spec.lua` | Placeholder token expansion (+file, +cursor, etc.) |
+| `placeholders_spec.lua` | Placeholder token expansion (+file, +cursor, +selection, etc.) |
 | `context_spec.lua` | Editor context capture helpers |
 | `history_spec.lua` | Per-agent prompt history ring buffer |
 | `contract_spec.lua` | Lua RPC dispatch matches `protocol.json` |
@@ -35,17 +35,47 @@ task test
 
 Located in `tools/neph-cli/tests/`. Run using `vitest`.
 
-**What they cover:**
-- **Command Handling** (`commands.test.ts`): Tests CLI argument parsing and `FakeTransport` calls.
-- **Contract Validation** (`contract.test.ts`): Validates CLI matches `protocol.json`.
-- **RPC Integration** (`integration/rpc.test.ts`): RPC round-trip tests.
-
 **Command:**
 ```bash
 task tools:test:neph
 ```
 
-## 3. Contract Tests (Lua & TS)
+### Test Suites
+
+| File | Description |
+|------|-------------|
+| `commands.test.ts` | CLI argument parsing and FakeTransport calls |
+| `contract.test.ts` | Validates CLI matches `protocol.json` |
+| `gate.test.ts` | Gate parsers for all agents (Claude, Copilot, Gemini, Cursor) |
+| `gate.contract.test.ts` | Gate schema contract validation |
+| `gate.fuzz.test.ts` | Fuzz testing for gate parsers (124 test cases) |
+| `hook-configs.test.ts` | Hook configuration generation for agents |
+| `transport.test.ts` | Transport layer tests |
+| `integration/rpc.test.ts` | RPC round-trip tests |
+
+## 3. Shared Library Tests (Node/Vitest)
+
+Located in `tools/lib/tests/`. Run as part of `task tools:test:neph`.
+
+| File | Description |
+|------|-------------|
+| `neph-client.test.ts` | NephClient SDK (connect, register, review, status, reconnect) |
+| `log.test.ts` | Debug logger tests |
+
+## 4. Pi Extension Tests (Node/Vitest)
+
+Located in `tools/pi/tests/`. Verifies that the pi extension correctly uses NephClient for persistent socket communication with Neovim.
+
+**Command:**
+```bash
+task tools:test:pi
+```
+
+| File | Description |
+|------|-------------|
+| `pi.test.ts` | Extension lifecycle, tool registration, review flow, status updates (21 tests) |
+
+## 5. Contract Tests (Lua & TS)
 
 Located in both `tests/` and `tools/neph-cli/tests/`.
 These tests validate that both the Lua RPC dispatch and the TypeScript CLI are in sync with the canonical `protocol.json` contract.
@@ -56,17 +86,7 @@ These tests validate that both the Lua RPC dispatch and the TypeScript CLI are i
 3. `tests/contract_spec.lua` — Add to expected methods
 4. `tools/neph-cli/tests/contract.test.ts` — Add to expected methods
 
-## 4. Pi Extension Tests (Node/Vitest)
-
-Located in `tools/pi/tests/`.
-Verifies that the `pi` agent extension correctly spawns `neph` as a subprocess and handles its output.
-
-**Command:**
-```bash
-task tools:test:pi
-```
-
-## 5. E2E Tests
+## 6. E2E Tests
 
 Located in `tests/e2e/`. Runs headless Neovim smoke tests and agent launch verification.
 
@@ -75,18 +95,19 @@ Located in `tests/e2e/`. Runs headless Neovim smoke tests and agent launch verif
 task test:e2e
 ```
 
-## 6. Manual UI Verification
+## 7. Manual UI Verification
 
-Since Neovim UI components (signs, virtual text, `Snacks.picker`) are difficult to test headlessly, they require manual verification.
+Since Neovim UI components (vimdiff tabs, signs, virtual text, winbar) are difficult to test headlessly, they require manual verification.
 
 **Verification Flow:**
 1. Open Neovim.
 2. Trigger an agent turn that performs a `write` or `edit` tool call.
-3. Verify that the diff tab opens correctly.
-4. Verify that per-hunk decisions (`Accept`, `Reject`, etc.) update signs and virtual text accurately.
-5. Verify that `Accept all` and `Reject all` behave as expected.
+3. Verify that the vimdiff tab opens with current (left) and proposed (right) panes.
+4. Verify per-hunk decisions (`ga`=accept, `gr`=reject) update signs and winbar.
+5. Verify `gA` (accept all) and `gR` (reject all) behave as expected.
+6. Verify line numbers are visible and dropbar doesn't obscure the winbar labels.
 
-## 7. Continuous Integration (Dagger)
+## 8. Continuous Integration (Dagger)
 
 The full suite is executed in a Dagger pipeline defined in `.fluentci/ci.ts`.
 The pipeline uses `nix develop` to provide a deterministic test environment (Neovim, Node, Plenary, etc.) defined in `flake.nix`.

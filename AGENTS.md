@@ -119,12 +119,20 @@ lua/neph/
 ```
 src/
 ├── index.ts          # CLI entry point, command router
+├── gate.ts           # Gate system (declarative agent schemas, review interception)
 └── transport.ts      # Neovim msgpack-rpc client
 
 tests/
-├── commands.test.ts  # CLI command tests
-├── contract.test.ts  # protocol.json contract validation
-└── fake_transport.ts # Mock Neovim transport
+├── commands.test.ts       # CLI command tests
+├── contract.test.ts       # protocol.json contract validation
+├── gate.test.ts           # Gate parser tests (all agents)
+├── gate.contract.test.ts  # Gate schema contract validation
+├── gate.fuzz.test.ts      # Fuzz testing for gate parsers
+├── hook-configs.test.ts   # Hook configuration generation
+├── transport.test.ts      # Transport layer tests
+├── fake_transport.ts      # Mock Neovim transport
+└── integration/
+    └── rpc.test.ts        # RPC round-trip tests
 ```
 
 ### Shared Library (`tools/lib/`)
@@ -189,7 +197,7 @@ The diff review system is asynchronous. Extension agents call `review.open` dire
 
 **Key files:**
 - `lua/neph/api/review/engine.lua` – Pure hunk computation logic
-- `lua/neph/api/review/ui.lua` – Snacks.picker integration
+- `lua/neph/api/review/ui.lua` – Vimdiff tab with per-hunk review keymaps
 - `tools/lib/neph-client.ts:review()` – Extension agent review path
 - `tools/neph-cli/src/index.ts:runCommand('review')` – CLI review path
 
@@ -201,7 +209,8 @@ The diff review system is asynchronous. Extension agents call `review.open` dire
 - `build_envelope(decision, content, hunks, reason)` – JSON response
 
 **UI** (`ui.lua`): Neovim-specific
-- Manages signs, virtual text, and `Snacks.picker` lifecycle
+- Opens vimdiff tab (current left, proposed right) with per-hunk keymaps
+- Manages signs, virtual text hints, and winbar status display
 - Calls engine functions for logic
 
 ### 4. Agent Submodules
@@ -250,12 +259,15 @@ M.providers.cursor = function(ctx)
 end
 ```
 
-**Expansion:** `lua/neph/internal/input.lua` calls `placeholders.expand(text, ctx)`.
+**Expansion:** `lua/neph/internal/input.lua` calls `placeholders.apply(text, ctx)`.
 
 **Supported tokens:**
-- `+file`, `+cursor`, `+line`, `+position` – File location
-- `+selection` – Visual selection text
-- `+diagnostics` – Buffer diagnostics
+- `+file`, `+cursor`, `+line`, `+position` – File location (repo-relative paths)
+- `+selection` – Visual selection with repo-relative path and line range
+- `+word` – Word under cursor
+- `+diagnostic` – Diagnostics at current line
+- `+diagnostics` – All buffer diagnostics (max 20)
+- `+function`, `+class` – Surrounding treesitter node
 - `+git` – `git status`
 - `+diff` – `git diff` for current file
 - `+buffers`, `+quickfix`, `+loclist`, `+folder`, `+marks`, `+search` – Neovim state
@@ -360,13 +372,13 @@ When adding a new RPC method:
 
 ### 4. Manual UI Verification
 
-Neovim UI components (signs, virtual text, `Snacks.picker`) require manual testing:
+Neovim UI components (vimdiff tabs, signs, virtual text, winbar) require manual testing:
 1. Open Neovim with neph.nvim installed
 2. Trigger an agent that edits a file (e.g., `claude code`)
-3. Verify diff tab opens with correct hunks
-4. Test Accept/Reject/Comment on individual hunks
-5. Test "Accept all" / "Reject all"
-6. Verify signs and virtual text update correctly
+3. Verify vimdiff tab opens with current (left) and proposed (right) panes
+4. Test `ga` (accept) / `gr` (reject) on individual hunks
+5. Test `gA` (accept all) / `gR` (reject all)
+6. Verify signs, winbar status, and virtual text hints update correctly
 
 ## Naming Conventions
 

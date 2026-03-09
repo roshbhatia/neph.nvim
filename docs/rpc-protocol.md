@@ -10,12 +10,20 @@ The protocol version is currently `neph-rpc/v1`.
 
 | Method | Params | Async? | Description |
 |--------|--------|--------|-------------|
-| `review.open` | `request_id`, `result_path`, `channel_id`, `path`, `content` | Yes | Opens an interactive diff review. |
+| `review.open` | `request_id`, `result_path`, `channel_id`, `path`, `content` | Yes | Opens an interactive vimdiff review. |
 | `status.set` | `name`, `value` | No | Sets a `vim.g` global variable. |
 | `status.get` | `name` | No | Gets a `vim.g` global variable. |
 | `status.unset` | `name` | No | Unsets a `vim.g` global variable. |
 | `buffers.check` | (none) | No | Calls `:checktime` in Neovim. |
 | `tab.close` | (none) | No | Closes the current tab. |
+
+### Internal Methods (not in protocol.json)
+
+| Method | Params | Description |
+|--------|--------|-------------|
+| `bus.register` | `name`, `channel` | Registers an extension agent's msgpack-rpc channel with the bus. |
+
+`bus.register` is dispatched by `rpc.lua` but intentionally not in `protocol.json` since it is only used by extension agents via the NephClient SDK, not by the CLI.
 
 ## Method Details
 
@@ -29,8 +37,8 @@ The protocol version is currently `neph-rpc/v1`.
 - `content` (string): The proposed new content.
 
 **Flow:**
-1. Neovim opens a diff tab immediately.
-2. The user reviews hunks interactively.
+1. Neovim opens a vimdiff tab with current (left) and proposed (right) content.
+2. The user reviews hunks interactively using keymaps (`ga`=accept, `gr`=reject, `gA`=accept all, `gR`=reject all, `q`=quit).
 3. Upon completion, Neovim writes a `ReviewEnvelope` to `result_path`.
 4. Neovim fires a `neph:review_done` notification with the `request_id`.
 
@@ -51,6 +59,16 @@ The protocol version is currently `neph-rpc/v1`.
 
 **Params:**
 - `name` (string): The `vim.g` key to remove.
+
+### `bus.register`
+
+**Params:**
+- `name` (string): Agent name (must match a known extension agent).
+- `channel` (number): The agent's msgpack-rpc channel ID (from `nvim_get_api_info()`).
+
+**Returns:** `{ ok: true }` on success, `{ ok: false, error: string }` on failure.
+
+**Validation:** Only agents with `type = "extension"` can register. Unknown agent names or non-extension agents are rejected.
 
 ## Response Format
 
