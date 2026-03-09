@@ -30,9 +30,15 @@ const mockNephInstance = {
   isConnected: vi.fn().mockReturnValue(true),
 };
 
-vi.mock("../../lib/neph-client", () => ({
-  NephClient: vi.fn(() => mockNephInstance),
-}));
+vi.mock("../../lib/neph-client", () => {
+  return {
+    NephClient: class {
+      constructor() {
+        return mockNephInstance;
+      }
+    }
+  };
+});
 vi.mock("node:fs", () => ({ readFileSync: vi.fn() }));
 vi.mock("@mariozechner/pi-coding-agent", () => ({
   createWriteTool: vi.fn(),

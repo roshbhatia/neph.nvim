@@ -10,11 +10,15 @@
  * RPC contract works end-to-end.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { spawn, ChildProcess } from 'node:child_process';
+import { spawn, spawnSync, ChildProcess } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { SocketTransport } from '../../src/transport';
+
+const hasNvim = spawnSync('nvim', ['--version']).status === 0;
+const testIfNvim = hasNvim ? it : it.skip;
+const describeIfNvim = hasNvim ? describe : describe.skip;
 
 const REPO_ROOT = path.resolve(__dirname, '../../../..');
 const SOCKET_PATH = path.join(os.tmpdir(), `neph-test-${process.pid}.sock`);
@@ -39,7 +43,7 @@ function connect(): SocketTransport {
   return new SocketTransport(SOCKET_PATH);
 }
 
-describe('integration: headless nvim', () => {
+describeIfNvim('integration: headless nvim', () => {
   beforeAll(async () => {
     try { fs.unlinkSync(SOCKET_PATH); } catch {}
 
