@@ -18,7 +18,6 @@ end
 function M.open_diff_tab(path, old_lines, new_lines)
   local ft = vim.filetype.match({ filename = path }) or ""
   local basename = vim.fn.fnamemodify(path, ":t")
-  local timestamp = vim.fn.strftime("%H%M%S")
 
   vim.cmd("tabnew")
   local tab = vim.api.nvim_get_current_tabpage()
@@ -26,16 +25,18 @@ function M.open_diff_tab(path, old_lines, new_lines)
   -- Left: current
   local left_buf = vim.api.nvim_get_current_buf()
   vim.api.nvim_buf_set_lines(left_buf, 0, -1, false, old_lines)
-  vim.api.nvim_buf_set_name(left_buf, string.format("[CURRENT %s] %s", timestamp, basename))
+  vim.api.nvim_buf_set_name(left_buf, "neph://current/" .. basename)
   vim.bo[left_buf].buftype = "nofile"
   vim.bo[left_buf].bufhidden = "wipe"
   vim.bo[left_buf].swapfile = false
   vim.bo[left_buf].modified = false
+  vim.b[left_buf].dropbar_disabled = true
   if ft ~= "" then
     vim.bo[left_buf].filetype = ft
   end
 
   local left_win = vim.api.nvim_get_current_win()
+  vim.wo[left_win].number = true
   vim.cmd("diffthis")
 
   -- Right: proposed
@@ -43,11 +44,12 @@ function M.open_diff_tab(path, old_lines, new_lines)
   local right_buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_win_set_buf(0, right_buf)
   vim.api.nvim_buf_set_lines(right_buf, 0, -1, false, new_lines)
-  vim.api.nvim_buf_set_name(right_buf, string.format("[PROPOSED %s] %s", timestamp, basename))
+  vim.api.nvim_buf_set_name(right_buf, "neph://proposed/" .. basename)
   vim.bo[right_buf].buftype = "nofile"
   vim.bo[right_buf].bufhidden = "wipe"
   vim.bo[right_buf].swapfile = false
   vim.bo[right_buf].modifiable = false
+  vim.b[right_buf].dropbar_disabled = true
   if ft ~= "" then
     vim.bo[right_buf].filetype = ft
   end
@@ -55,6 +57,7 @@ function M.open_diff_tab(path, old_lines, new_lines)
   vim.cmd("diffthis")
 
   local right_win = vim.api.nvim_get_current_win()
+  vim.wo[right_win].number = true
   vim.cmd("wincmd h") -- focus left
 
   return {
@@ -140,7 +143,7 @@ function M.build_winbar(idx, total, decision, keymaps)
   end
 
   return string.format(
-    "%%#%s# Hunk %d/%d: %s %%*  %s=accept  %s=reject  %s=all  %s=reject-all  %s=quit",
+    "%%#DiagnosticWarn# CURRENT %%* %%#%s# Hunk %d/%d: %s %%*  %s=accept  %s=reject  %s=all  %s=reject-all  %s=quit",
     hl,
     idx,
     total,

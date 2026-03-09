@@ -62,9 +62,7 @@ function M.validate_agent(def)
 
   -- Validate type value if present
   if def.type ~= nil and not VALID_AGENT_TYPES[def.type] then
-    error(
-      string.format("neph: agent '%s' field 'type' must be one of: extension, hook (got '%s')", name, def.type)
-    )
+    error(string.format("neph: agent '%s' field 'type' must be one of: extension, hook (got '%s')", name, def.type))
   end
 
   if def.tools ~= nil then
