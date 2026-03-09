@@ -74,6 +74,12 @@ function M.get_all()
   return result
 end
 
+--- Return all registered agents, regardless of PATH availability.
+---@return neph.AgentDef[]
+function M.get_all_registered()
+  return agents
+end
+
 --- Return a single agent by name (nil if not found / not available).
 ---@param name string
 ---@return neph.AgentDef|nil
@@ -83,6 +89,21 @@ function M.get_by_name(name)
   end
   for _, agent in ipairs(agents) do
     if agent.name == name and is_available(agent.cmd) then
+      return agent
+    end
+  end
+  return nil
+end
+
+--- Return a single registered agent by name, regardless of PATH availability.
+---@param name string
+---@return neph.AgentDef|nil
+function M.get_registered_by_name(name)
+  if not name or name == "" then
+    return nil
+  end
+  for _, agent in ipairs(agents) do
+    if agent.name == name then
       return agent
     end
   end
