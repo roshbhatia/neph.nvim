@@ -127,7 +127,7 @@ describe("connection lifecycle", () => {
   it("session_start sets nvim status", async () => {
     await activate();
 
-    expect(pi.ui.setStatus).toHaveBeenCalledWith("nvim", " >> ");
+    expect(pi.ui.setStatus).toHaveBeenCalledWith("nvim", "👽 neph");
   });
 
   it("session_start registers write and edit tools", async () => {

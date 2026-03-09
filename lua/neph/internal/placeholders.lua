@@ -82,7 +82,11 @@ M.providers.selection = function(ctx)
     lines[#lines] = lines[#lines]:sub(1, ctx.range.to[2] + 1)
   end
   local text = table.concat(lines, "\n")
-  return text ~= "" and text or nil
+  if text == "" then
+    return nil
+  end
+  local path = context.strip_git_root(vim.api.nvim_buf_get_name(ctx.buf))
+  return string.format("@%s:%d-%d\n%s", path, ctx.range.from[1], ctx.range.to[1], text)
 end
 
 M.providers.word = function(ctx)

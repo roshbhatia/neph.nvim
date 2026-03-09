@@ -157,7 +157,7 @@ export default function (pi: ExtensionAPI) {
   // --- Session lifecycle ---
 
   pi.on("session_start", async (_event, ctx) => {
-    ctx.ui.setStatus("nvim", " >> ");
+    ctx.ui.setStatus("nvim", "👽 neph");
     try {
       await neph.connect();
       await neph.register("pi");
@@ -197,7 +197,7 @@ export default function (pi: ExtensionAPI) {
         const rel = relative(ctx.cwd, abs);
         const shortPath = rel.startsWith("..") ? basename(abs) : rel;
         await neph.setStatus("pi_reading", shortPath);
-        ctx.ui.setStatus("nvim-reading", ` >> 󰍉 >> ${shortPath}`);
+        ctx.ui.setStatus("nvim-reading", `󰈔 ${shortPath}`);
       }
     }
   });
