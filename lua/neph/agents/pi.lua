@@ -2,7 +2,7 @@
 return {
   name = "pi",
   label = "Pi",
-  icon = "",
+  icon = "󰏿",
   cmd = "pi",
   args = { "--continue" },
   type = "extension",
