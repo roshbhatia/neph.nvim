@@ -29,6 +29,21 @@ tasks:
       - nvim --headless --cmd 'set rtp+=.' -l tests/e2e/run.lua
       - bash tests/e2e/agent_launch.sh
 
+  build:
+    desc: Build all companion tools (neph-cli, pi extension)
+    cmds:
+      - task tools:build
+
+  install:
+    desc: Install (symlink) all bundled tools (neph, pi)
+    cmds:
+      - task build
+      - |
+        nvim --headless --cmd 'set rtp+=.' \
+          -c "lua require('neph').setup({ agents = { require('neph.agents.pi') }, backend = require('neph.backends.snacks') })" \
+          -c "lua require('neph.tools').install()" \
+          -c 'qa!'
+
   check:
     desc: Fast local lint + type check (no tests, no builds)
     cmds:
