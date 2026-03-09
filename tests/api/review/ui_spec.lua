@@ -53,6 +53,8 @@ describe("neph.api.review.ui", function()
       reject = "gr",
       accept_all = "gA",
       reject_all = "gR",
+      undo = "gu",
+      submit = "<CR>",
       quit = "q",
     }
 
@@ -80,17 +82,56 @@ describe("neph.api.review.ui", function()
       assert.truthy(bar:find("rejected: too verbose"))
     end)
 
+    it("includes submit keymap in display", function()
+      local bar = ui.build_winbar(1, 1, nil, keymaps)
+      assert.truthy(bar:find("<CR>=submit"))
+      assert.truthy(bar:find("q=quit"))
+    end)
+
     it("uses custom keymaps in display", function()
       local custom = {
         accept = "<leader>a",
         reject = "<leader>r",
         accept_all = "<leader>A",
         reject_all = "<leader>R",
+        undo = "<leader>u",
+        submit = "<leader>s",
         quit = "<leader>q",
       }
       local bar = ui.build_winbar(1, 1, nil, custom)
       assert.truthy(bar:find("<leader>a=accept"))
+      assert.truthy(bar:find("<leader>s=submit"))
       assert.truthy(bar:find("<leader>q=quit"))
+    end)
+
+    it("includes tally when provided", function()
+      local tally = { accepted = 3, rejected = 1, undecided = 2 }
+      local bar = ui.build_winbar(1, 6, nil, keymaps, tally)
+      assert.truthy(bar:find("✓3"))
+      assert.truthy(bar:find("✗1"))
+      assert.truthy(bar:find("?2"))
+    end)
+
+    it("works without tally", function()
+      local bar = ui.build_winbar(1, 3, nil, keymaps)
+      -- Should still render without error
+      assert.truthy(bar:find("Hunk 1/3"))
+    end)
+  end)
+
+  describe("build_right_winbar", function()
+    it("shows PROPOSED with tally", function()
+      local tally = { accepted = 2, rejected = 1, undecided = 0 }
+      local bar = ui.build_right_winbar(tally)
+      assert.truthy(bar:find("PROPOSED"))
+      assert.truthy(bar:find("✓2"))
+      assert.truthy(bar:find("✗1"))
+      assert.truthy(bar:find("?0"))
+    end)
+
+    it("shows PROPOSED without tally", function()
+      local bar = ui.build_right_winbar(nil)
+      assert.truthy(bar:find("PROPOSED"))
     end)
   end)
 end)

@@ -236,6 +236,29 @@ function M.create_session(old_lines, new_lines)
     return nil
   end
 
+  function self.clear_at(idx)
+    if idx < 1 or idx > #hunk_ranges then
+      return false
+    end
+    decisions_by_idx[idx] = nil
+    return true
+  end
+
+  function self.get_tally()
+    local accepted, rejected, undecided = 0, 0, 0
+    for i = 1, #hunk_ranges do
+      local d = decisions_by_idx[i]
+      if not d then
+        undecided = undecided + 1
+      elseif d.decision == "accept" then
+        accepted = accepted + 1
+      elseif d.decision == "reject" then
+        rejected = rejected + 1
+      end
+    end
+    return { accepted = accepted, rejected = rejected, undecided = undecided }
+  end
+
   function self.accept_all_remaining()
     for i = 1, #hunk_ranges do
       if not decisions_by_idx[i] then

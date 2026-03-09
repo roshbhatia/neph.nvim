@@ -35,6 +35,8 @@ local M = {}
 ---@field reject?      string  Reject current hunk (default: gr)
 ---@field accept_all?  string  Accept all remaining (default: gA)
 ---@field reject_all?  string  Reject all remaining (default: gR)
+---@field undo?        string  Clear decision back to undecided (default: gu)
+---@field submit?      string  Submit/finalize review (default: <CR>)
 ---@field quit?        string  Quit review (default: q)
 
 ---@type neph.Config
@@ -57,6 +59,8 @@ M.defaults = {
     reject = "gr",
     accept_all = "gA",
     reject_all = "gR",
+    undo = "gu",
+    submit = "<CR>",
     quit = "q",
   },
 }

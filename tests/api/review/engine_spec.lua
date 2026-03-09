@@ -348,6 +348,125 @@ describe("neph.api.review.engine", function()
     end)
   end)
 
+  describe("clear_at", function()
+    local function make_multi_hunk(n)
+      local old, new = {}, {}
+      for i = 1, n do
+        old[#old + 1] = "old_" .. i
+        new[#new + 1] = "new_" .. i
+        if i < n then
+          old[#old + 1] = "sep_" .. i
+          new[#new + 1] = "sep_" .. i
+        end
+      end
+      return old, new
+    end
+
+    it("clears an accepted decision", function()
+      local old, new = make_multi_hunk(3)
+      local session = engine.create_session(old, new)
+      session.accept_at(2)
+      assert.are.equal("accept", session.get_decision(2).decision)
+      assert.is_true(session.clear_at(2))
+      assert.is_nil(session.get_decision(2))
+    end)
+
+    it("clears a rejected decision", function()
+      local old, new = make_multi_hunk(3)
+      local session = engine.create_session(old, new)
+      session.reject_at(1, "bad")
+      assert.is_true(session.clear_at(1))
+      assert.is_nil(session.get_decision(1))
+    end)
+
+    it("no-op on already undecided hunk", function()
+      local old, new = make_multi_hunk(2)
+      local session = engine.create_session(old, new)
+      assert.is_true(session.clear_at(1))
+      assert.is_nil(session.get_decision(1))
+    end)
+
+    it("returns false for out-of-range", function()
+      local old, new = make_multi_hunk(2)
+      local session = engine.create_session(old, new)
+      assert.is_false(session.clear_at(0))
+      assert.is_false(session.clear_at(3))
+    end)
+
+    it("clear_at followed by is_complete returns false", function()
+      local old, new = make_multi_hunk(2)
+      local session = engine.create_session(old, new)
+      session.accept_at(1)
+      session.accept_at(2)
+      assert.is_true(session.is_complete())
+      session.clear_at(1)
+      assert.is_false(session.is_complete())
+    end)
+
+    it("finalize after clear_at treats cleared hunks as rejected with Undecided", function()
+      local old, new = make_multi_hunk(2)
+      local session = engine.create_session(old, new)
+      session.accept_at(1)
+      session.accept_at(2)
+      session.clear_at(2)
+      local envelope = session.finalize()
+      assert.are.equal("partial", envelope.decision)
+      assert.are.equal("reject", envelope.hunks[2].decision)
+      assert.are.equal("Undecided", envelope.hunks[2].reason)
+    end)
+  end)
+
+  describe("get_tally", function()
+    local function make_multi_hunk(n)
+      local old, new = {}, {}
+      for i = 1, n do
+        old[#old + 1] = "old_" .. i
+        new[#new + 1] = "new_" .. i
+        if i < n then
+          old[#old + 1] = "sep_" .. i
+          new[#new + 1] = "sep_" .. i
+        end
+      end
+      return old, new
+    end
+
+    it("all undecided", function()
+      local old, new = make_multi_hunk(3)
+      local session = engine.create_session(old, new)
+      local tally = session.get_tally()
+      assert.are.same({ accepted = 0, rejected = 0, undecided = 3 }, tally)
+    end)
+
+    it("mixed decisions", function()
+      local old, new = make_multi_hunk(4)
+      local session = engine.create_session(old, new)
+      session.accept_at(1)
+      session.accept_at(3)
+      session.reject_at(2, "no")
+      local tally = session.get_tally()
+      assert.are.same({ accepted = 2, rejected = 1, undecided = 1 }, tally)
+    end)
+
+    it("all decided", function()
+      local old, new = make_multi_hunk(2)
+      local session = engine.create_session(old, new)
+      session.accept_at(1)
+      session.reject_at(2)
+      local tally = session.get_tally()
+      assert.are.same({ accepted = 1, rejected = 1, undecided = 0 }, tally)
+    end)
+
+    it("updates after clear_at", function()
+      local old, new = make_multi_hunk(2)
+      local session = engine.create_session(old, new)
+      session.accept_at(1)
+      session.accept_at(2)
+      assert.are.same({ accepted = 2, rejected = 0, undecided = 0 }, session.get_tally())
+      session.clear_at(1)
+      assert.are.same({ accepted = 1, rejected = 0, undecided = 1 }, session.get_tally())
+    end)
+  end)
+
   describe("state machine edge cases", function()
     it("no hunks (identical input) → is_done immediately, finalize gives accept", function()
       local lines = { "same", "lines" }

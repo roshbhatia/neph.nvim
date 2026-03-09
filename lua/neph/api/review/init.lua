@@ -46,7 +46,6 @@ function M.open(params)
 
   ui.setup_signs()
   local ui_state = ui.open_diff_tab(path, old_lines, new_lines)
-  ui_state.sign_ids = {}
 
   local result_written = false
 
