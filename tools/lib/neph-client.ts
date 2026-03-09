@@ -10,7 +10,20 @@ export interface ReviewEnvelope {
   reason?: string;
 }
 
+export enum ConnectionState {
+  DISCONNECTED = "disconnected",
+  CONNECTING = "connecting",
+  CONNECTED = "connected",
+  RECONNECTING = "reconnecting",
+}
+
 const RPC_CALL = 'return require("neph.rpc").request(...)';
+
+function fullJitter(base: number, attempt: number, cap: number): number {
+  const exponential = base * Math.pow(2, attempt);
+  const capped = Math.min(exponential, cap);
+  return Math.floor(Math.random() * capped);
+}
 
 export class NephClient {
   private client: NeovimClient | null = null;
@@ -21,7 +34,9 @@ export class NephClient {
   private reconnecting = false;
   private disconnected = false;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-  private reconnectDelay = 100;
+  private reconnectAttempt = 0;
+  private connectionState: ConnectionState = ConnectionState.DISCONNECTED;
+  private static readonly BASE_DELAY = 100;
   private static readonly MAX_RECONNECT_DELAY = 5000;
 
   async connect(socketPath?: string): Promise<void> {
@@ -31,11 +46,14 @@ export class NephClient {
     }
     this.socketPath = path;
     this.disconnected = false;
+    this.connectionState = ConnectionState.CONNECTING;
+    log("neph-client", `state: ${this.connectionState}`);
 
     this.client = attach({ socket: path });
     const apiInfo = await this.client.request("nvim_get_api_info");
     this.channelId = (apiInfo as [number, unknown])[0];
-    log("neph-client", `connected to ${path} (channel=${this.channelId})`);
+    this.connectionState = ConnectionState.CONNECTED;
+    log("neph-client", `connected to ${path} (channel=${this.channelId}) state: ${this.connectionState}`);
 
     // Listen for prompt notifications
     this.client.on("notification", (method: string, args: unknown[]) => {
@@ -48,9 +66,10 @@ export class NephClient {
 
     // Handle disconnect
     this.client.on("disconnect", () => {
-      log("neph-client", "socket disconnected");
+      log("neph-client", `socket disconnected, state: ${this.connectionState} -> disconnected`);
       this.client = null;
       this.channelId = null;
+      this.connectionState = ConnectionState.DISCONNECTED;
       if (!this.disconnected) {
         this._scheduleReconnect();
       }
@@ -134,6 +153,8 @@ export class NephClient {
 
   disconnect(): void {
     this.disconnected = true;
+    this.connectionState = ConnectionState.DISCONNECTED;
+    log("neph-client", `state: ${this.connectionState}`);
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
@@ -154,9 +175,15 @@ export class NephClient {
     return this.client !== null && this.channelId !== null;
   }
 
+  getConnectionState(): ConnectionState {
+    return this.connectionState;
+  }
+
   private _scheduleReconnect(): void {
     if (this.disconnected || this.reconnecting) return;
     this.reconnecting = true;
+    this.connectionState = ConnectionState.RECONNECTING;
+    log("neph-client", `state: ${this.connectionState}`);
 
     const attempt = async () => {
       if (this.disconnected) {
@@ -164,27 +191,27 @@ export class NephClient {
         return;
       }
       try {
-        log("neph-client", `reconnecting (delay=${this.reconnectDelay}ms)...`);
+        const delay = fullJitter(NephClient.BASE_DELAY, this.reconnectAttempt, NephClient.MAX_RECONNECT_DELAY);
+        log("neph-client", `reconnecting (attempt=${this.reconnectAttempt}, delay=${delay}ms)...`);
         await this.connect(this.socketPath!);
         if (this.agentName) {
           await this.register(this.agentName);
         }
-        this.reconnectDelay = 100;
+        this.reconnectAttempt = 0;
         this.reconnecting = false;
         log("neph-client", "reconnected successfully");
       } catch {
-        this.reconnectDelay = Math.min(
-          this.reconnectDelay * 2,
-          NephClient.MAX_RECONNECT_DELAY,
-        );
+        this.reconnectAttempt++;
         if (!this.disconnected) {
-          this.reconnectTimer = setTimeout(attempt, this.reconnectDelay);
+          const nextDelay = fullJitter(NephClient.BASE_DELAY, this.reconnectAttempt, NephClient.MAX_RECONNECT_DELAY);
+          this.reconnectTimer = setTimeout(attempt, nextDelay);
         } else {
           this.reconnecting = false;
         }
       }
     };
 
-    this.reconnectTimer = setTimeout(attempt, this.reconnectDelay);
+    const initialDelay = fullJitter(NephClient.BASE_DELAY, this.reconnectAttempt, NephClient.MAX_RECONNECT_DELAY);
+    this.reconnectTimer = setTimeout(attempt, initialDelay);
   }
 }

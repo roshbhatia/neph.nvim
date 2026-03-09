@@ -25,7 +25,404 @@ local UNIVERSAL_SYMLINK = { src = "neph-cli/dist/index.js", dst = "~/.local/bin/
 local UNIVERSAL_NAME = "neph-cli"
 
 -- ---------------------------------------------------------------------------
--- Per-agent stamp files
+-- Error codes and structured results
+-- ---------------------------------------------------------------------------
+
+local ERROR_CODES = {
+  EPERM = "EPERM",
+  ENOENT = "ENOENT",
+  BUILD_FAILED = "BUILD_FAILED",
+  VALIDATION_FAILED = "VALIDATION_FAILED",
+  ECONNREFUSED = "ECONNREFUSED",
+}
+
+local function make_error(code, message, remedy)
+  return {
+    code = code,
+    message = message,
+    remedy = remedy,
+  }
+end
+
+-- ---------------------------------------------------------------------------
+-- Fingerprint manifest (replaces stamp files)
+-- ---------------------------------------------------------------------------
+
+local function manifest_path()
+  local state_dir = vim.fn.stdpath("state")
+  if not state_dir then
+    state_dir = vim.fn.stdpath("data")
+  end
+  return state_dir .. "/neph/fingerprints.json"
+end
+
+local function hash_file(path)
+  local f = io.open(path, "rb")
+  if not f then
+    return nil
+  end
+  local content = f:read("*all")
+  f:close()
+  return vim.fn.sha256(content)
+end
+
+local function compute_fingerprint(root, agent, is_universal)
+  local fp = { sources = {}, artifacts = {} }
+
+  if is_universal then
+    local src_dirs = UNIVERSAL_BUILD.src_dirs
+    for _, src_dir in ipairs(src_dirs) do
+      local dir_path = root .. "/tools/" .. UNIVERSAL_BUILD.dir .. "/" .. src_dir
+      local files = vim.fn.glob(dir_path .. "/**/*.ts", false, true)
+      for _, file_path in ipairs(files) do
+        local hash = hash_file(file_path)
+        if hash then
+          local rel_path = file_path:sub(#root + 2)
+          fp.sources[rel_path] = hash
+        end
+      end
+    end
+
+    local artifact_path = root .. "/tools/" .. UNIVERSAL_BUILD.dir .. "/" .. UNIVERSAL_BUILD.check
+    local artifact_hash = hash_file(artifact_path)
+    if artifact_hash then
+      local rel_path = artifact_path:sub(#root + 2)
+      fp.artifacts[rel_path] = artifact_hash
+    end
+
+    return fp
+  end
+
+  local tools = agent.tools
+  if not tools then
+    return fp
+  end
+
+  for _, build_spec in ipairs(tools.builds or {}) do
+    for _, src_dir in ipairs(build_spec.src_dirs or {}) do
+      local dir_path = root .. "/tools/" .. build_spec.dir .. "/" .. src_dir
+      local files = vim.fn.glob(dir_path .. "/**/*.ts", false, true)
+      for _, file_path in ipairs(files) do
+        local hash = hash_file(file_path)
+        if hash then
+          local rel_path = file_path:sub(#root + 2)
+          fp.sources[rel_path] = hash
+        end
+      end
+    end
+
+    local artifact_path = root .. "/tools/" .. build_spec.dir .. "/" .. build_spec.check
+    local artifact_hash = hash_file(artifact_path)
+    if artifact_hash then
+      local rel_path = artifact_path:sub(#root + 2)
+      fp.artifacts[rel_path] = artifact_hash
+    end
+  end
+
+  return fp
+end
+
+local function load_manifest()
+  local path = manifest_path()
+  if vim.fn.filereadable(path) == 0 then
+    return {}
+  end
+
+  local content = vim.fn.readfile(path)
+  if not content or #content == 0 then
+    return {}
+  end
+
+  local ok, data = pcall(vim.json.decode, table.concat(content, "\n"))
+  if not ok or type(data) ~= "table" then
+    return {}
+  end
+
+  return data
+end
+
+local function save_manifest(data)
+  local path = manifest_path()
+  local dir = vim.fn.fnamemodify(path, ":h")
+
+  if vim.fn.isdirectory(dir) == 0 then
+    vim.fn.mkdir(dir, "p")
+  end
+
+  local tmp_path = path .. ".tmp"
+  local json_str = vim.json.encode(data)
+  vim.fn.writefile({ json_str }, tmp_path)
+
+  local ok, err = os.rename(tmp_path, path)
+  if not ok then
+    pcall(os.remove, tmp_path)
+    error("Failed to save manifest: " .. (err or "unknown error"))
+  end
+end
+
+local function is_agent_current(manifest, root, agent, is_universal)
+  local name = is_universal and UNIVERSAL_NAME or agent.name
+  local stored_fp = manifest[name]
+  if not stored_fp then
+    return false
+  end
+
+  local current_fp = compute_fingerprint(root, agent, is_universal)
+
+  for path, hash in pairs(current_fp.sources) do
+    if stored_fp.sources[path] ~= hash then
+      return false
+    end
+  end
+
+  for path, hash in pairs(current_fp.artifacts) do
+    if stored_fp.artifacts[path] ~= hash then
+      return false
+    end
+  end
+
+  return true
+end
+
+-- ---------------------------------------------------------------------------
+-- Verification (pre-flight and post-install)
+-- ---------------------------------------------------------------------------
+
+local function preflight_checks()
+  local missing = {}
+
+  if vim.fn.executable("node") == 0 then
+    table.insert(missing, "node")
+  end
+
+  if vim.fn.executable("npm") == 0 then
+    table.insert(missing, "npm")
+  end
+
+  return {
+    ok = #missing == 0,
+    missing = missing,
+  }
+end
+
+local function verify_symlink(src, dst)
+  local stat = vim.uv.fs_lstat(dst)
+  if not stat then
+    return "missing"
+  end
+  if stat.type ~= "link" then
+    return "wrong_target"
+  end
+  local target = vim.uv.fs_readlink(dst)
+  if not target then
+    return "broken"
+  end
+  if target ~= src then
+    return "wrong_target"
+  end
+  local target_stat = vim.uv.fs_stat(dst)
+  if not target_stat then
+    return "broken"
+  end
+  return "ok"
+end
+
+local function verify_build(root, build_spec)
+  local artifact_path = root .. "/tools/" .. build_spec.dir .. "/" .. build_spec.check
+  return vim.fn.filereadable(artifact_path) == 1
+end
+
+local function verify_merge(dst)
+  if vim.fn.filereadable(dst) == 0 then
+    return false
+  end
+
+  local content = vim.fn.readfile(dst)
+  if not content or #content == 0 then
+    return false
+  end
+
+  local ok, _ = pcall(vim.json.decode, table.concat(content, "\n"))
+  return ok
+end
+
+local function postinstall_validate(root, agent)
+  local results = {}
+  local t = agent.tools
+  if not t then
+    return results
+  end
+
+  for _, sym in ipairs(t.symlinks or {}) do
+    local src = root .. "/tools/" .. sym.src
+    local dst = vim.fn.expand(sym.dst)
+    local status = verify_symlink(src, dst)
+    table.insert(results, {
+      type = "symlink",
+      path = dst,
+      ok = status == "ok",
+      status = status,
+    })
+  end
+
+  for _, build_spec in ipairs(t.builds or {}) do
+    local ok = verify_build(root, build_spec)
+    table.insert(results, {
+      type = "build",
+      path = build_spec.dir .. "/" .. build_spec.check,
+      ok = ok,
+    })
+  end
+
+  for _, spec in ipairs(t.merges or {}) do
+    local dst = vim.fn.expand(spec.dst)
+    local ok = verify_merge(dst)
+    table.insert(results, {
+      type = "merge",
+      path = dst,
+      ok = ok,
+    })
+  end
+
+  return results
+end
+
+-- ---------------------------------------------------------------------------
+-- Transaction system (atomic install with rollback)
+-- ---------------------------------------------------------------------------
+
+local function transaction_dir()
+  local state_dir = vim.fn.stdpath("state")
+  if not state_dir then
+    state_dir = vim.fn.stdpath("data")
+  end
+  return state_dir .. "/neph/transactions"
+end
+
+local function transaction_path(agent_name)
+  return transaction_dir() .. "/" .. agent_name .. ".json"
+end
+
+local function begin_transaction(agent_name)
+  local dir = transaction_dir()
+  if vim.fn.isdirectory(dir) == 0 then
+    vim.fn.mkdir(dir, "p")
+  end
+
+  local tx = {
+    agent = agent_name,
+    started = os.time(),
+    operations = {},
+    status = "in_progress",
+  }
+
+  local path = transaction_path(agent_name)
+  local tmp_path = path .. ".tmp"
+  vim.fn.writefile({ vim.json.encode(tx) }, tmp_path)
+  os.rename(tmp_path, path)
+
+  return tx
+end
+
+local function log_operation(agent_name, op)
+  local path = transaction_path(agent_name)
+  if vim.fn.filereadable(path) == 0 then
+    return
+  end
+
+  local content = vim.fn.readfile(path)
+  local ok, tx = pcall(vim.json.decode, table.concat(content, "\n"))
+  if not ok then
+    return
+  end
+
+  table.insert(tx.operations, op)
+
+  local tmp_path = path .. ".tmp"
+  vim.fn.writefile({ vim.json.encode(tx) }, tmp_path)
+  os.rename(tmp_path, path)
+end
+
+local function commit_transaction(agent_name)
+  local path = transaction_path(agent_name)
+  if vim.fn.filereadable(path) == 0 then
+    return
+  end
+
+  local content = vim.fn.readfile(path)
+  local ok, tx = pcall(vim.json.decode, table.concat(content, "\n"))
+  if not ok then
+    return
+  end
+
+  tx.status = "complete"
+  tx.completed = os.time()
+
+  local tmp_path = path .. ".tmp"
+  vim.fn.writefile({ vim.json.encode(tx) }, tmp_path)
+  os.rename(tmp_path, path)
+
+  -- Clean up completed transaction after short delay
+  vim.defer_fn(function()
+    pcall(os.remove, path)
+  end, 1000)
+end
+
+local function rollback_transaction(agent_name, tx)
+  -- Reverse operations in reverse order
+  for i = #tx.operations, 1, -1 do
+    local op = tx.operations[i]
+
+    if op.type == "symlink" and op.dst then
+      pcall(os.remove, op.dst)
+      if op.backup then
+        pcall(os.rename, op.backup, op.dst)
+      end
+    elseif op.type == "merge" and op.backup then
+      pcall(os.rename, op.backup, op.dst)
+    elseif op.type == "file" and op.dst then
+      if op.backup then
+        pcall(os.rename, op.backup, op.dst)
+      else
+        pcall(os.remove, op.dst)
+      end
+    end
+  end
+
+  -- Mark transaction as rolled back
+  tx.status = "rolled_back"
+  tx.rolled_back_at = os.time()
+
+  local path = transaction_path(agent_name)
+  local tmp_path = path .. ".tmp"
+  vim.fn.writefile({ vim.json.encode(tx) }, tmp_path)
+  os.rename(tmp_path, path)
+end
+
+local function detect_incomplete_transactions()
+  local dir = transaction_dir()
+  if vim.fn.isdirectory(dir) == 0 then
+    return {}
+  end
+
+  local incomplete = {}
+  local files = vim.fn.glob(dir .. "/*.json", false, true)
+
+  for _, file in ipairs(files) do
+    local content = vim.fn.readfile(file)
+    if content and #content > 0 then
+      local ok, tx = pcall(vim.json.decode, table.concat(content, "\n"))
+      if ok and tx.status == "in_progress" then
+        table.insert(incomplete, tx)
+      end
+    end
+  end
+
+  return incomplete
+end
+
+-- ---------------------------------------------------------------------------
+-- Per-agent stamp files (legacy, for backward compat)
 -- ---------------------------------------------------------------------------
 
 ---@param name string  agent name or "neph-cli"
@@ -66,20 +463,41 @@ end
 ---@param root string
 ---@param name string
 ---@return boolean  true if install should be skipped
-local function is_agent_up_to_date(root, name)
+local function is_agent_up_to_date(root, agent, name)
+  local manifest = load_manifest()
+
+  if agent then
+    if is_agent_current(manifest, root, agent, false) then
+      return true
+    end
+  elseif name == UNIVERSAL_NAME then
+    if is_agent_current(manifest, root, {}, true) then
+      return true
+    end
+  end
+
+  -- Fallback to stamp for backward compat
   local sp = stamp_path(name)
   if vim.fn.filereadable(sp) == 0 then
     return false
   end
-  local content = vim.fn.readfile(sp)
-  if not content or #content == 0 then
+  local stamp_content = vim.fn.readfile(sp)
+  if not stamp_content or #stamp_content == 0 then
     return false
   end
-  return vim.trim(content[1]) == plugin_version(root)
+  return vim.trim(stamp_content[1]) == plugin_version(root)
 end
 
-local function touch_stamp(name)
+local function touch_stamp(agent, name)
   local root = plugin_root()
+
+  -- Update manifest
+  local manifest = load_manifest()
+  local fp = compute_fingerprint(root, agent or {}, name == UNIVERSAL_NAME)
+  manifest[name] = fp
+  pcall(save_manifest, manifest)
+
+  -- Keep legacy stamp for backward compat
   local sp = stamp_path(name)
   vim.fn.writefile({ plugin_version(root) }, sp)
 end
@@ -519,7 +937,7 @@ function M.install_async()
   local agents = require("neph.internal.agents").get_all()
 
   -- Universal neph-cli
-  if not is_agent_up_to_date(root, UNIVERSAL_NAME) then
+  if not is_agent_up_to_date(root, nil, UNIVERSAL_NAME) then
     local results = M.install_universal(root)
     local all_ok = true
     for _, r in ipairs(results) do
@@ -537,7 +955,7 @@ function M.install_async()
         local dst = vim.fn.expand(UNIVERSAL_SYMLINK.dst)
         M.install_symlink(src, dst)
         if all_ok then
-          touch_stamp(UNIVERSAL_NAME)
+          touch_stamp(nil, UNIVERSAL_NAME)
         end
       else
         vim.notify("Neph: " .. UNIVERSAL_NAME .. ": " .. (err or "build failed"), vim.log.levels.WARN)
@@ -547,7 +965,7 @@ function M.install_async()
 
   -- Per-agent install
   for _, agent in ipairs(agents) do
-    if agent.tools and not is_agent_up_to_date(root, agent.name) then
+    if agent.tools and not is_agent_up_to_date(root, agent, agent.name) then
       local results = M.install_agent(root, agent)
       local agent_ok = true
       for _, r in ipairs(results) do
@@ -570,13 +988,13 @@ function M.install_async()
             end
             pending = pending - 1
             if pending == 0 and agent_ok and build_ok then
-              touch_stamp(agent.name)
+              touch_stamp(agent, agent.name)
             end
           end)
         end
       else
         if agent_ok then
-          touch_stamp(agent.name)
+          touch_stamp(agent, agent.name)
         end
       end
     end
@@ -594,12 +1012,12 @@ function M.check_version()
   local agents = require("neph.internal.agents").get_all()
   local stale = {}
 
-  if not is_agent_up_to_date(root, UNIVERSAL_NAME) then
+  if not is_agent_up_to_date(root, nil, UNIVERSAL_NAME) then
     table.insert(stale, UNIVERSAL_NAME)
   end
 
   for _, agent in ipairs(agents) do
-    if agent.tools and not is_agent_up_to_date(root, agent.name) then
+    if agent.tools and not is_agent_up_to_date(root, agent, agent.name) then
       table.insert(stale, agent.name)
     end
   end
@@ -618,12 +1036,12 @@ function M.install()
   local agents = require("neph.internal.agents").get_all()
 
   M.install_universal(root, { sync = true })
-  touch_stamp(UNIVERSAL_NAME)
+  touch_stamp(nil, UNIVERSAL_NAME)
 
   for _, agent in ipairs(agents) do
     if agent.tools then
       M.install_agent(root, agent, { sync = true })
-      touch_stamp(agent.name)
+      touch_stamp(agent, agent.name)
     end
   end
 end
