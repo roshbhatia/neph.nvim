@@ -55,11 +55,7 @@ function M.collect_context()
             local ok_sel, sel = pcall(function()
               local start_pos = vim.fn.getpos("v")
               local end_pos = vim.fn.getpos(".")
-              local lines = vim.fn.getregion(
-                start_pos,
-                end_pos,
-                { type = mode }
-              )
+              local lines = vim.fn.getregion(start_pos, end_pos, { type = mode })
               return table.concat(lines, "\n")
             end)
             if ok_sel and sel and #sel > 0 then
@@ -78,8 +74,12 @@ function M.collect_context()
 
   -- Sort by active first, then limit to MAX_FILES
   table.sort(files, function(a, b)
-    if a.isActive then return true end
-    if b.isActive then return false end
+    if a.isActive then
+      return true
+    end
+    if b.isActive then
+      return false
+    end
     return a.timestamp > b.timestamp
   end)
 
