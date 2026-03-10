@@ -54,7 +54,6 @@ function M.setup(opts)
   require("neph.internal.session").setup(config.current, backend)
   require("neph.internal.file_refresh").setup(config.current)
 
-
   -- Register :NephDebug command
   vim.api.nvim_create_user_command("NephDebug", function(cmd_opts)
     local log = require("neph.internal.log")
@@ -252,22 +251,6 @@ function M.setup(opts)
       return {}
     end,
   })
-
-  -- Check if tools need updating (lightweight version check, no auto-install)
-  if vim.v.vim_did_enter == 1 then
-    vim.schedule(function()
-      require("neph.tools").check_version()
-    end)
-  else
-    vim.api.nvim_create_autocmd("UIEnter", {
-      once = true,
-      callback = function()
-        vim.schedule(function()
-          require("neph.tools").check_version()
-        end)
-      end,
-    })
-  end
 end
 
 return M
