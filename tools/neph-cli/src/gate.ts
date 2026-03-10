@@ -96,7 +96,7 @@ function reconstructEdit(filePath: string, oldStr: string, newStr: string): stri
   if (!current.includes(oldStr)) {
     return null; // old_str not found — let the agent handle the error
   }
-  return current.replace(oldStr, newStr);
+  return current.replaceAll(oldStr, newStr);
 }
 
 /** Check if any string value in an object looks like a file path */
@@ -319,6 +319,9 @@ export async function runGate(
       if (filename === path.basename(resultPath) && fs.existsSync(resultPath)) {
         handleResult(fs.readFileSync(resultPath, 'utf8'));
       }
+    });
+    watcher.on('error', (err) => {
+      process.stderr.write(`neph gate: fs.watch error: ${err.message}\n`);
     });
 
     transport.executeLua(RPC_CALL, [

@@ -82,10 +82,17 @@ export class McpServer {
       return;
     }
 
-    // Read body
+    // Read body (1MB limit)
+    const MAX_BODY = 1_048_576;
     let body = "";
     for await (const chunk of req) {
       body += chunk;
+      if (body.length > MAX_BODY) {
+        req.destroy();
+        res.writeHead(413, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Payload Too Large" }));
+        return;
+      }
     }
 
     let rpc: JsonRpcRequest;

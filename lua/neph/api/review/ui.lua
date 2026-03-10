@@ -307,13 +307,6 @@ local function jump_to_hunk(ui_state, hunks, idx)
   end
 end
 
---- Remove all buffer-local keymaps registered for review.
-local function unmap_keymaps(buf, keymaps)
-  for _, lhs in pairs(keymaps) do
-    pcall(vim.keymap.del, "n", lhs, { buffer = buf })
-  end
-end
-
 function M.start_review(session, ui_state, on_done)
   local config = vim.g.neph_config or {}
   local keymaps = vim.tbl_extend("force", {

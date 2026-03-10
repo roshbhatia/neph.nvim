@@ -47,6 +47,16 @@ describe('parseClaude', () => {
     expect(result).toBeNull();
   });
 
+  it('Edit replaces all occurrences of old_str', () => {
+    fs.writeFileSync(tmpFile, 'foo bar foo baz foo');
+    const result = parseClaude({
+      tool_name: 'Edit',
+      tool_input: { file_path: tmpFile, old_str: 'foo', new_str: 'qux' },
+    });
+    expect(result).not.toBeNull();
+    expect(result!.content).toBe('qux bar qux baz qux');
+  });
+
   it('Edit on nonexistent file returns new_str as content', () => {
     const result = parseClaude({
       tool_name: 'Edit',

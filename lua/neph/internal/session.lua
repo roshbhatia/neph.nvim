@@ -342,6 +342,8 @@ function M.send(termname, text, opts)
     if job_id > 0 then
       vim.fn.chansend(job_id, full_text)
       vim.fn.chanclose(job_id, "stdin")
+    else
+      vim.notify("Neph: failed to start wezterm send-text", vim.log.levels.WARN)
     end
   elseif td.buf and vim.api.nvim_buf_is_valid(td.buf) then
     local chan = vim.b[td.buf].terminal_job_id

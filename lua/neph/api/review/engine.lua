@@ -103,7 +103,7 @@ function M.apply_decisions(old_lines, new_lines, decisions)
     if decision and decision.decision == "accept" then
       local start_a, count_a, start_b, count_b = unpack(hunk)
       local lines = {}
-      for j = start_b, start_b + count_b - 1 do
+      for j = start_b, math.min(start_b + count_b - 1, #new_lines) do
         lines[#lines + 1] = new_lines[j]
       end
       patches[#patches + 1] = { start_a = start_a, count_a = count_a, lines = lines }

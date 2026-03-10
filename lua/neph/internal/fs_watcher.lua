@@ -186,7 +186,12 @@ function M.watch_file(filepath)
     debounce_timers[filepath] = vim.uv.new_timer()
 
     debounce_timers[filepath]:start(200, 0, vim.schedule_wrap(function()
+      local timer = debounce_timers[filepath]
       debounce_timers[filepath] = nil
+      if timer then
+        pcall(timer.stop, timer)
+        pcall(timer.close, timer)
+      end
       on_file_changed(filepath)
     end))
   end)

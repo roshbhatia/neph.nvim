@@ -95,7 +95,7 @@ export default function (amp: PluginAPI) {
           | string
           | undefined;
         if (oldStr !== undefined && newStr !== undefined) {
-          content = current.replace(oldStr, newStr);
+          content = current.replaceAll(oldStr, newStr);
         } else {
           content = (input.content as string) ?? current;
         }

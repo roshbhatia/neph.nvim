@@ -27,7 +27,7 @@ export default tool({
       return `Edit failed: old_str not found in ${args.file_path}`;
     }
 
-    const newContent = currentContent.replace(args.old_str, args.new_str);
+    const newContent = currentContent.replaceAll(args.old_str, args.new_str);
 
     neph("set", "opencode_active", "true");
     try {

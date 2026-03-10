@@ -206,6 +206,9 @@ export async function runCommand(transport: NvimTransport | null, command: strin
           await handleResult(result);
         }
       });
+      watcher.on('error', (err) => {
+        process.stderr.write(`neph: fs.watch error: ${err.message}\n`);
+      });
     }
 
     try {

@@ -130,6 +130,27 @@ describe("NephClient", () => {
     vi.useRealTimers();
   });
 
+  it("uiSelect resolves undefined after 60s timeout", async () => {
+    vi.useFakeTimers();
+    const client = new NephClient();
+    const mock = (await import("neovim") as any).__mockClient;
+    mock.request.mockResolvedValue([5, {}]);
+    mock.on.mockImplementation(() => {});
+    mock.executeLua.mockResolvedValue({ ok: true });
+
+    await client.connect("/tmp/test.sock");
+
+    const selectPromise = client.uiSelect("Pick one", ["a", "b"]);
+
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    const result = await selectPromise;
+    expect(result).toBeUndefined();
+
+    client.disconnect();
+    vi.useRealTimers();
+  });
+
   it("setStatus calls status.set RPC", async () => {
     const client = new NephClient();
     const mock = (await import("neovim") as any).__mockClient;

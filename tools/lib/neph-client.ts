@@ -42,6 +42,7 @@ export class NephClient {
   private static readonly BASE_DELAY = 100;
   private static readonly MAX_RECONNECT_DELAY = 5000;
   private static readonly REVIEW_TIMEOUT_MS = 300_000;
+  private static readonly UI_DIALOG_TIMEOUT_MS = 60_000;
 
   async connect(socketPath?: string): Promise<void> {
     const path = socketPath || process.env.NVIM_SOCKET_PATH;
@@ -202,7 +203,13 @@ export class NephClient {
     if (!this.client || this.channelId === null) return undefined;
     const requestId = randomUUID();
     const promise = new Promise<string | undefined>((resolve) => {
+      const timer = setTimeout(() => {
+        this.pendingRequests.delete(requestId);
+        resolve(undefined);
+      }, NephClient.UI_DIALOG_TIMEOUT_MS);
+
       this.pendingRequests.set(requestId, (data: any) => {
+        clearTimeout(timer);
         resolve(data.choice);
       });
     });
@@ -229,7 +236,13 @@ export class NephClient {
     if (!this.client || this.channelId === null) return undefined;
     const requestId = randomUUID();
     const promise = new Promise<string | undefined>((resolve) => {
+      const timer = setTimeout(() => {
+        this.pendingRequests.delete(requestId);
+        resolve(undefined);
+      }, NephClient.UI_DIALOG_TIMEOUT_MS);
+
       this.pendingRequests.set(requestId, (data: any) => {
+        clearTimeout(timer);
         resolve(data.choice);
       });
     });

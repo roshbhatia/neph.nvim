@@ -167,7 +167,7 @@ function M._apply_post_write(file_path, envelope, buffer_lines)
       return
     end
     f:write(envelope.content)
-    if not envelope.content:sub(-1) == "\n" then
+    if envelope.content:sub(-1) ~= "\n" then
       f:write("\n")
     end
     f:close()
