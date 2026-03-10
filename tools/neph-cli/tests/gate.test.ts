@@ -248,6 +248,51 @@ describe('runGate', () => {
     }));
     expect(code).toBe(0); // fail-open, no transport calls
   });
+
+  it('emits stderr warning when transport is null for file mutation', async () => {
+    const origEnv = process.env.NVIM_SOCKET_PATH;
+    process.env.NVIM_SOCKET_PATH = '/tmp/fake-nvim-socket';
+    try {
+      const code = await runGate(null, 'claude', JSON.stringify({
+        tool_name: 'Write',
+        tool_input: { file_path: '/tmp/test.txt', content: 'hello' },
+      }));
+      expect(code).toBe(0);
+      expect(stderrSpy).toHaveBeenCalledWith(
+        expect.stringContaining('WARNING'),
+      );
+      expect(stderrSpy).toHaveBeenCalledWith(
+        expect.stringContaining('/tmp/fake-nvim-socket'),
+      );
+    } finally {
+      if (origEnv !== undefined) {
+        process.env.NVIM_SOCKET_PATH = origEnv;
+      } else {
+        delete process.env.NVIM_SOCKET_PATH;
+      }
+    }
+  });
+
+  it('emits stderr warning mentioning "not set" when NVIM_SOCKET_PATH is absent', async () => {
+    const origEnv = process.env.NVIM_SOCKET_PATH;
+    delete process.env.NVIM_SOCKET_PATH;
+    try {
+      const code = await runGate(null, 'claude', JSON.stringify({
+        tool_name: 'Write',
+        tool_input: { file_path: '/tmp/test.txt', content: 'hello' },
+      }));
+      expect(code).toBe(0);
+      expect(stderrSpy).toHaveBeenCalledWith(
+        expect.stringContaining('not set'),
+      );
+    } finally {
+      if (origEnv !== undefined) {
+        process.env.NVIM_SOCKET_PATH = origEnv;
+      } else {
+        delete process.env.NVIM_SOCKET_PATH;
+      }
+    }
+  });
 });
 
 describe('debug logging on null-return', () => {

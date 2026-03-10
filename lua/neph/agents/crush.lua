@@ -5,4 +5,5 @@ return {
   icon = "",
   cmd = "crush",
   args = {},
+  ready_pattern = "^%s*>",
 }

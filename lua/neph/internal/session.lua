@@ -20,6 +20,8 @@ local active_terminal = nil
 local augroup = nil
 ---@type table<string, userdata>  termname → pending retry timer
 local pending_timers = {}
+---@type table<string, {text:string, opts:table}[]>  termname → queued sends
+local ready_queue = {}
 
 -- ---------------------------------------------------------------------------
 -- Setup
@@ -38,7 +40,7 @@ function M.setup(opts, backend_mod)
     augroup = vim.api.nvim_create_augroup("NephSession", { clear = true })
 
     -- Periodically check pane health
-    vim.api.nvim_create_autocmd("CursorHold", {
+    vim.api.nvim_create_autocmd({ "CursorHold", "FocusGained" }, {
       group = augroup,
       callback = function()
         for name, td in pairs(terminals) do
@@ -46,6 +48,7 @@ function M.setup(opts, backend_mod)
             td.pane_id = nil
             td.win = nil
             td.stale_since = os.time()
+            vim.g[name .. "_active"] = nil
             if active_terminal == name then
               active_terminal = nil
             end
@@ -59,12 +62,9 @@ function M.setup(opts, backend_mod)
     vim.api.nvim_create_autocmd("VimLeavePre", {
       group = augroup,
       callback = function()
-        -- Clear vim.g state for terminal-only agents (extension agents are managed by bus)
+        -- Clear vim.g state for all agents
         for name in pairs(terminals) do
-          local agent = require("neph.internal.agents").get_by_name(name)
-          if agent and not agent.type then
-            vim.g[name .. "_active"] = nil
-          end
+          vim.g[name .. "_active"] = nil
         end
         -- Clean up the agent bus
         pcall(function()
@@ -127,12 +127,13 @@ function M.open(termname)
     end
   end
 
-  -- Build agent_config expected by backends: { cmd, args, full_cmd, env }
+  -- Build agent_config expected by backends: { cmd, args, full_cmd, env, ready_pattern }
   local agent_config = {
     cmd = agent.full_cmd or agent.cmd,
     args = resolved_args,
     full_cmd = full_cmd,
     env = agent.env or {},
+    ready_pattern = agent.ready_pattern,
   }
 
   log.debug("session", "open: %s (cmd=%s)", termname, agent_config.cmd)
@@ -140,10 +141,25 @@ function M.open(termname)
   if td then
     terminals[termname] = td
     active_terminal = termname
-    -- Terminal-only agents: set vim.g state (extension agents are managed by bus)
-    if not agent.type then
-      vim.g[termname .. "_active"] = true
+    vim.g[termname .. "_active"] = true
+
+    -- Set on_ready callback to drain queued text
+    td.on_ready = function()
+      log.debug("session", "ready: %s", termname)
+      local queue = ready_queue[termname]
+      if queue then
+        for _, entry in ipairs(queue) do
+          M.send(termname, entry.text, entry.opts)
+        end
+        ready_queue[termname] = nil
+      end
     end
+
+    -- If already ready (no pattern or immediate match), fire now
+    if td.ready then
+      td.on_ready()
+    end
+
     -- Start companion sidecar for agents that need it
     if agent.type == "extension" and agent.name == "gemini" then
       local companion = require("neph.internal.companion")
@@ -222,15 +238,13 @@ function M.kill_session(termname)
     backend.kill(td)
   end
   terminals[termname] = nil
+  ready_queue[termname] = nil
   if active_terminal == termname then
     active_terminal = nil
   end
-  -- Terminal-only agents: clear vim.g state
-  local agent = require("neph.internal.agents").get_by_name(termname)
-  if agent and not agent.type then
-    vim.g[termname .. "_active"] = nil
-  end
+  vim.g[termname .. "_active"] = nil
   -- Extension agents: unregister from bus
+  local agent = require("neph.internal.agents").get_by_name(termname)
   if agent and agent.type == "extension" then
     require("neph.internal.bus").unregister(termname)
   end
@@ -300,43 +314,31 @@ function M.ensure_active_and_send(text)
     vim.notify("Neph: no active terminal – pick one with <leader>jj", vim.log.levels.WARN)
     return
   end
-  require("neph.internal.terminal").set_last_prompt(active_terminal, text)
-  if not M.exists(active_terminal) then
-    M.open(active_terminal)
-    M.focus(active_terminal)
-    -- Use a non-blocking timer to wait for the terminal to become ready
-    local retries = 0
-    local max_retries = 20
-    local name = active_terminal
-    -- Cancel any existing retry timer for this terminal
-    local existing = pending_timers[name]
-    if existing then
-      pcall(existing.stop, existing)
-      pcall(existing.close, existing)
-    end
-    local timer = vim.uv.new_timer()
-    pending_timers[name] = timer
-    timer:start(
-      50,
-      50,
-      vim.schedule_wrap(function()
-        retries = retries + 1
-        if M.exists(name) then
-          timer:stop()
-          timer:close()
-          pending_timers[name] = nil
-          M.send(name, text, { submit = true })
-        elseif retries >= max_retries then
-          timer:stop()
-          timer:close()
-          pending_timers[name] = nil
-          vim.notify("Neph: terminal failed to become ready", vim.log.levels.ERROR)
-        end
-      end)
-    )
+  local name = active_terminal
+  require("neph.internal.terminal").set_last_prompt(name, text)
+
+  if not M.exists(name) then
+    M.open(name)
+    M.focus(name)
   else
-    M.focus(active_terminal)
-    M.send(active_terminal, text, { submit = true })
+    M.focus(name)
+  end
+
+  local td = terminals[name]
+  if not td then
+    vim.notify("Neph: terminal failed to open", vim.log.levels.ERROR)
+    return
+  end
+
+  if td.ready then
+    M.send(name, text, { submit = true })
+  else
+    -- Queue text — on_ready callback will drain it
+    if not ready_queue[name] then
+      ready_queue[name] = {}
+    end
+    table.insert(ready_queue[name], { text = text, opts = { submit = true } })
+    log.debug("session", "queued send for %s (ready=false, queue_len=%d)", name, #ready_queue[name])
   end
 end
 

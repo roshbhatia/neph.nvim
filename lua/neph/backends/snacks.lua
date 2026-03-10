@@ -7,12 +7,14 @@
 local M = {}
 local config = {}
 
+local READY_TIMEOUT_MS = 30000
+
 function M.setup(opts)
   config = opts or {}
 end
 
 ---@param termname    string
----@param agent_config {cmd:string, args:string[], full_cmd:string, env:table<string,string>}
+---@param agent_config {cmd:string, args:string[], full_cmd:string, env:table<string,string>, ready_pattern?:string}
 ---@param cwd         string
 ---@return table|nil
 function M.open(termname, agent_config, cwd)
@@ -26,14 +28,59 @@ function M.open(termname, agent_config, cwd)
     win = { position = "right", width = 0.5 },
   })
 
-  return {
+  local td = {
     buf = term.buf,
     win = term.win,
     term = term,
     cmd = agent_config.cmd,
     cwd = cwd,
     name = termname,
+    ready = not agent_config.ready_pattern,
   }
+
+  -- Watch terminal output for ready pattern
+  if agent_config.ready_pattern and td.buf and vim.api.nvim_buf_is_valid(td.buf) then
+    local pattern = agent_config.ready_pattern
+    local matched = false
+
+    -- Attach to terminal buffer output
+    vim.api.nvim_buf_attach(td.buf, false, {
+      on_lines = function(_, buf)
+        if matched or not vim.api.nvim_buf_is_valid(buf) then
+          return true -- detach
+        end
+        local line_count = vim.api.nvim_buf_line_count(buf)
+        -- Check last few lines for the pattern
+        local start = math.max(0, line_count - 5)
+        local lines = vim.api.nvim_buf_get_lines(buf, start, line_count, false)
+        for _, line in ipairs(lines) do
+          if line:find(pattern) then
+            matched = true
+            td.ready = true
+            if td.on_ready then
+              td.on_ready()
+            end
+            return true -- detach
+          end
+        end
+      end,
+    })
+
+    -- Timeout: fail-open after 30s
+    local timer = vim.uv.new_timer()
+    timer:start(READY_TIMEOUT_MS, 0, vim.schedule_wrap(function()
+      timer:close()
+      if not matched then
+        matched = true
+        td.ready = true
+        if td.on_ready then
+          td.on_ready()
+        end
+      end
+    end))
+  end
+
+  return td
 end
 
 function M.focus(term_data)

@@ -19,6 +19,7 @@ local AGENT_OPTIONAL_FIELDS = {
   args = "table",
   type = "string",
   launch_args_fn = "function",
+  ready_pattern = "string",
 }
 
 local VALID_AGENT_TYPES = { extension = true, hook = true }

@@ -102,6 +102,56 @@ local function kill_pane(pane_id)
   return vim.v.shell_error == 0
 end
 
+local READY_POLL_MS = 200
+local READY_TIMEOUT_MS = 30000
+
+--- Poll `wezterm cli get-text` for a ready pattern in the pane output.
+---@param td table  term_data (must have pane_id)
+---@param pattern string  Lua pattern to match
+local function watch_for_ready(td, pattern)
+  local attempts = 0
+  local max_attempts = READY_TIMEOUT_MS / READY_POLL_MS
+  local timer = vim.uv.new_timer()
+
+  timer:start(
+    READY_POLL_MS,
+    READY_POLL_MS,
+    vim.schedule_wrap(function()
+      attempts = attempts + 1
+
+      if not td.pane_id then
+        timer:stop()
+        timer:close()
+        return
+      end
+
+      local text = vim.fn.system(string.format("wezterm cli get-text --pane-id %d 2>/dev/null", td.pane_id))
+      if vim.v.shell_error == 0 and text then
+        for line in text:gmatch("[^\n]+") do
+          if line:find(pattern) then
+            timer:stop()
+            timer:close()
+            td.ready = true
+            if td.on_ready then
+              td.on_ready()
+            end
+            return
+          end
+        end
+      end
+
+      if attempts >= max_attempts then
+        timer:stop()
+        timer:close()
+        td.ready = true
+        if td.on_ready then
+          td.on_ready()
+        end
+      end
+    end)
+  )
+end
+
 -- ---------------------------------------------------------------------------
 
 function M.setup(opts)
@@ -158,13 +208,22 @@ function M.open(termname, agent_config, cwd)
 
   -- Return immediately — pane ID is known from split-pane output.
   -- Verify pane health asynchronously.
-  local td = { pane_id = pane_id, cmd = agent_config.cmd, cwd = cwd, name = termname, created_at = os.time() }
+  local td = {
+    pane_id = pane_id,
+    cmd = agent_config.cmd,
+    cwd = cwd,
+    name = termname,
+    created_at = os.time(),
+    ready = not agent_config.ready_pattern,
+  }
   pane_errors[pane_id] = 0
 
   wait_for_pane(pane_id, function(ok)
     if not ok then
       vim.notify("Neph/wezterm: pane did not appear within timeout", vim.log.levels.WARN)
       pane_errors[pane_id] = (pane_errors[pane_id] or 0) + 1
+    elseif agent_config.ready_pattern then
+      watch_for_ready(td, agent_config.ready_pattern)
     end
   end, 5)
 

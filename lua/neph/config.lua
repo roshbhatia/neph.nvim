@@ -22,6 +22,7 @@ local M = {}
 ---@field env?            table<string,string> Extra environment variables for this agent
 ---@field tools?          table                Declarative install manifest (symlinks, merges, builds, files)
 ---@field launch_args_fn? fun(root: string): string[]  Compute additional CLI args at launch time
+---@field ready_pattern?  string               Lua pattern matched against terminal output to detect readiness
 ---@field full_cmd?       string               Resolved command (set by agents module at runtime)
 
 ---@class neph.Config

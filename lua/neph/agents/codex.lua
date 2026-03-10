@@ -5,4 +5,5 @@ return {
   icon = "󱗿",
   cmd = "codex",
   args = {},
+  ready_pattern = "^%s*>",
 }

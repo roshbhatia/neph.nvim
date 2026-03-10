@@ -40,7 +40,6 @@ function M.register(params)
   end
 
   channels[name] = channel
-  vim.g[name .. "_active"] = true
   log.debug("bus", "registered: %s (channel=%d)", name, channel)
 
   -- Start health check if not already running
@@ -95,14 +94,10 @@ function M.unregister(name)
   if channels[name] then
     log.debug("bus", "unregistered: %s", name)
     channels[name] = nil
-    vim.g[name .. "_active"] = nil
   end
 end
 
 function M.cleanup_all()
-  for name in pairs(channels) do
-    vim.g[name .. "_active"] = nil
-  end
   channels = {}
   if health_timer then
     pcall(health_timer.stop, health_timer)

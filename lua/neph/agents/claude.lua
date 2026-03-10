@@ -6,6 +6,7 @@ return {
   cmd = "claude",
   args = { "--permission-mode", "plan" },
   type = "hook",
+  ready_pattern = "^%s*>",
   ---@param root string  neph.nvim plugin root path
   ---@return string[]
   launch_args_fn = function(root)

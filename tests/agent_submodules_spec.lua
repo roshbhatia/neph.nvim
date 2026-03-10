@@ -107,6 +107,18 @@ describe("neph.agents submodules", function()
     end)
   end
 
+  -- Agents with ready_pattern
+  local agents_with_ready_pattern = { "claude", "codex", "crush", "goose" }
+  for _, name in ipairs(agents_with_ready_pattern) do
+    it(name .. " has a valid ready_pattern", function()
+      local def = require("neph.agents." .. name)
+      assert.is_string(def.ready_pattern)
+      assert.has_no.errors(function()
+        contracts.validate_agent(def)
+      end)
+    end)
+  end
+
   it("all.lua returns all 10 agents", function()
     local all = require("neph.agents.all")
     assert.are.equal(10, #all)

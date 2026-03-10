@@ -5,4 +5,5 @@ return {
   icon = "",
   cmd = "goose",
   args = {},
+  ready_pattern = "^%s*%(.-%)>",
 }

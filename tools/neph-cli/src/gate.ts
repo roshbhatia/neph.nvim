@@ -250,8 +250,14 @@ export async function runGate(
     return 0;
   }
 
-  // No socket — fail-open (auto-accept)
+  // No socket — fail-open (auto-accept) with visible warning
   if (!transport) {
+    const socketPath = process.env.NVIM_SOCKET_PATH;
+    if (socketPath) {
+      process.stderr.write(`neph: WARNING — could not connect to Neovim (NVIM_SOCKET_PATH=${socketPath}), auto-accepting file changes\n`);
+    } else {
+      process.stderr.write(`neph: WARNING — no Neovim socket found (NVIM_SOCKET_PATH not set), auto-accepting file changes\n`);
+    }
     return 0;
   }
 

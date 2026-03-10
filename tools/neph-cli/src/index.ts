@@ -333,7 +333,14 @@ export async function runCommand(transport: NvimTransport | null, command: strin
 
 if (require.main === module) {
   const socketPath = process.env.NVIM_SOCKET_PATH || discoverNvimSocket();
-  const transport = socketPath ? new SocketTransport(socketPath) : null;
+  let transport: SocketTransport | null = null;
+  if (socketPath) {
+    try {
+      transport = new SocketTransport(socketPath);
+    } catch (err) {
+      process.stderr.write(`neph: failed to connect to Neovim socket at ${socketPath}: ${err}\n`);
+    }
+  }
   const args = process.argv.slice(2);
   const command = args[0];
 

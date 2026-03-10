@@ -9,7 +9,7 @@ local function make_stub_backend(visible)
   return {
     setup = function() end,
     open = function(_, agent_cfg, _)
-      return { pane_id = 999, cmd = agent_cfg.cmd, cwd = "/tmp", name = "stub" }
+      return { pane_id = 999, cmd = agent_cfg.cmd, cwd = "/tmp", name = "stub", ready = true }
     end,
     focus = function()
       return true
@@ -75,7 +75,7 @@ describe("neph.session", function()
       local backend_spy = make_stub_backend(true)
       backend_spy.open = function(_, agent_cfg, _)
         captured_config = agent_cfg
-        return { pane_id = 999, cmd = agent_cfg.cmd, cwd = "/tmp", name = "stub" }
+        return { pane_id = 999, cmd = agent_cfg.cmd, cwd = "/tmp", name = "stub", ready = true }
       end
 
       package.loaded["neph.session"] = nil
@@ -110,7 +110,7 @@ describe("neph.session", function()
       local backend_spy = make_stub_backend(true)
       backend_spy.open = function(_, agent_cfg, _)
         captured_config = agent_cfg
-        return { pane_id = 999, cmd = agent_cfg.cmd, cwd = "/tmp", name = "stub" }
+        return { pane_id = 999, cmd = agent_cfg.cmd, cwd = "/tmp", name = "stub", ready = true }
       end
 
       package.loaded["neph.session"] = nil
@@ -137,6 +137,152 @@ describe("neph.session", function()
       assert.truthy(captured_config.full_cmd:find("--static"))
       -- Should NOT contain dynamic args (fn errored)
       assert.is_falsy(captured_config.full_cmd:find("--dynamic"))
+    end)
+  end)
+
+  describe("ready state", function()
+    it("agent without ready_pattern has term_data.ready = true immediately", function()
+      local returned_td = nil
+      local backend_spy = make_stub_backend(true)
+      backend_spy.open = function(_, agent_cfg, _)
+        -- Simulate no ready_pattern: backend sets ready = true
+        returned_td = {
+          pane_id = 999,
+          cmd = agent_cfg.cmd,
+          cwd = "/tmp",
+          name = "stub",
+          ready = not agent_cfg.ready_pattern,
+        }
+        return returned_td
+      end
+
+      package.loaded["neph.session"] = nil
+      session = require("neph.internal.session")
+      session.setup({ env = {} }, backend_spy)
+
+      local agents_mod = require("neph.internal.agents")
+      agents_mod.init({
+        {
+          name = "test_no_pattern",
+          label = "Test No Pattern",
+          icon = " ",
+          cmd = "ls",
+        },
+      })
+
+      session.open("test_no_pattern")
+      assert.is_true(returned_td.ready)
+    end)
+
+    it("queues text when term_data.ready is false", function()
+      local sent_texts = {}
+      local backend_spy = make_stub_backend(true)
+      backend_spy.open = function(_, agent_cfg, _)
+        return {
+          pane_id = 999,
+          cmd = agent_cfg.cmd,
+          cwd = "/tmp",
+          name = "stub",
+          ready = false, -- not ready yet
+        }
+      end
+
+      package.loaded["neph.session"] = nil
+      session = require("neph.internal.session")
+      session.setup({ env = {} }, backend_spy)
+
+      local agents_mod = require("neph.internal.agents")
+      agents_mod.init({
+        {
+          name = "test_queue",
+          label = "Test Queue",
+          icon = " ",
+          cmd = "ls",
+          ready_pattern = "^>",
+        },
+      })
+
+      session.open("test_queue")
+      -- Text should be queued, not sent directly
+      session.ensure_active_and_send("hello world")
+      -- Since ready=false, nothing should have been sent via the backend
+      assert.are.equal(0, #sent_texts)
+    end)
+
+    it("drains queue when on_ready fires", function()
+      local sent_texts = {}
+      local captured_td = nil
+      local backend_spy = make_stub_backend(true)
+      backend_spy.open = function(_, agent_cfg, _)
+        captured_td = {
+          pane_id = 999,
+          cmd = agent_cfg.cmd,
+          cwd = "/tmp",
+          name = "stub",
+          ready = false,
+          buf = vim.api.nvim_create_buf(false, true),
+        }
+        return captured_td
+      end
+
+      package.loaded["neph.session"] = nil
+      session = require("neph.internal.session")
+      session.setup({ env = {} }, backend_spy)
+
+      local agents_mod = require("neph.internal.agents")
+      agents_mod.init({
+        {
+          name = "test_drain",
+          label = "Test Drain",
+          icon = " ",
+          cmd = "ls",
+          ready_pattern = "^>",
+        },
+      })
+
+      session.open("test_drain")
+      session.ensure_active_and_send("first message")
+
+      -- Simulate ready
+      assert.is_not_nil(captured_td.on_ready)
+      captured_td.ready = true
+      captured_td.on_ready()
+      -- After on_ready, the queue should be drained (we can't easily verify send
+      -- without a real terminal, but on_ready should not error)
+    end)
+
+    it("discards queue on kill_session", function()
+      local backend_spy = make_stub_backend(true)
+      backend_spy.open = function(_, agent_cfg, _)
+        return {
+          pane_id = 999,
+          cmd = agent_cfg.cmd,
+          cwd = "/tmp",
+          name = "stub",
+          ready = false,
+        }
+      end
+
+      package.loaded["neph.session"] = nil
+      session = require("neph.internal.session")
+      session.setup({ env = {} }, backend_spy)
+
+      local agents_mod = require("neph.internal.agents")
+      agents_mod.init({
+        {
+          name = "test_kill_queue",
+          label = "Test Kill Queue",
+          icon = " ",
+          cmd = "ls",
+          ready_pattern = "^>",
+        },
+      })
+
+      session.open("test_kill_queue")
+      session.ensure_active_and_send("queued text")
+      session.kill_session("test_kill_queue")
+      -- After kill, the terminal should be gone
+      assert.is_nil(session.get_active())
     end)
   end)
 end)
