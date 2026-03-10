@@ -106,7 +106,7 @@ local last_source_win = nil
 
 local excluded_filetypes = {
   snacks_terminal = true,
-  ai_terminals_input = true,
+
   ["neo-tree"] = true,
   NvimTree = true,
   Outline = true,

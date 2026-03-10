@@ -53,7 +53,7 @@ function M.setup(opts)
   require("neph.internal.agents").init(agents)
   require("neph.internal.session").setup(config.current, backend)
   require("neph.internal.file_refresh").setup(config.current)
-  require("neph.internal.completion").setup()
+
 
   -- Register :NephDebug command
   vim.api.nvim_create_user_command("NephDebug", function(cmd_opts)
