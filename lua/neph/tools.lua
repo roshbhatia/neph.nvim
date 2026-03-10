@@ -897,16 +897,19 @@ end
 -- ---------------------------------------------------------------------------
 
 ---@param root string
----@param opts? { sync?: boolean }
+---@param opts? { sync?: boolean, symlink?: boolean }
 ---@return neph.InstallResult[]
 function M.install_universal(root, opts)
   opts = opts or {}
   local results = {}
 
-  local src = root .. "/tools/" .. UNIVERSAL_SYMLINK.src
-  local dst = vim.fn.expand(UNIVERSAL_SYMLINK.dst)
-  local ok, err = M.install_symlink(src, dst)
-  table.insert(results, { op = "symlink", path = dst, ok = ok, err = err })
+  -- Symlink is opt-in (skipped during automatic startup install)
+  if opts.symlink ~= false then
+    local src = root .. "/tools/" .. UNIVERSAL_SYMLINK.src
+    local dst = vim.fn.expand(UNIVERSAL_SYMLINK.dst)
+    local ok, err = M.install_symlink(src, dst)
+    table.insert(results, { op = "symlink", path = dst, ok = ok, err = err })
+  end
 
   if opts.sync then
     local bok, berr = M.run_build_sync(root, UNIVERSAL_BUILD)
@@ -936,27 +939,12 @@ function M.install_async()
   local root = plugin_root()
   local agents = require("neph.internal.agents").get_all()
 
-  -- Universal neph-cli
+  -- Universal neph-cli (build only at startup — symlink is opt-in via :NephTools install)
   if not is_agent_up_to_date(root, nil, UNIVERSAL_NAME) then
-    local results = M.install_universal(root)
-    local all_ok = true
-    for _, r in ipairs(results) do
-      if not r.ok then
-        all_ok = false
-        vim.notify("Neph: " .. UNIVERSAL_NAME .. ": " .. (r.err or "unknown error"), vim.log.levels.WARN)
-      end
-    end
-
-    -- Async build for neph-cli
+    -- Async build for neph-cli (no symlink during automatic startup)
     M.run_build(root, UNIVERSAL_BUILD, function(ok, err)
       if ok then
-        -- Re-create symlink after build (dist may not have existed before)
-        local src = root .. "/tools/" .. UNIVERSAL_SYMLINK.src
-        local dst = vim.fn.expand(UNIVERSAL_SYMLINK.dst)
-        M.install_symlink(src, dst)
-        if all_ok then
-          touch_stamp(nil, UNIVERSAL_NAME)
-        end
+        touch_stamp(nil, UNIVERSAL_NAME)
       else
         vim.notify("Neph: " .. UNIVERSAL_NAME .. ": " .. (err or "build failed"), vim.log.levels.WARN)
       end

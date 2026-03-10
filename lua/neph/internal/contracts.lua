@@ -18,6 +18,7 @@ local AGENT_REQUIRED_FIELDS = {
 local AGENT_OPTIONAL_FIELDS = {
   args = "table",
   type = "string",
+  launch_args_fn = "function",
 }
 
 local VALID_AGENT_TYPES = { extension = true, hook = true }

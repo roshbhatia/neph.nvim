@@ -12,6 +12,18 @@
 
 local M = {}
 
+---@class neph.AgentDef
+---@field name            string               Unique agent identifier
+---@field label           string               Human-readable display name
+---@field icon            string               Nerd Font icon
+---@field cmd             string               CLI command to launch the agent
+---@field args?           string[]             Static CLI arguments
+---@field type?           string               "extension" | "hook" (nil = terminal-only)
+---@field env?            table<string,string> Extra environment variables for this agent
+---@field tools?          table                Declarative install manifest (symlinks, merges, builds, files)
+---@field launch_args_fn? fun(root: string): string[]  Compute additional CLI args at launch time
+---@field full_cmd?       string               Resolved command (set by agents module at runtime)
+
 ---@class neph.Config
 ---@field keymaps?        boolean              Register default keymaps (default: true)
 ---@field env?            table<string,string> Extra environment variables forwarded to every agent

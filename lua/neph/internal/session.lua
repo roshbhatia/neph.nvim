@@ -108,11 +108,30 @@ function M.open(termname)
 
   local cwd = vim.fn.getcwd()
 
+  -- Resolve dynamic launch args if present
+  local full_cmd = agent.full_cmd or agent.cmd
+  local resolved_args = agent.args or {}
+  if agent.launch_args_fn then
+    local root = require("neph.tools").get_root()
+    local ok, extra = pcall(agent.launch_args_fn, root)
+    if ok and type(extra) == "table" then
+      resolved_args = vim.list_extend(vim.deepcopy(resolved_args), extra)
+      -- Rebuild full_cmd with dynamic args included
+      local escaped = {}
+      for i, arg in ipairs(resolved_args) do
+        escaped[i] = vim.fn.shellescape(arg)
+      end
+      full_cmd = agent.cmd .. " " .. table.concat(escaped, " ")
+    elseif not ok then
+      log.debug("session", "launch_args_fn error for %s: %s", agent.name, tostring(extra))
+    end
+  end
+
   -- Build agent_config expected by backends: { cmd, args, full_cmd, env }
   local agent_config = {
     cmd = agent.full_cmd or agent.cmd,
-    args = agent.args or {},
-    full_cmd = agent.full_cmd or agent.cmd,
+    args = resolved_args,
+    full_cmd = full_cmd,
     env = agent.env or {},
   }
 
