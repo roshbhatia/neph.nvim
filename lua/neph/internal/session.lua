@@ -108,11 +108,12 @@ function M.open(termname)
 
   local cwd = vim.fn.getcwd()
 
-  -- Build agent_config expected by backends: { cmd, args, full_cmd }
+  -- Build agent_config expected by backends: { cmd, args, full_cmd, env }
   local agent_config = {
     cmd = agent.full_cmd or agent.cmd,
     args = agent.args or {},
     full_cmd = agent.full_cmd or agent.cmd,
+    env = agent.env or {},
   }
 
   log.debug("session", "open: %s (cmd=%s)", termname, agent_config.cmd)

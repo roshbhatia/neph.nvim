@@ -16,6 +16,7 @@ local M = {}
 ---@field icon        string                Nerd-font icon
 ---@field cmd         string                Executable name (looked up via vim.fn.executable)
 ---@field args        string[]              Command-line arguments
+---@field env?        table<string,string>  Per-agent environment variables
 ---@field full_cmd    string                Computed full command string (set at runtime)
 ---@field integration neph.AgentIntegration|nil  Hook/extension integration metadata (nil = terminal-only)
 ---@field send_adapter (fun(td:table,text:string,opts:table):boolean|nil)|nil  Custom send function (nil = use default)

@@ -126,7 +126,8 @@ function M.open(termname, agent_config, cwd)
 
   -- Build env prefix
   local env_parts = {}
-  for k, v in pairs(config.env or {}) do
+  local merged_env = vim.tbl_extend("force", config.env or {}, agent_config.env or {})
+  for k, v in pairs(merged_env) do
     env_parts[#env_parts + 1] = string.format("export %s=%s;", k, vim.fn.shellescape(v))
   end
   if vim.v.servername then

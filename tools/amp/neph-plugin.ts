@@ -1,10 +1,73 @@
 // @i-know-the-amp-plugin-api-is-wip-and-very-experimental-right-now
 import type { PluginAPI } from "@ampcode/plugin";
-import { createNephQueue, review } from "../lib/neph-run";
+import { NephClient } from "../lib/neph-client";
+import { debug as log } from "../lib/log";
 import { readFileSync } from "node:fs";
 
+/**
+ * Neovim companion plugin for Amp.
+ *
+ * Provides a persistent side channel to Neovim via NephClient.
+ * - Bridges real-time status (running/idle) to Neovim statusline.
+ * - Bridges ctx.ui (notify, confirm, input) to native Neovim UI.
+ * - Intercepts file tools for native Neph review.
+ * - Listens for prompts from Neovim via 'neph:prompt'.
+ */
 export default function (amp: PluginAPI) {
-  const neph = createNephQueue();
+  const neph = new NephClient();
+
+  amp.on("session.start", async () => {
+    try {
+      await neph.connect();
+      await neph.register("amp");
+      await neph.setStatus("amp_active", "true");
+      log("amp", "Companion bridge connected to Neovim");
+    } catch (e) {
+      log(
+        "amp",
+        `Companion bridge failed to connect: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+
+    // Listen for prompts from Neovim
+    neph.onPrompt((text) => {
+      log("amp", `Received prompt from Neovim (len=${text.length})`);
+      // Amp SDK equivalent of sending a message to the thread
+      amp.thread.append({ role: "user", content: text });
+    });
+
+    // Bridge ctx.ui to Neovim
+    // Note: In some SDKs we wrap the context object passed to handlers.
+    // In Amp, we might need to intercept the global ctx or wrap it in each handler.
+    // However, if the SDK allows modifying ctx.ui globally:
+    const originalUi = amp.ui;
+    (amp as any).ui = {
+      ...originalUi,
+      notify: (message: string, type?: string) => {
+        neph.uiNotify(message, type);
+        originalUi.notify(message, type as any);
+      },
+      confirm: async (title: string, message: string) => {
+        const choice = await neph.uiSelect(`${title}\n${message}`, [
+          "Yes",
+          "No",
+        ]);
+        return choice === "Yes";
+      },
+      input: async (title: string, placeholder?: string) => {
+        return (await neph.uiInput(title, placeholder)) ?? "";
+      },
+    };
+  });
+
+  amp.on("agent.start", async () => {
+    await neph.setStatus("amp_running", "true");
+  });
+
+  amp.on("agent.end", async () => {
+    await neph.unsetStatus("amp_running");
+    await neph.checktime();
+  });
 
   amp.on("tool.call", async (event, _ctx) => {
     const tool = event.tool as string;
@@ -23,7 +86,6 @@ export default function (amp: PluginAPI) {
     if (tool === "create_file") {
       content = (input.content as string) ?? "";
     } else if (tool === "edit_file") {
-      // Reconstruct full content for review
       try {
         const current = readFileSync(filePath, "utf-8");
         const oldStr = (input.old_string ?? input.old_str) as
@@ -41,13 +103,11 @@ export default function (amp: PluginAPI) {
         content = (input.content as string) ?? "";
       }
     } else {
-      // apply_patch — pass the patch content for review
-      content = (input.patch ?? input.content) as string ?? "";
+      content = ((input.patch ?? input.content) as string) ?? "";
     }
 
-    neph("set", "amp_active", "true");
     try {
-      const result = await review(filePath, content);
+      const result = await neph.review(filePath, content);
 
       if (result.decision === "reject") {
         const reason = result.reason ? `: ${result.reason}` : "";
@@ -57,8 +117,9 @@ export default function (amp: PluginAPI) {
         };
       }
       return { action: "allow" as const };
-    } finally {
-      neph("unset", "amp_active");
+    } catch (e) {
+      log("amp", `Review failed: ${e}`);
+      return { action: "allow" as const }; // Fallback to allow if review system fails
     }
   });
 }

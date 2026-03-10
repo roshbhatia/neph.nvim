@@ -12,11 +12,11 @@ function M.setup(opts)
 end
 
 ---@param termname    string
----@param agent_config {cmd:string, args:string[], full_cmd:string}
+---@param agent_config {cmd:string, args:string[], full_cmd:string, env:table<string,string>}
 ---@param cwd         string
 ---@return table|nil
 function M.open(termname, agent_config, cwd)
-  local env = vim.tbl_extend("force", config.env or {}, {
+  local env = vim.tbl_extend("force", config.env or {}, agent_config.env or {}, {
     NVIM_SOCKET_PATH = vim.v.servername,
   })
 
