@@ -79,6 +79,7 @@ export function discoverNvimSocket(): string | null {
 
 export class SocketTransport implements NvimTransport {
   private client: NeovimClient;
+  private notificationListeners: Array<(method: string, args: unknown[]) => void> = [];
 
   constructor(socketPath: string) {
     this.client = attach({ socket: socketPath });
@@ -89,11 +90,13 @@ export class SocketTransport implements NvimTransport {
   }
 
   onNotification(event: string, handler: (args: unknown[]) => void): void {
-    this.client.on('notification', (method: string, args: unknown[]) => {
+    const listener = (method: string, args: unknown[]) => {
       if (method === event) {
         handler(args);
       }
-    });
+    };
+    this.notificationListeners.push(listener);
+    this.client.on('notification', listener);
   }
 
   async getChannelId(): Promise<number> {
@@ -102,6 +105,10 @@ export class SocketTransport implements NvimTransport {
   }
 
   async close(): Promise<void> {
+    for (const listener of this.notificationListeners) {
+      this.client.off('notification', listener);
+    }
+    this.notificationListeners = [];
     await this.client.close();
   }
 }

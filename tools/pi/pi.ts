@@ -99,7 +99,7 @@ export default function (pi: ExtensionAPI) {
             // but we need full content for review.
             newContent = currentContent;
           } else {
-            newContent = currentContent.replace(oldText, newText);
+            newContent = currentContent.replaceAll(oldText, newText);
           }
         } catch {
           // Let the native tool handle "file not found" error later

@@ -311,7 +311,9 @@ export async function runGate(
         const p = args[0] as Record<string, unknown> | undefined;
         if (p && p.request_id === requestId) {
           if (fs.existsSync(resultPath)) {
-            handleResult(fs.readFileSync(resultPath, 'utf8'));
+            handleResult(fs.readFileSync(resultPath, 'utf8')).catch((e) => {
+              process.stderr.write(`neph gate: handleResult error: ${e}\n`);
+            });
           }
         }
       } catch (err) {
@@ -321,7 +323,9 @@ export async function runGate(
 
     const watcher = fs.watch(os.tmpdir(), (_event, filename) => {
       if (filename === path.basename(resultPath) && fs.existsSync(resultPath)) {
-        handleResult(fs.readFileSync(resultPath, 'utf8'));
+        handleResult(fs.readFileSync(resultPath, 'utf8')).catch((e) => {
+          process.stderr.write(`neph gate: handleResult error: ${e}\n`);
+        });
       }
     });
     watcher.on('error', (err) => {
