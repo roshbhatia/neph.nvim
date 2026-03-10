@@ -3,49 +3,92 @@
 --- Orchestrates diff review sessions. Opens a vimdiff tab with the
 --- proposed content, runs the hunk-by-hunk review via engine + UI,
 --- and writes the result envelope to a temp file for the neph CLI.
+--- Reviews are routed through a sequential queue so only one is active at a time.
 ---@brief ]]
 
 local M = {}
 
 local engine = require("neph.api.review.engine")
 local ui = require("neph.api.review.ui")
+local review_queue = require("neph.internal.review_queue")
 
+-- Wire the queue to call our internal open function
+review_queue.set_open_fn(function(params)
+  M._open_immediate(params)
+end)
+
+--- Public entry point — routes through the review queue.
 function M.open(params)
+  local config = require("neph.config").current
+  local review_cfg = config.review or {}
+  local queue_cfg = review_cfg.queue or {}
+
+  if queue_cfg.enable == false then
+    -- Queue disabled — open directly
+    return M._open_immediate(params)
+  end
+
+  review_queue.enqueue(params)
+  return { ok = true, msg = "Review enqueued" }
+end
+
+--- Internal: open a review immediately (called by queue or directly).
+function M._open_immediate(params)
   local request_id = params.request_id
   local result_path = params.result_path
   local channel_id = params.channel_id
-  local path = params.path
+  local file_path = params.path
   local content = params.content
+  local mode = params.mode or "pre_write"
 
-  local old_lines = {}
-  local f = io.open(path, "r")
-  if f then
-    for line in f:lines() do
-      table.insert(old_lines, line)
+  local old_lines, new_lines
+
+  if mode == "post_write" then
+    -- Post-write: left = buffer contents (before), right = disk contents (after)
+    local bufnr = vim.fn.bufnr(file_path)
+    if bufnr ~= -1 and vim.api.nvim_buf_is_valid(bufnr) then
+      old_lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+    else
+      old_lines = {}
     end
-    f:close()
+    -- Read disk contents
+    new_lines = {}
+    local f = io.open(file_path, "r")
+    if f then
+      for line in f:lines() do
+        table.insert(new_lines, line)
+      end
+      f:close()
+    end
   else
-    -- File might not exist yet (new file)
+    -- Pre-write (default): left = disk contents (current), right = proposed content
     old_lines = {}
-  end
+    local f = io.open(file_path, "r")
+    if f then
+      for line in f:lines() do
+        table.insert(old_lines, line)
+      end
+      f:close()
+    end
 
-  -- Handle trailing newline in content to match buffer line splitting behavior
-  content = content or ""
-  if content:sub(-1) == "\n" then
-    content = content:sub(1, -2)
+    content = content or ""
+    if content:sub(-1) == "\n" then
+      content = content:sub(1, -2)
+    end
+    new_lines = vim.split(content, "\n", { plain = true })
   end
-  local new_lines = vim.split(content, "\n", { plain = true })
 
   local session = engine.create_session(old_lines, new_lines)
 
   if session.get_total_hunks() == 0 then
     local envelope = session.finalize()
     M.write_result(result_path, channel_id, request_id, envelope)
+    review_queue.on_complete(request_id)
     return { ok = true, msg = "No changes" }
   end
 
   ui.setup_signs()
-  local ui_state = ui.open_diff_tab(path, old_lines, new_lines)
+  local ui_state = ui.open_diff_tab(file_path, old_lines, new_lines, { mode = mode })
 
   local result_written = false
 
@@ -55,11 +98,16 @@ function M.open(params)
     end
     result_written = true
     ui.cleanup(ui_state)
+
+    if mode == "post_write" then
+      M._apply_post_write(file_path, envelope, old_lines)
+    end
+
     M.write_result(result_path, channel_id, request_id, envelope)
+    review_queue.on_complete(request_id)
   end)
 
-  -- Handle manual tab close — check if our specific tabpage is gone,
-  -- since TabClosed patterns use positional tab numbers which shift.
+  -- Handle manual tab close
   vim.api.nvim_create_autocmd("TabClosed", {
     once = true,
     callback = function()
@@ -69,15 +117,76 @@ function M.open(params)
       if result_written then
         return
       end
-      -- Tab closed before review finished — reject undecided, finalize
       result_written = true
       session.reject_all_remaining("User manually closed diff")
       local envelope = session.finalize()
+
+      if mode == "post_write" then
+        M._apply_post_write(file_path, envelope, old_lines)
+      end
+
       M.write_result(result_path, channel_id, request_id, envelope)
+      review_queue.on_complete(request_id)
     end,
   })
 
   return { ok = true, msg = "Review started" }
+end
+
+--- Apply post-write review decisions: update buffer and/or disk.
+---@param file_path string
+---@param envelope table
+---@param buffer_lines string[]  original buffer lines (before agent write)
+function M._apply_post_write(file_path, envelope, buffer_lines)
+  if envelope.decision == "accept" then
+    -- Accept all: update buffer to match disk (reload)
+    local bufnr = vim.fn.bufnr(file_path)
+    if bufnr ~= -1 and vim.api.nvim_buf_is_valid(bufnr) then
+      vim.api.nvim_buf_call(bufnr, function()
+        vim.cmd("edit!")
+      end)
+    end
+  elseif envelope.decision == "reject" then
+    -- Reject all: write buffer contents back to disk
+    local f = io.open(file_path, "w")
+    if f then
+      f:write(table.concat(buffer_lines, "\n") .. "\n")
+      f:close()
+    end
+  elseif envelope.decision == "partial" and envelope.content and envelope.content ~= "" then
+    -- Partial: write merged content to disk and update buffer
+    local f = io.open(file_path, "w")
+    if f then
+      f:write(envelope.content)
+      if not envelope.content:sub(-1) == "\n" then
+        f:write("\n")
+      end
+      f:close()
+    end
+    local bufnr = vim.fn.bufnr(file_path)
+    if bufnr ~= -1 and vim.api.nvim_buf_is_valid(bufnr) then
+      vim.api.nvim_buf_call(bufnr, function()
+        vim.cmd("edit!")
+      end)
+    end
+  end
+end
+
+--- Handle review.pending RPC — notify user a review is waiting.
+function M.pending(params)
+  local config = require("neph.config").current
+  local review_cfg = config.review or {}
+  if review_cfg.pending_notify == false then
+    return { ok = true }
+  end
+
+  local rel = vim.fn.fnamemodify(params.path or "", ":.")
+  local agent_str = params.agent and (" (" .. params.agent .. ")") or ""
+  vim.notify(
+    string.format("Review pending: %s%s", rel, agent_str),
+    vim.log.levels.INFO
+  )
+  return { ok = true }
 end
 
 function M.write_result(path, channel_id, request_id, envelope)

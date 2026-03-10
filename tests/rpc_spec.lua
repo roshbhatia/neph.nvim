@@ -21,6 +21,11 @@ describe("neph.rpc", function()
       local result = rpc.request("buffers.check", {})
       assert.is_true(result.ok)
     end)
+
+    it("routes review.pending to the review module", function()
+      local result = rpc.request("review.pending", { path = "/tmp/test.lua", agent = "claude" })
+      assert.is_true(result.ok)
+    end)
   end)
 
   describe("error handling", function()

@@ -49,7 +49,7 @@ The companion SHALL generate a cryptographically random token and validate it on
 - **AND** SHALL NOT process the MCP message
 
 ### Requirement: Neovim connection via NephClient
-The companion sidecar SHALL connect to Neovim via NephClient and register on the agent bus as "gemini".
+The companion sidecar SHALL connect to Neovim via NephClient and register on the agent bus as "gemini". The companion SHALL ensure that ALL file writes initiated by Gemini route through the `openDiff` MCP tool, which calls `NephClient.review()`. If Gemini writes a file through a path that does not call `openDiff`, the filesystem watcher SHALL serve as a safety net to detect the change.
 
 #### Scenario: Sidecar connects and registers
 - **WHEN** the sidecar process starts with NVIM_SOCKET_PATH set
@@ -60,6 +60,17 @@ The companion sidecar SHALL connect to Neovim via NephClient and register on the
 - **WHEN** the Neovim socket disconnects unexpectedly
 - **THEN** NephClient's built-in reconnect logic SHALL re-establish the connection
 - **AND** SHALL re-register as "gemini" on the bus
+
+#### Scenario: openDiff writes file after review approval
+- **WHEN** Gemini calls the `openDiff` MCP tool with a file path and new content
+- **AND** the user accepts the review (fully or partially)
+- **THEN** the companion SHALL write the approved content to disk
+- **AND** SHALL call `neph.checktime()` to reload buffers
+
+#### Scenario: openDiff rejects write on user rejection
+- **WHEN** Gemini calls `openDiff` and the user rejects all hunks
+- **THEN** the companion SHALL NOT write to disk
+- **AND** SHALL send `ide/diffRejected` notification to Gemini
 
 ### Requirement: Sidecar process management from Lua
 neph SHALL spawn and manage the companion sidecar process lifecycle.

@@ -1,3 +1,5 @@
+-- Review coverage: Companion sidecar's openDiff MCP tool routes writes through
+-- NephClient.review(). The fs_watcher serves as safety net for any bypass.
 ---@type neph.AgentDef
 return {
   name = "gemini",

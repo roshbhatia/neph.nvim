@@ -33,6 +33,7 @@ local M = {}
 ---@field backend?        table                Injected backend module (required)
 ---@field review_signs?   neph.ReviewSignsConfig  Sign icons for diff review UI
 ---@field review_keymaps? neph.ReviewKeymapsConfig  Keymaps for diff review UI
+---@field review?         neph.ReviewConfig     Review system configuration
 
 ---@class neph.FileRefreshConfig
 ---@field enable?         boolean  Periodically call :checktime (default: true)
@@ -52,6 +53,18 @@ local M = {}
 ---@field undo?        string  Shortcut: clear decision (default: <localleader>u)
 ---@field submit?      string  Submit/finalize review (default: <S-CR>)
 ---@field quit?        string  Quit review (default: q)
+
+---@class neph.ReviewConfig
+---@field fs_watcher?     neph.FsWatcherConfig  Filesystem watcher for post-write review
+---@field queue?          neph.ReviewQueueConfig  Sequential review queue
+---@field pending_notify? boolean               Show notification when review is pending (default: true)
+
+---@class neph.FsWatcherConfig
+---@field enable? boolean    Enable filesystem watcher (default: true)
+---@field ignore? string[]   Patterns to exclude from watching (default: node_modules, .git, dist, build, __pycache__)
+
+---@class neph.ReviewQueueConfig
+---@field enable? boolean    Enable sequential review queue (default: true)
 
 ---@type neph.Config
 M.defaults = {
@@ -77,6 +90,16 @@ M.defaults = {
     undo = "<localleader>u",
     submit = "<S-CR>",
     quit = "q",
+  },
+  review = {
+    fs_watcher = {
+      enable = true,
+      ignore = { "node_modules", ".git", "dist", "build", "__pycache__" },
+    },
+    queue = {
+      enable = true,
+    },
+    pending_notify = true,
   },
 }
 

@@ -9,7 +9,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { parseClaude, parseCopilot, parseGemini, parseCursor } from '../src/gate';
+import { parseClaude, parseCopilot, parseCursor } from '../src/gate';
 
 const FIXTURES_DIR = path.join(__dirname, 'fixtures');
 
@@ -62,26 +62,7 @@ describe('gate contract tests', () => {
     });
   });
 
-  describe('gemini', () => {
-    it('parses write_file fixture', () => {
-      const fixture = loadFixture('gemini-write.json');
-      const result = parseGemini(fixture);
-      expect(result).not.toBeNull();
-      expect(result!.filePath).toBe('/tmp/test-file.ts');
-      expect(result!.content).toBe("export const hello = 'gemini';\n");
-    });
-
-    it('parses edit_file fixture with file reconstruction', () => {
-      const fixture = loadFixture('gemini-edit.json');
-      const patched = JSON.parse(JSON.stringify(fixture)) as Record<string, any>;
-      patched.tool_input.filepath = TEST_FILE;
-      const result = parseGemini(patched);
-      expect(result).not.toBeNull();
-      expect(result!.filePath).toBe(TEST_FILE);
-      expect(result!.content).toContain('const x = 42;');
-      expect(result!.content).toContain('const y = 2;');
-    });
-  });
+  // Gemini uses companion sidecar (openDiff MCP tool), not gate parser.
 
   describe('cursor', () => {
     it('parses post-write fixture', () => {

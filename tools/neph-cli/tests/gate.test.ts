@@ -5,7 +5,7 @@ import * as path from 'node:path';
 
 vi.mock('../../lib/log', () => ({ debug: vi.fn() }));
 
-import { parseClaude, parseCopilot, parseGemini, parseCursor, runGate } from '../src/gate';
+import { parseClaude, parseCopilot, parseCursor, runGate } from '../src/gate';
 import { debug as logDebug } from '../../lib/log';
 import { FakeTransport } from './fake_transport';
 
@@ -99,51 +99,8 @@ describe('parseCopilot', () => {
   });
 });
 
-describe('parseGemini', () => {
-  let tmpFile: string;
-
-  beforeEach(() => {
-    tmpFile = path.join(os.tmpdir(), `neph-gemini-test-${Date.now()}.txt`);
-    fs.writeFileSync(tmpFile, 'hello old world');
-  });
-
-  afterEach(() => {
-    try { fs.unlinkSync(tmpFile); } catch {}
-  });
-
-  it('parses write_file tool', () => {
-    const result = parseGemini({
-      tool_name: 'write_file',
-      tool_input: { filepath: tmpFile, content: 'hello' },
-    });
-    expect(result).toEqual({ filePath: tmpFile, content: 'hello' });
-  });
-
-  it('parses edit_file — reconstructs full file content', () => {
-    const result = parseGemini({
-      tool_name: 'edit_file',
-      tool_input: { filepath: tmpFile, old_string: 'old', new_string: 'new' },
-    });
-    expect(result).not.toBeNull();
-    expect(result!.content).toBe('hello new world');
-  });
-
-  it('edit_file falls back to content when no old_string/new_string', () => {
-    const result = parseGemini({
-      tool_name: 'edit_file',
-      tool_input: { filepath: tmpFile, content: 'full replacement' },
-    });
-    expect(result).toEqual({ filePath: tmpFile, content: 'full replacement' });
-  });
-
-  it('returns null for non-file tools', () => {
-    expect(parseGemini({ tool_name: 'read_file', tool_input: { filepath: tmpFile } })).toBeNull();
-  });
-
-  it('returns null when filepath missing (uses filepath, not file_path)', () => {
-    expect(parseGemini({ tool_name: 'write_file', tool_input: { file_path: tmpFile, content: 'hello' } })).toBeNull();
-  });
-});
+// Gemini review coverage is handled via companion sidecar's openDiff MCP tool,
+// not via the gate parser. See tools/gemini/src/diff_bridge.ts.
 
 describe('parseCursor', () => {
   it('extracts file_path for post-write notification', () => {
@@ -223,6 +180,7 @@ describe('runGate', () => {
     transport.executeLua = vi.fn()
       .mockResolvedValueOnce({ ok: true }) // status.set neph_connected
       .mockResolvedValueOnce({ ok: true }) // status.set claude_active
+      .mockResolvedValueOnce({ ok: true }) // review.pending
       .mockRejectedValueOnce(new Error('review failed')); // review.open
 
     const code = await runGate(transport, 'claude', JSON.stringify({

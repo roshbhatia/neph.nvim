@@ -9,7 +9,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { parseClaude, parseCopilot, parseGemini, parseCursor } from '../src/gate';
+import { parseClaude, parseCopilot, parseCursor } from '../src/gate';
 
 // --- Helpers ---
 
@@ -133,7 +133,7 @@ describe('parser robustness — adversarial inputs', () => {
   const parsers = [
     { name: 'claude', fn: parseClaude },
     { name: 'copilot', fn: parseCopilot },
-    { name: 'gemini', fn: parseGemini },
+    // Gemini uses companion sidecar, not gate parser
     { name: 'cursor', fn: parseCursor },
   ];
 
@@ -173,24 +173,5 @@ describe('parser robustness — adversarial inputs', () => {
   }
 });
 
-// --- Gemini edit_file reconstruction ---
-
-describe('parseGemini edit reconstruction', () => {
-  it('reconstructs edit_file with old_string/new_string', () => {
-    const f = writeTmp('gemini.txt', 'const x = 1;\nconst y = 2;\n');
-    const result = parseGemini({
-      tool_name: 'edit_file',
-      tool_input: { filepath: f, old_string: 'const x = 1;', new_string: 'const x = 42;' },
-    });
-    expect(result!.content).toBe('const x = 42;\nconst y = 2;\n');
-  });
-
-  it('returns null when old_string not found', () => {
-    const f = writeTmp('gemini-miss.txt', 'hello world');
-    const result = parseGemini({
-      tool_name: 'edit_file',
-      tool_input: { filepath: f, old_string: 'missing', new_string: 'bar' },
-    });
-    expect(result).toBeNull();
-  });
-});
+// Gemini uses companion sidecar (openDiff MCP tool), not gate parser.
+// See tools/gemini/src/diff_bridge.ts for Gemini review coverage.

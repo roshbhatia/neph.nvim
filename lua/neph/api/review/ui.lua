@@ -15,17 +15,20 @@ function M.setup_signs()
   vim.fn.sign_define("neph_commented", { text = signs.commented, texthl = "DiagnosticWarn" })
 end
 
-function M.open_diff_tab(path, old_lines, new_lines)
+function M.open_diff_tab(path, old_lines, new_lines, opts)
+  opts = opts or {}
   local ft = vim.filetype.match({ filename = path }) or ""
   local basename = vim.fn.fnamemodify(path, ":t")
+  local is_post_write = opts.mode == "post_write"
 
   vim.cmd("tabnew")
   local tab = vim.api.nvim_get_current_tabpage()
 
-  -- Left: current
+  -- Left: current (or buffer contents in post-write mode)
   local left_buf = vim.api.nvim_get_current_buf()
   vim.api.nvim_buf_set_lines(left_buf, 0, -1, false, old_lines)
-  vim.api.nvim_buf_set_name(left_buf, "neph://current/" .. basename)
+  local left_label = is_post_write and "neph://buffer-before/" or "neph://current/"
+  vim.api.nvim_buf_set_name(left_buf, left_label .. basename)
   vim.bo[left_buf].buftype = "nofile"
   vim.bo[left_buf].bufhidden = "wipe"
   vim.bo[left_buf].swapfile = false
@@ -46,7 +49,8 @@ function M.open_diff_tab(path, old_lines, new_lines)
   local right_buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_win_set_buf(0, right_buf)
   vim.api.nvim_buf_set_lines(right_buf, 0, -1, false, new_lines)
-  vim.api.nvim_buf_set_name(right_buf, "neph://proposed/" .. basename)
+  local right_label = is_post_write and "neph://disk-after/" or "neph://proposed/"
+  vim.api.nvim_buf_set_name(right_buf, right_label .. basename)
   vim.bo[right_buf].buftype = "nofile"
   vim.bo[right_buf].bufhidden = "wipe"
   vim.bo[right_buf].swapfile = false
@@ -93,6 +97,7 @@ function M.open_diff_tab(path, old_lines, new_lines)
     left_sign_ids = {},
     right_sign_ids = {},
     guard_augroup = guard_augroup,
+    mode = opts.mode,
   }
 end
 
@@ -169,7 +174,8 @@ end
 ---@param keymaps neph.ReviewKeymapsConfig
 ---@param tally? { accepted: integer, rejected: integer, undecided: integer }
 ---@return string
-function M.build_winbar(idx, total, decision, keymaps, tally)
+function M.build_winbar(idx, total, decision, keymaps, tally, opts)
+  opts = opts or {}
   local status = "undecided"
   local hl = "DiagnosticInfo"
   if decision then
@@ -187,13 +193,27 @@ function M.build_winbar(idx, total, decision, keymaps, tally)
     tally_str = string.format("  ✓%d ✗%d ?%d", tally.accepted, tally.rejected, tally.undecided)
   end
 
+  -- Queue position indicator
+  local queue_str = ""
+  local review_queue = require("neph.internal.review_queue")
+  local queue_total = review_queue.total()
+  if queue_total > 1 then
+    local position = queue_total - review_queue.count()
+    queue_str = string.format("  Review %d/%d", position, queue_total)
+  end
+
+  -- Mode label
+  local mode_label = opts.mode == "post_write" and "POST-WRITE" or "CURRENT"
+
   return string.format(
-    "%%#DiagnosticWarn# CURRENT %%* %%#%s# Hunk %d/%d: %s %%*%s  %s=decide  %s=submit  %s=quit",
+    "%%#DiagnosticWarn# %s %%* %%#%s# Hunk %d/%d: %s %%*%s%s  %s=decide  %s=submit  %s=quit",
+    mode_label,
     hl,
     idx,
     total,
     status,
     tally_str,
+    queue_str,
     display_key(keymaps.decide or "<CR>"),
     display_key(keymaps.submit or "<S-CR>"),
     keymaps.quit
@@ -203,16 +223,19 @@ end
 --- Build right-side winbar with tally.
 ---@param tally? { accepted: integer, rejected: integer, undecided: integer }
 ---@return string
-function M.build_right_winbar(tally)
+function M.build_right_winbar(tally, opts)
+  opts = opts or {}
+  local label = opts.mode == "post_write" and "DISK (AFTER)" or "PROPOSED"
   if tally then
     return string.format(
-      "%%#DiagnosticWarn# PROPOSED %%*  ✓%d ✗%d ?%d",
+      "%%#DiagnosticWarn# %s %%*  ✓%d ✗%d ?%d",
+      label,
       tally.accepted,
       tally.rejected,
       tally.undecided
     )
   end
-  return "%#DiagnosticWarn# PROPOSED %*"
+  return string.format("%%#DiagnosticWarn# %s %%*", label)
 end
 
 --- Update signs and winbar for the current review state.
@@ -264,9 +287,10 @@ local function refresh_ui(session, ui_state, keymaps)
   -- Update winbars with tally
   local decision = session.get_decision(idx)
   local tally = session.get_tally()
-  vim.wo[ui_state.left_win].winbar = M.build_winbar(idx, total, decision, keymaps, tally)
+  local mode_opts = { mode = ui_state.mode }
+  vim.wo[ui_state.left_win].winbar = M.build_winbar(idx, total, decision, keymaps, tally, mode_opts)
   if vim.api.nvim_win_is_valid(ui_state.right_win) then
-    vim.wo[ui_state.right_win].winbar = M.build_right_winbar(tally)
+    vim.wo[ui_state.right_win].winbar = M.build_right_winbar(tally, mode_opts)
   end
 end
 

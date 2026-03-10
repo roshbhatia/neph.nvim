@@ -40,6 +40,9 @@ local dispatch = {
   ["ui.notify"] = function(p)
     return require("neph.api.ui").notify(p)
   end,
+  ["review.pending"] = function(p)
+    return require("neph.api.review").pending(p)
+  end,
 }
 
 function M.request(method, params)

@@ -21,7 +21,7 @@ describe("neph.internal.bus", function()
       local result = bus.register({ name = "pi", channel = 5 })
       assert.is_true(result.ok)
       assert.is_true(bus.is_connected("pi"))
-      assert.is_true(vim.g.pi_active)
+      -- vim.g.pi_active is managed by session.lua, not bus.lua
     end)
 
     it("rejects unknown agent", function()
@@ -74,11 +74,11 @@ describe("neph.internal.bus", function()
   end)
 
   describe("unregister", function()
-    it("removes agent and clears vim.g state", function()
+    it("removes agent from bus", function()
       bus.register({ name = "pi", channel = 5 })
       bus.unregister("pi")
       assert.is_false(bus.is_connected("pi"))
-      assert.is_nil(vim.g.pi_active)
+      -- vim.g.pi_active is managed by session.lua, not bus.lua
     end)
 
     it("is no-op for unregistered agent", function()
@@ -89,11 +89,11 @@ describe("neph.internal.bus", function()
   end)
 
   describe("cleanup_all", function()
-    it("clears all channels and vim.g state", function()
+    it("clears all channels", function()
       bus.register({ name = "pi", channel = 5 })
       bus.cleanup_all()
       assert.is_false(bus.is_connected("pi"))
-      assert.is_nil(vim.g.pi_active)
+      -- vim.g.pi_active is managed by session.lua, not bus.lua
     end)
   end)
 end)

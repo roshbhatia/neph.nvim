@@ -268,6 +268,11 @@ export async function runGate(
     await transport.executeLua(RPC_CALL, ['status.set', { name: stateKey, value: 'true' }]);
   } catch {}
 
+  // Notify Neovim that a review is pending (for user feedback)
+  try {
+    await transport.executeLua(RPC_CALL, ['review.pending', { path: path.resolve(payload.filePath), agent }]);
+  } catch {}
+
   // Run review via the same mechanism as the review command
   const requestId = crypto.randomUUID();
   const resultPath = path.join(os.tmpdir(), `neph-review-${requestId}.json`);
@@ -323,6 +328,7 @@ export async function runGate(
         channel_id: 0,
         path: path.resolve(payload.filePath),
         content: payload.content,
+        agent,
       }
     ]).catch(async () => {
       watcher.close();

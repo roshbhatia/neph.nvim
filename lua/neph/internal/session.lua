@@ -85,6 +85,10 @@ function M.setup(opts, backend_mod)
         pcall(function()
           require("neph.internal.file_refresh").teardown()
         end)
+        -- Stop filesystem watcher
+        pcall(function()
+          require("neph.internal.fs_watcher").stop()
+        end)
       end,
     })
   end
@@ -142,6 +146,14 @@ function M.open(termname)
     terminals[termname] = td
     active_terminal = termname
     vim.g[termname .. "_active"] = true
+
+    -- Start fs_watcher if this is the first active agent
+    pcall(function()
+      local fs_watcher = require("neph.internal.fs_watcher")
+      if not fs_watcher.is_active() then
+        fs_watcher.start()
+      end
+    end)
 
     -- Set on_ready callback to drain queued text
     td.on_ready = function()
@@ -243,6 +255,10 @@ function M.kill_session(termname)
     active_terminal = nil
   end
   vim.g[termname .. "_active"] = nil
+  -- Clear queued reviews for this agent
+  pcall(function()
+    require("neph.internal.review_queue").clear_agent(termname)
+  end)
   -- Extension agents: unregister from bus
   local agent = require("neph.internal.agents").get_by_name(termname)
   if agent and agent.type == "extension" then
@@ -254,6 +270,19 @@ function M.kill_session(termname)
       require("neph.internal.companion").teardown()
     end)
   end
+  -- Stop fs_watcher if no agents remain active
+  pcall(function()
+    local has_active = false
+    for name in pairs(terminals) do
+      if vim.g[name .. "_active"] then
+        has_active = true
+        break
+      end
+    end
+    if not has_active then
+      require("neph.internal.fs_watcher").stop()
+    end
+  end)
 end
 
 function M.send(termname, text, opts)
