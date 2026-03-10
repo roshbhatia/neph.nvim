@@ -65,7 +65,13 @@ function makePI() {
     },
     handlers,
     tools,
-    ui: { setStatus: vi.fn() },
+    ui: {
+      setStatus: vi.fn(),
+      select: vi.fn().mockResolvedValue(undefined),
+      input: vi.fn().mockResolvedValue(undefined),
+      confirm: vi.fn().mockResolvedValue(true),
+      notify: vi.fn(),
+    },
   };
   return stub;
 }

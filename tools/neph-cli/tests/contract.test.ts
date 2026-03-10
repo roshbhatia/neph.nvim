@@ -11,7 +11,16 @@ describe('protocol.json contract', () => {
   });
 
   it('defines all expected methods', () => {
-    const expectedMethods = ['review.open', 'status.set', 'status.unset', 'buffers.check', 'tab.close'];
+    const expectedMethods = [
+      'review.open',
+      'status.set',
+      'status.unset',
+      'buffers.check',
+      'tab.close',
+      'ui.select',
+      'ui.input',
+      'ui.notify',
+    ];
     for (const method of expectedMethods) {
       expect(protocol.methods[method]).toBeDefined();
     }

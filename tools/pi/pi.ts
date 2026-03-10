@@ -158,6 +158,44 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("session_start", async (_event, ctx) => {
     ctx.ui.setStatus("nvim", "🗿NEPH");
+
+    // Bridge ctx.ui to Neovim
+    const originalSelect = ctx.ui.select.bind(ctx.ui);
+    ctx.ui.select = async (title, options) => {
+      if (neph.isConnected()) {
+        return (await neph.uiSelect(title, options)) ?? undefined;
+      }
+      return originalSelect(title, options);
+    };
+
+    const originalInput = ctx.ui.input.bind(ctx.ui);
+    ctx.ui.input = async (title, placeholder) => {
+      if (neph.isConnected()) {
+        return (await neph.uiInput(title, placeholder)) ?? undefined;
+      }
+      return originalInput(title, placeholder);
+    };
+
+    const originalConfirm = ctx.ui.confirm.bind(ctx.ui);
+    ctx.ui.confirm = async (title, message) => {
+      if (neph.isConnected()) {
+        const choice = await neph.uiSelect(`${title}\n${message}`, [
+          "Yes",
+          "No",
+        ]);
+        return choice === "Yes";
+      }
+      return originalConfirm(title, message);
+    };
+
+    const originalNotify = ctx.ui.notify.bind(ctx.ui);
+    ctx.ui.notify = (message, type) => {
+      if (neph.isConnected()) {
+        neph.uiNotify(message, type);
+      }
+      originalNotify(message, type);
+    };
+
     try {
       await neph.connect();
       await neph.register("pi");

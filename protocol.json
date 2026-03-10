@@ -24,6 +24,18 @@
     "tab.close": {
       "params": [],
       "async": false
+    },
+    "ui.select": {
+      "params": ["request_id", "channel_id", "title", "options"],
+      "async": true
+    },
+    "ui.input": {
+      "params": ["request_id", "channel_id", "title", "default"],
+      "async": true
+    },
+    "ui.notify": {
+      "params": ["message", "level"],
+      "async": false
     }
   }
 }

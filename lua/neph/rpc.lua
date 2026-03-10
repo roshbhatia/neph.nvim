@@ -31,6 +31,15 @@ local dispatch = {
   ["bus.register"] = function(p)
     return require("neph.internal.bus").register(p)
   end,
+  ["ui.select"] = function(p)
+    return require("neph.api.ui").select(p)
+  end,
+  ["ui.input"] = function(p)
+    return require("neph.api.ui").input(p)
+  end,
+  ["ui.notify"] = function(p)
+    return require("neph.api.ui").notify(p)
+  end,
 }
 
 function M.request(method, params)

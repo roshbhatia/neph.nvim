@@ -82,20 +82,23 @@ end
 
 function M.write_result(path, channel_id, request_id, envelope)
   envelope.request_id = request_id
-  local tmp_path = path .. ".tmp"
-  local f, err = io.open(tmp_path, "w")
-  if not f then
-    vim.notify("Neph: failed to write review result: " .. (err or "unknown error"), vim.log.levels.ERROR)
-    return
-  end
-  f:write(vim.json.encode(envelope))
-  f:close()
-  local ok, rename_err = os.rename(tmp_path, path)
-  if not ok then
-    vim.notify("Neph: failed to rename review result: " .. (rename_err or ""), vim.log.levels.ERROR)
+
+  if path then
+    local tmp_path = path .. ".tmp"
+    local f, err = io.open(tmp_path, "w")
+    if not f then
+      vim.notify("Neph: failed to write review result: " .. (err or "unknown error"), vim.log.levels.ERROR)
+      return
+    end
+    f:write(vim.json.encode(envelope))
+    f:close()
+    local ok, rename_err = os.rename(tmp_path, path)
+    if not ok then
+      vim.notify("Neph: failed to rename review result: " .. (rename_err or ""), vim.log.levels.ERROR)
+    end
   end
 
-  pcall(vim.rpcnotify, channel_id, "neph:review_done", { request_id = request_id })
+  pcall(vim.rpcnotify, channel_id, "neph:review_done", envelope)
 end
 
 return M

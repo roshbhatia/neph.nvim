@@ -1,5 +1,6 @@
 import { attach, type NeovimClient } from "neovim";
 import process from "node:process";
+import { randomUUID } from "node:crypto";
 import { debug as log } from "./log";
 
 export interface ReviewEnvelope {
@@ -32,6 +33,7 @@ export class NephClient {
   private socketPath: string | null = null;
   private promptCallback: ((text: string) => void) | null = null;
   private notificationCallbacks: Map<string, ((args: unknown[]) => void)[]> = new Map();
+  private pendingRequests: Map<string, (result: any) => void> = new Map();
   private reconnecting = false;
   private disconnected = false;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -63,6 +65,18 @@ export class NephClient {
         log("neph-client", `received prompt (len=${String(text).length})`);
         this.promptCallback(typeof text === "string" ? text : String(text));
       }
+
+      if (method === "neph:review_done" || method === "neph:ui_response") {
+        const data = args[0] as { request_id?: string };
+        if (data?.request_id) {
+          const resolve = this.pendingRequests.get(data.request_id);
+          if (resolve) {
+            this.pendingRequests.delete(data.request_id);
+            resolve(data);
+          }
+        }
+      }
+
       const callbacks = this.notificationCallbacks.get(method);
       if (callbacks) {
         for (const cb of callbacks) {
@@ -122,7 +136,7 @@ export class NephClient {
   }
 
   async review(filePath: string, content: string): Promise<ReviewEnvelope> {
-    if (!this.client) {
+    if (!this.client || this.channelId === null) {
       return {
         schema: "review/v1",
         decision: "reject",
@@ -131,23 +145,41 @@ export class NephClient {
         reason: "Not connected to Neovim",
       };
     }
+
+    const requestId = randomUUID();
+    // For review, we actually need a temp file path if we want to follow the neph-cli gate pattern,
+    // but the Lua review.open also supports writing to a result_path.
+    // However, NephClient is used by pi extension which might prefer a direct notification.
+    
+    // Wait for the notification
+    const promise = new Promise<ReviewEnvelope>((resolve) => {
+      this.pendingRequests.set(requestId, (data: any) => {
+        // In the direct notification case, the data should contain the envelope.
+        // But lua/neph/api/review/init.lua writes to result_path and sends notification.
+        // We might need to update lua/neph/api/review/init.lua to also send the envelope in the notification
+        // OR read it from the file.
+        // For simplicity in the Pi extension context, let's assume we might update the Lua side
+        // or just handle the basic decision.
+        resolve(data as ReviewEnvelope);
+      });
+    });
+
     try {
-      const result = await this.client.executeLua(RPC_CALL, [
+      // Note: we're passing result_path as empty or omitting it if we want direct notification with data.
+      // But let's check what review.open expects.
+      await this.client.executeLua(RPC_CALL, [
         "review.open",
-        { file: filePath, content },
+        {
+          path: filePath,
+          content,
+          request_id: requestId,
+          channel_id: this.channelId,
+          // We don't provide result_path, so Lua side needs to handle that.
+        },
       ]);
-      const res = result as { ok: boolean; result?: ReviewEnvelope };
-      if (res?.ok && res?.result) {
-        return res.result;
-      }
-      return {
-        schema: "review/v1",
-        decision: "reject",
-        content: "",
-        hunks: [],
-        reason: "Review RPC failed",
-      };
+      return await promise;
     } catch (e) {
+      this.pendingRequests.delete(requestId);
       log("neph-client", `review error: ${e instanceof Error ? e.message : String(e)}`);
       return {
         schema: "review/v1",
@@ -162,6 +194,65 @@ export class NephClient {
   async checktime(): Promise<void> {
     if (!this.client) return;
     await this.client.executeLua(RPC_CALL, ["buffers.check", {}]);
+  }
+
+  async uiNotify(message: string, level?: string): Promise<void> {
+    if (!this.client) return;
+    await this.client.executeLua(RPC_CALL, ["ui.notify", { message, level }]);
+  }
+
+  async uiSelect(title: string, options: string[]): Promise<string | undefined> {
+    if (!this.client || this.channelId === null) return undefined;
+    const requestId = randomUUID();
+    const promise = new Promise<string | undefined>((resolve) => {
+      this.pendingRequests.set(requestId, (data: any) => {
+        resolve(data.choice);
+      });
+    });
+
+    try {
+      await this.client.executeLua(RPC_CALL, [
+        "ui.select",
+        {
+          request_id: requestId,
+          channel_id: this.channelId,
+          title,
+          options,
+        },
+      ]);
+      return await promise;
+    } catch (e) {
+      this.pendingRequests.delete(requestId);
+      log("neph-client", `uiSelect error: ${e instanceof Error ? e.message : String(e)}`);
+      return undefined;
+    }
+  }
+
+  async uiInput(title: string, defaultValue?: string): Promise<string | undefined> {
+    if (!this.client || this.channelId === null) return undefined;
+    const requestId = randomUUID();
+    const promise = new Promise<string | undefined>((resolve) => {
+      this.pendingRequests.set(requestId, (data: any) => {
+        resolve(data.choice);
+      });
+    });
+
+    try {
+      await this.client.executeLua(RPC_CALL, [
+        "ui.input",
+        {
+          request_id: requestId,
+          channel_id: this.channelId,
+          title,
+          default: defaultValue,
+        },
+      ]);
+      return await promise;
+    } catch (e) {
+      this.pendingRequests.delete(requestId);
+      log("neph-client", `uiInput error: ${e instanceof Error ? e.message : String(e)}`);
+      return undefined;
+    }
   }
 
   disconnect(): void {
