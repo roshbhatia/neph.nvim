@@ -54,8 +54,12 @@ function M.request(method, params)
   end
   local ok, result = pcall(handler, params or {})
   if not ok then
-    log.debug("rpc", "dispatch: INTERNAL error %s: %s", method, tostring(result))
-    return { ok = false, error = { code = "INTERNAL", message = tostring(result) } }
+    local trace = debug.traceback(tostring(result), 2)
+    if #trace > 500 then
+      trace = trace:sub(1, 500)
+    end
+    log.debug("rpc", "dispatch: INTERNAL error %s: %s", method, trace)
+    return { ok = false, error = { code = "INTERNAL", message = trace } }
   end
   log.debug("rpc", "dispatch: %s result=%s", method, vim.inspect(result, { newline = " ", indent = "" }))
   return { ok = true, result = result }

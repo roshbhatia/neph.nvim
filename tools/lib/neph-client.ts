@@ -41,6 +41,7 @@ export class NephClient {
   private connectionState: ConnectionState = ConnectionState.DISCONNECTED;
   private static readonly BASE_DELAY = 100;
   private static readonly MAX_RECONNECT_DELAY = 5000;
+  private static readonly REVIEW_TIMEOUT_MS = 300_000;
 
   async connect(socketPath?: string): Promise<void> {
     const path = socketPath || process.env.NVIM_SOCKET_PATH;
@@ -151,22 +152,19 @@ export class NephClient {
     // but the Lua review.open also supports writing to a result_path.
     // However, NephClient is used by pi extension which might prefer a direct notification.
     
-    // Wait for the notification
-    const promise = new Promise<ReviewEnvelope>((resolve) => {
+    const promise = new Promise<ReviewEnvelope>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pendingRequests.delete(requestId);
+        reject(new Error("Review timed out (300s)"));
+      }, NephClient.REVIEW_TIMEOUT_MS);
+
       this.pendingRequests.set(requestId, (data: any) => {
-        // In the direct notification case, the data should contain the envelope.
-        // But lua/neph/api/review/init.lua writes to result_path and sends notification.
-        // We might need to update lua/neph/api/review/init.lua to also send the envelope in the notification
-        // OR read it from the file.
-        // For simplicity in the Pi extension context, let's assume we might update the Lua side
-        // or just handle the basic decision.
+        clearTimeout(timer);
         resolve(data as ReviewEnvelope);
       });
     });
 
     try {
-      // Note: we're passing result_path as empty or omitting it if we want direct notification with data.
-      // But let's check what review.open expects.
       await this.client.executeLua(RPC_CALL, [
         "review.open",
         {
@@ -174,7 +172,6 @@ export class NephClient {
           content,
           request_id: requestId,
           channel_id: this.channelId,
-          // We don't provide result_path, so Lua side needs to handle that.
         },
       ]);
       return await promise;

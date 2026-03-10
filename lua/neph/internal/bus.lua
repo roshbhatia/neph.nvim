@@ -15,6 +15,9 @@ local channels = {}
 ---@type userdata|nil  health-check timer
 local health_timer = nil
 
+---@type (fun(name: string))|nil  callback after successful registration
+local on_register_cb = nil
+
 -- ---------------------------------------------------------------------------
 -- Registration
 -- ---------------------------------------------------------------------------
@@ -44,6 +47,10 @@ function M.register(params)
 
   -- Start health check if not already running
   M._ensure_health_timer()
+
+  if on_register_cb then
+    on_register_cb(name)
+  end
 
   return { ok = true }
 end
@@ -134,6 +141,11 @@ function M._ensure_health_timer()
       end
     end)
   )
+end
+
+---@param cb fun(name: string)
+function M.on_register(cb)
+  on_register_cb = cb
 end
 
 -- ---------------------------------------------------------------------------

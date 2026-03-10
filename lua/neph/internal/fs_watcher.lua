@@ -133,7 +133,7 @@ local function on_file_changed(filepath)
   review_queue.enqueue({
     request_id = "pw-" .. crypto,
     result_path = nil,
-    channel_id = 0,
+    channel_id = nil,
     path = filepath,
     content = "",
     agent = nil,

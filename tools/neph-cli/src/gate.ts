@@ -201,6 +201,7 @@ const PARSERS: Record<string, (input: unknown) => GatePayload | null> = {
  * Exit codes:
  * - 0: accept (or no socket, or cursor post-write, or unknown agent)
  * - 2: reject
+ * - 3: timeout
  */
 export async function runGate(
   transport: NvimTransport | null,
@@ -339,9 +340,10 @@ export async function runGate(
     // 5 minute timeout
     setTimeout(async () => {
       if (!done) {
+        process.stderr.write(JSON.stringify({ decision: 'timeout', reason: 'Review timed out (300s)' }) + '\n');
         watcher.close();
         await cleanup();
-        resolve(2); // reject on timeout
+        resolve(3); // timeout
       }
     }, 300000);
   });

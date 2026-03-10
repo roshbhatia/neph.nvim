@@ -57,6 +57,27 @@ describe("neph.internal.companion", function()
       end
     end)
 
+  end)
+
+  describe("start_sidecar", function()
+    it("calls vim.notify(ERROR) when script not found", function()
+      local notifications = {}
+      local orig_notify = vim.notify
+      vim.notify = function(msg, level)
+        table.insert(notifications, { msg = msg, level = level })
+      end
+
+      local result = companion.start_sidecar("/nonexistent/path", "/tmp")
+      assert.is_nil(result)
+      assert.are.equal(1, #notifications)
+      assert.is_truthy(notifications[1].msg:find("sidecar script not found"))
+      assert.are.equal(vim.log.levels.ERROR, notifications[1].level)
+
+      vim.notify = orig_notify
+    end)
+  end)
+
+  describe("collect_context (continued)", function()
     it("sorts active buffer first", function()
       local tmpfile = os.tmpname()
       local f = io.open(tmpfile, "w")

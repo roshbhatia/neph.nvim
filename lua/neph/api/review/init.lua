@@ -41,6 +41,10 @@ function M._open_immediate(params)
   local content = params.content
   local mode = params.mode or "pre_write"
 
+  if content ~= nil and type(content) ~= "string" then
+    return { ok = false, error = "invalid content type" }
+  end
+
   local old_lines, new_lines
 
   if mode == "post_write" then
@@ -149,20 +153,24 @@ function M._apply_post_write(file_path, envelope, buffer_lines)
   elseif envelope.decision == "reject" then
     -- Reject all: write buffer contents back to disk
     local f = io.open(file_path, "w")
-    if f then
-      f:write(table.concat(buffer_lines, "\n") .. "\n")
-      f:close()
+    if not f then
+      vim.notify("Neph: failed to revert agent changes: " .. file_path, vim.log.levels.WARN)
+      return
     end
+    f:write(table.concat(buffer_lines, "\n") .. "\n")
+    f:close()
   elseif envelope.decision == "partial" and envelope.content and envelope.content ~= "" then
     -- Partial: write merged content to disk and update buffer
     local f = io.open(file_path, "w")
-    if f then
-      f:write(envelope.content)
-      if not envelope.content:sub(-1) == "\n" then
-        f:write("\n")
-      end
-      f:close()
+    if not f then
+      vim.notify("Neph: failed to write merged content: " .. file_path, vim.log.levels.WARN)
+      return
     end
+    f:write(envelope.content)
+    if not envelope.content:sub(-1) == "\n" then
+      f:write("\n")
+    end
+    f:close()
     local bufnr = vim.fn.bufnr(file_path)
     if bufnr ~= -1 and vim.api.nvim_buf_is_valid(bufnr) then
       vim.api.nvim_buf_call(bufnr, function()
@@ -207,7 +215,9 @@ function M.write_result(path, channel_id, request_id, envelope)
     end
   end
 
-  pcall(vim.rpcnotify, channel_id, "neph:review_done", envelope)
+  if channel_id and channel_id ~= 0 then
+    pcall(vim.rpcnotify, channel_id, "neph:review_done", envelope)
+  end
 end
 
 return M

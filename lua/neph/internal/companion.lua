@@ -22,6 +22,10 @@ local augroup = nil
 ---@type integer|nil sidecar job ID
 local sidecar_job = nil
 
+---@type integer respawn attempt counter
+local respawn_attempts = 0
+local MAX_RESPAWN_ATTEMPTS = 3
+
 -- ---------------------------------------------------------------------------
 -- Context collection
 -- ---------------------------------------------------------------------------
@@ -141,13 +145,13 @@ function M.start_sidecar(root, workspace)
 
   local script = root .. "/tools/gemini/dist/companion.js"
   if vim.fn.filereadable(script) ~= 1 then
-    log.debug("companion", "sidecar script not found: %s", script)
+    vim.notify("Neph: companion sidecar script not found: " .. script, vim.log.levels.ERROR)
     return nil
   end
 
   local socket = vim.v.servername
   if not socket or socket == "" then
-    log.debug("companion", "no Neovim server socket available")
+    vim.notify("Neph: no Neovim server socket available for companion sidecar", vim.log.levels.ERROR)
     return nil
   end
 
@@ -157,16 +161,25 @@ function M.start_sidecar(root, workspace)
     on_exit = vim.schedule_wrap(function(_, code)
       log.debug("companion", "sidecar exited (code=%d)", code)
       sidecar_job = nil
-      -- Respawn if unexpected exit and gemini session is still active
-      if code ~= 0 then
-        vim.defer_fn(function()
-          if not vim.g.gemini_active then
-            log.debug("companion", "skipping respawn — gemini no longer active")
-            return
-          end
-          M.start_sidecar(root, workspace)
-        end, 2000)
+      if code == 0 then
+        respawn_attempts = 0
+        return
       end
+      -- Respawn if unexpected exit and gemini session is still active
+      if respawn_attempts >= MAX_RESPAWN_ATTEMPTS then
+        vim.notify("Neph: companion sidecar failed after " .. MAX_RESPAWN_ATTEMPTS .. " attempts", vim.log.levels.ERROR)
+        return
+      end
+      respawn_attempts = respawn_attempts + 1
+      local delay = 2000 * (2 ^ (respawn_attempts - 1)) -- 2s, 4s, 8s
+      log.debug("companion", "respawn attempt %d/%d in %dms", respawn_attempts, MAX_RESPAWN_ATTEMPTS, delay)
+      vim.defer_fn(function()
+        if not vim.g.gemini_active then
+          log.debug("companion", "skipping respawn — gemini no longer active")
+          return
+        end
+        M.start_sidecar(root, workspace)
+      end, delay)
     end),
   })
 
@@ -176,6 +189,7 @@ function M.start_sidecar(root, workspace)
     return nil
   end
 
+  respawn_attempts = 0
   return sidecar_job
 end
 

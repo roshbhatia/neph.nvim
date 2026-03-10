@@ -107,6 +107,29 @@ describe("NephClient", () => {
     expect(client.isConnected()).toBe(false);
   });
 
+  it("review rejects with timeout error after REVIEW_TIMEOUT_MS", async () => {
+    vi.useFakeTimers();
+    const client = new NephClient();
+    const mock = (await import("neovim") as any).__mockClient;
+    mock.request.mockResolvedValue([5, {}]);
+    mock.on.mockImplementation(() => {});
+    mock.executeLua.mockResolvedValue({ ok: true, result: { ok: true } });
+
+    await client.connect("/tmp/test.sock");
+
+    const reviewPromise = client.review("/tmp/test.ts", "content");
+
+    // Advance past the 300s timeout
+    await vi.advanceTimersByTimeAsync(300_000);
+
+    const result = await reviewPromise;
+    expect(result.decision).toBe("reject");
+    expect(result.reason).toBe("Review failed or timed out");
+
+    client.disconnect();
+    vi.useRealTimers();
+  });
+
   it("setStatus calls status.set RPC", async () => {
     const client = new NephClient();
     const mock = (await import("neovim") as any).__mockClient;

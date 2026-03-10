@@ -22,6 +22,8 @@ local augroup = nil
 local pending_timers = {}
 ---@type table<string, {text:string, opts:table}[]>  termname → queued sends
 local ready_queue = {}
+---@type table<string, boolean>  termname → true if fallback notification already shown
+local notified_fallback = {}
 
 -- ---------------------------------------------------------------------------
 -- Setup
@@ -35,6 +37,11 @@ function M.setup(opts, backend_mod)
 
   backend = backend_mod
   backend.setup(config)
+
+  -- Clear bus fallback notification flag when an agent re-registers
+  require("neph.internal.bus").on_register(function(name)
+    notified_fallback[name] = nil
+  end)
 
   if not augroup then
     augroup = vim.api.nvim_create_augroup("NephSession", { clear = true })
@@ -303,6 +310,10 @@ function M.send(termname, text, opts)
       return
     end
     log.debug("session", "send: %s extension not connected, falling through to terminal", termname)
+    if not notified_fallback[termname] then
+      notified_fallback[termname] = true
+      vim.notify("Neph: " .. termname .. " bus disconnected, using terminal fallback", vim.log.levels.WARN)
+    end
   else
     log.debug("session", "send: %s via terminal (len=%d, submit=%s)", termname, #text, tostring(opts.submit or false))
   end

@@ -253,6 +253,37 @@ describe('runGate', () => {
   });
 });
 
+describe('gate timeout', () => {
+  let stderrSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    stderrSpy.mockRestore();
+    vi.useRealTimers();
+  });
+
+  it('returns exit code 3 on timeout with reason in stderr', async () => {
+    const transport = new FakeTransport();
+
+    const promise = runGate(transport, 'claude', JSON.stringify({
+      tool_name: 'Write',
+      tool_input: { file_path: '/tmp/test.txt', content: 'hello' },
+    }));
+
+    await vi.advanceTimersByTimeAsync(300_000);
+
+    const code = await promise;
+    expect(code).toBe(3);
+    expect(stderrSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Review timed out (300s)'),
+    );
+  });
+});
+
 describe('debug logging on null-return', () => {
   const logMock = logDebug as ReturnType<typeof vi.fn>;
 
