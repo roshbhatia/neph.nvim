@@ -110,7 +110,7 @@ end
 ---@param agent_name string
 local function push_context(agent_name)
   if debounce_timer then
-    debounce_timer:stop()
+    pcall(debounce_timer.stop, debounce_timer)
   else
     debounce_timer = vim.uv.new_timer()
   end

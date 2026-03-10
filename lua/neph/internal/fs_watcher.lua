@@ -81,10 +81,16 @@ local function buffer_differs_from_disk(filepath)
     log.debug("fs_watcher", "file unreadable (possibly deleted): %s", filepath)
     return false
   end
-  for line in f:lines() do
-    table.insert(disk_lines, line)
-  end
+  local ok_read = pcall(function()
+    for line in f:lines() do
+      table.insert(disk_lines, line)
+    end
+  end)
   f:close()
+  if not ok_read then
+    log.debug("fs_watcher", "file read error (possibly deleted during read): %s", filepath)
+    return false
+  end
 
   if #buf_lines ~= #disk_lines then
     return true

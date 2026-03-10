@@ -224,3 +224,13 @@ The `_apply_post_write` function SHALL check `io.open` and `file:write` return v
 - **THEN** the system SHALL call `vim.notify("Neph: failed to write merged content: <path>", WARN)`
 - **AND** SHALL close the file handle
 - **AND** SHALL return without modifying the file
+
+### Requirement: Review open validates file_path parameter
+
+The `review.open` handler SHALL validate that the `file_path` parameter is a non-empty string before processing.
+
+#### Scenario: file_path is nil, non-string, or empty
+
+- **WHEN** `review.open` is called with `file_path` that is nil, a non-string type, or an empty string
+- **THEN** the handler SHALL return `{ ok = false, error = "invalid file_path" }`
+- **AND** no review UI SHALL open

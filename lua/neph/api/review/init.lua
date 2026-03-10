@@ -41,6 +41,10 @@ function M._open_immediate(params)
   local content = params.content
   local mode = params.mode or "pre_write"
 
+  if type(file_path) ~= "string" or file_path == "" then
+    return { ok = false, error = "invalid file_path" }
+  end
+
   if content ~= nil and type(content) ~= "string" then
     return { ok = false, error = "invalid content type" }
   end
