@@ -69,6 +69,42 @@ export async function runCommand(transport: NvimTransport | null, command: strin
           name: "status",
           description: "Check connection status",
           parameters: { type: "object", properties: {} }
+        },
+        {
+          name: "ui-select",
+          description: "Show a selection list in Neovim",
+          parameters: {
+            type: "object",
+            properties: {
+              title: { type: "string" },
+              options: { type: "array", items: { type: "string" } }
+            },
+            required: ["title", "options"]
+          }
+        },
+        {
+          name: "ui-input",
+          description: "Show a text input prompt in Neovim",
+          parameters: {
+            type: "object",
+            properties: {
+              title: { type: "string" },
+              default: { type: "string" }
+            },
+            required: ["title"]
+          }
+        },
+        {
+          name: "ui-notify",
+          description: "Display a notification in Neovim",
+          parameters: {
+            type: "object",
+            properties: {
+              message: { type: "string" },
+              level: { type: "string", enum: ["info", "warn", "error", "debug"] }
+            },
+            required: ["message"]
+          }
         }
       ]
     };
@@ -89,22 +125,24 @@ export async function runCommand(transport: NvimTransport | null, command: strin
 
   const dryRun = process.env.NEPH_DRY_RUN === '1' || (!transport && command === 'review');
 
-  if (command === 'review') {
-    const filePath = args[1];
-    if (!filePath) {
-      process.stderr.write('Usage: neph review <path>\n');
-      process.exit(1);
-    }
+  if (command === 'review' || command === 'ui-select' || command === 'ui-input') {
+    if (command === 'review') {
+      const filePath = args[1];
+      if (!filePath) {
+        process.stderr.write('Usage: neph review <path>\n');
+        process.exit(1);
+      }
 
-    if (dryRun) {
-      process.stdout.write(JSON.stringify({
-        schema: 'review/v1',
-        decision: 'accept',
-        content: stdin,
-        hunks: [],
-        reason: 'Dry-run auto-accept'
-      }) + '\n');
-      return;
+      if (dryRun) {
+        process.stdout.write(JSON.stringify({
+          schema: 'review/v1',
+          decision: 'accept',
+          content: stdin,
+          hunks: [],
+          reason: 'Dry-run auto-accept'
+        }) + '\n');
+        return;
+      }
     }
 
     if (!transport) {
@@ -113,13 +151,13 @@ export async function runCommand(transport: NvimTransport | null, command: strin
     }
 
     const requestId = crypto.randomUUID();
-    const resultPath = path.join(os.tmpdir(), `neph-review-${requestId}.json`);
+    const resultPath = command === 'review' ? path.join(os.tmpdir(), `neph-review-${requestId}.json`) : undefined;
 
     let done = false;
     const cleanup = async () => {
       if (done) return;
       done = true;
-      if (fs.existsSync(resultPath)) {
+      if (resultPath && fs.existsSync(resultPath)) {
         try { fs.unlinkSync(resultPath); } catch {}
       }
       try {
@@ -128,60 +166,107 @@ export async function runCommand(transport: NvimTransport | null, command: strin
       await transport.close();
     };
 
-    const handleResult = async (data: string) => {
+    const handleResult = async (data: any) => {
       if (done) return;
-      try {
-        const json = JSON.parse(data);
+      if (command === 'review') {
+        const json = typeof data === 'string' ? JSON.parse(data) : data;
         if (json.request_id === requestId) {
-          watcher.close();
-          process.stdout.write(data + '\n');
+          if (watcher) watcher.close();
+          process.stdout.write((typeof data === 'string' ? data : JSON.stringify(data)) + '\n');
           await cleanup();
           process.exit(0);
         }
-      } catch {}
+      } else {
+        // ui-select / ui-input
+        if (data.request_id === requestId) {
+          process.stdout.write(String(data.choice) + '\n');
+          await cleanup();
+          process.exit(0);
+        }
+      }
     };
 
-    transport.onNotification('neph:review_done', async (args: any) => {
+    transport.onNotification(command === 'review' ? 'neph:review_done' : 'neph:ui_response', async (args: any) => {
       const payload = args[0];
       if (payload && payload.request_id === requestId) {
-        if (fs.existsSync(resultPath)) {
+        if (command === 'review' && resultPath && fs.existsSync(resultPath)) {
           const result = fs.readFileSync(resultPath, 'utf8');
           await handleResult(result);
+        } else {
+          await handleResult(payload);
         }
       }
     });
 
-    const watcher = fs.watch(os.tmpdir(), async (event, filename) => {
-      if (filename === path.basename(resultPath) && fs.existsSync(resultPath)) {
-        const result = fs.readFileSync(resultPath, 'utf8');
-        await handleResult(result);
-      }
-    });
+    let watcher: fs.FSWatcher | undefined;
+    if (command === 'review' && resultPath) {
+      watcher = fs.watch(os.tmpdir(), async (event, filename) => {
+        if (filename === path.basename(resultPath) && fs.existsSync(resultPath)) {
+          const result = fs.readFileSync(resultPath, 'utf8');
+          await handleResult(result);
+        }
+      });
+    }
 
     try {
       await transport.executeLua(RPC_CALL, ['status.set', { name: 'neph_connected', value: 'true' }]);
       const channelId = await transport.getChannelId();
-      await transport.executeLua(RPC_CALL, [
-        'review.open',
-        {
-          request_id: requestId,
-          result_path: resultPath,
-          channel_id: channelId,
-          path: path.resolve(filePath),
-          content: stdin
+      
+      if (command === 'review') {
+        await transport.executeLua(RPC_CALL, [
+          'review.open',
+          {
+            request_id: requestId,
+            result_path: resultPath,
+            channel_id: channelId,
+            path: path.resolve(args[1]),
+            content: stdin
+          }
+        ]);
+      } else if (command === 'ui-select') {
+        const title = args[1];
+        const options = args.slice(2);
+        if (!title || options.length === 0) {
+          process.stderr.write('Usage: neph ui-select <title> <option1> <option2> ...\n');
+          process.exit(1);
         }
-      ]);
+        await transport.executeLua(RPC_CALL, [
+          'ui.select',
+          {
+            request_id: requestId,
+            channel_id: channelId,
+            title,
+            options
+          }
+        ]);
+      } else if (command === 'ui-input') {
+        const title = args[1];
+        const defaultValue = args[2];
+        if (!title) {
+          process.stderr.write('Usage: neph ui-input <title> [default]\n');
+          process.exit(1);
+        }
+        await transport.executeLua(RPC_CALL, [
+          'ui.input',
+          {
+            request_id: requestId,
+            channel_id: channelId,
+            title,
+            default: defaultValue
+          }
+        ]);
+      }
     } catch (err) {
-      process.stderr.write(`Failed to start review: ${err}\n`);
-      watcher.close();
+      process.stderr.write(`Failed to start ${command}: ${err}\n`);
+      if (watcher) watcher.close();
       await cleanup();
       process.exit(1);
     }
 
     setTimeout(async () => {
       if (!done) {
-        process.stderr.write('Review timed out after 300s\n');
-        watcher.close();
+        process.stderr.write(`${command} timed out after 300s\n`);
+        if (watcher) watcher.close();
         await cleanup();
         process.exit(1);
       }
@@ -218,6 +303,14 @@ export async function runCommand(transport: NvimTransport | null, command: strin
       case 'close-tab':
         method = 'tab.close';
         break;
+      case 'ui-notify':
+        method = 'ui.notify';
+        params = { message: args[1], level: args[2] };
+        if (!params.message) {
+          process.stderr.write('Usage: neph ui-notify <message> [level]\n');
+          process.exit(1);
+        }
+        break;
       case 'status':
         process.stdout.write(JSON.stringify({ status: 'connected' }) + '\n');
         await transport.close();
@@ -245,7 +338,7 @@ if (require.main === module) {
   const command = args[0];
 
   if (!command) {
-    process.stderr.write('Usage: neph <command> [args...]\nCommands: review, set, unset, get, checktime, close-tab, status, spec, gate\n');
+    process.stderr.write('Usage: neph <command> [args...]\nCommands: review, set, unset, get, checktime, close-tab, status, spec, gate, ui-select, ui-input, ui-notify\n');
     process.exit(1);
   }
 

@@ -111,3 +111,46 @@ export async function review(
     };
   }
 }
+
+/**
+ * Trigger a selection list in Neovim via CLI.
+ */
+export async function uiSelect(
+  title: string,
+  options: string[],
+): Promise<string | undefined> {
+  try {
+    const result = await nephRun(["ui-select", title, ...options]);
+    return result.trim() || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Trigger a text input prompt in Neovim via CLI.
+ */
+export async function uiInput(
+  title: string,
+  defaultValue?: string,
+): Promise<string | undefined> {
+  try {
+    const args = ["ui-input", title];
+    if (defaultValue) args.push(defaultValue);
+    const result = await nephRun(args);
+    return result.trim() || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Trigger a notification in Neovim via CLI (fire-and-forget).
+ */
+export function uiNotify(message: string, level?: string): void {
+  const args = ["ui-notify", message];
+  if (level) args.push(level);
+  nephRun(args, undefined, NEPH_TIMEOUT_MS).catch(() => {
+    /* ignore */
+  });
+}

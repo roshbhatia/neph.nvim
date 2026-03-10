@@ -11,6 +11,12 @@ The system SHALL provide a single Node/TS CLI (`neph`) that bridges external pro
 - **AND** print ReviewEnvelope JSON to stdout
 - **AND** exit 0 on success
 
+#### Scenario: Interactive UI commands
+- **WHEN** caller invokes `neph ui-select`, `neph ui-input`, or `neph ui-notify`
+- **THEN** neph SHALL dispatch to the corresponding `ui.*` RPC endpoint
+- **AND** for `ui-select` and `ui-input`, wait for a notification response before exiting
+- **AND** print the result to stdout
+
 #### Scenario: PATH agent discovers neph on PATH
 - **WHEN** an agent calls `neph review <path>` with content on stdin
 - **THEN** neph SHALL behave identically to subprocess invocation

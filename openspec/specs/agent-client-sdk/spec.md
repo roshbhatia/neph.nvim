@@ -27,6 +27,7 @@
 #### Scenario: Prompt received via notification
 - **WHEN** Neovim sends `vim.rpcnotify(channel, "neph:prompt", "fix the bug\n")`
 - **THEN** the `onPrompt` callback SHALL fire with `"fix the bug\n"`
+- **AND** this SHALL work for both `pi` and `opencode` persistent bridges
 
 ### Requirement: Status helpers
 `NephClient` SHALL provide `setStatus(name, value)` and `unsetStatus(name)` methods that call the existing `status.set` and `status.unset` RPC methods.
