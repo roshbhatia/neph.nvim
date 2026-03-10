@@ -141,6 +141,34 @@ function M.is_in_review(path)
   return false
 end
 
+--- Cancel a queued or active review by file path.
+---@param path string
+function M.cancel_path(path)
+  -- Remove from queue
+  local new_queue = {}
+  for _, req in ipairs(queue) do
+    if req.path ~= path then
+      table.insert(new_queue, req)
+    end
+  end
+  queue = new_queue
+
+  -- Cancel active review if it matches
+  if active and active.path == path then
+    log.debug("review_queue", "cancelling active review for path: %s", path)
+    active = nil
+    -- Open next queued review
+    if #queue > 0 then
+      active = table.remove(queue, 1)
+      if open_fn then
+        vim.schedule(function()
+          open_fn(active)
+        end)
+      end
+    end
+  end
+end
+
 --- Reset all state (for testing)
 function M._reset()
   queue = {}

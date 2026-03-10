@@ -319,7 +319,10 @@ local function begin_transaction(agent_name)
   local path = transaction_path(agent_name)
   local tmp_path = path .. ".tmp"
   vim.fn.writefile({ vim.json.encode(tx) }, tmp_path)
-  os.rename(tmp_path, path)
+  local rename_ok, rename_err = os.rename(tmp_path, path)
+  if not rename_ok then
+    vim.notify("Neph: failed to write transaction: " .. (rename_err or ""), vim.log.levels.WARN)
+  end
 
   return tx
 end
@@ -340,7 +343,10 @@ local function log_operation(agent_name, op)
 
   local tmp_path = path .. ".tmp"
   vim.fn.writefile({ vim.json.encode(tx) }, tmp_path)
-  os.rename(tmp_path, path)
+  local rename_ok, rename_err = os.rename(tmp_path, path)
+  if not rename_ok then
+    vim.notify("Neph: failed to log operation: " .. (rename_err or ""), vim.log.levels.WARN)
+  end
 end
 
 local function commit_transaction(agent_name)
@@ -360,7 +366,10 @@ local function commit_transaction(agent_name)
 
   local tmp_path = path .. ".tmp"
   vim.fn.writefile({ vim.json.encode(tx) }, tmp_path)
-  os.rename(tmp_path, path)
+  local rename_ok, rename_err = os.rename(tmp_path, path)
+  if not rename_ok then
+    vim.notify("Neph: failed to commit transaction: " .. (rename_err or ""), vim.log.levels.WARN)
+  end
 
   -- Clean up completed transaction after short delay
   vim.defer_fn(function()
@@ -396,7 +405,10 @@ local function rollback_transaction(agent_name, tx)
   local path = transaction_path(agent_name)
   local tmp_path = path .. ".tmp"
   vim.fn.writefile({ vim.json.encode(tx) }, tmp_path)
-  os.rename(tmp_path, path)
+  local rename_ok, rename_err = os.rename(tmp_path, path)
+  if not rename_ok then
+    vim.notify("Neph: failed to save rollback state: " .. (rename_err or ""), vim.log.levels.WARN)
+  end
 end
 
 local function detect_incomplete_transactions()
@@ -642,6 +654,14 @@ function M.install_symlink(src, dst)
   local src_exists = vim.fn.filereadable(src) == 1 or vim.fn.isdirectory(src) == 1
   if not src_exists then
     return false, "source does not exist: " .. src
+  end
+
+  -- Validate destination doesn't escape expected directories
+  local resolved_dst = vim.fn.resolve(vim.fn.fnamemodify(dst, ":p"))
+  local home = vim.env.HOME or ""
+  local root = plugin_root()
+  if home ~= "" and resolved_dst:sub(1, #home) ~= home and resolved_dst:sub(1, #root) ~= root then
+    return false, "symlink destination escapes allowed directories: " .. dst
   end
 
   local dst_dir = vim.fn.fnamemodify(dst, ":h")

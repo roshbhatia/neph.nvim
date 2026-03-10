@@ -45,3 +45,16 @@ return {
   },
 }
 ```
+
+## Socket Integration
+
+neph.nvim uses `NVIM_SOCKET_PATH` to enable RPC communication between agent tooling (hooks, sidecars) and the parent Neovim instance. This powers the review system, statusline updates, and agent bus.
+
+**Setup:** Start Neovim with `--listen` and export the socket path:
+
+```bash
+export NVIM_SOCKET_PATH="/tmp/nvim-$USER.sock"
+nvim --listen "$NVIM_SOCKET_PATH"
+```
+
+neph.nvim does **not** create the socket itself — it must be provided externally. When `NVIM_SOCKET_PATH` is set, it is automatically forwarded to all agent terminal environments. When absent, neph.nvim still works but review hooks and companion sidecars cannot communicate with Neovim.

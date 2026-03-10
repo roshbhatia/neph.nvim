@@ -120,9 +120,9 @@ function M._ensure_health_timer()
     1000,
     vim.schedule_wrap(function()
       for name, ch in pairs(channels) do
-        local ok = pcall(vim.rpcnotify, ch, "neph:ping")
+        local ok, err = pcall(vim.rpcnotify, ch, "neph:ping")
         if not ok then
-          log.debug("bus", "health check: %s channel %d dead, removing", name, ch)
+          log.debug("bus", "health check: %s channel %d dead (%s), removing", name, ch, tostring(err))
           M.unregister(name)
         end
       end

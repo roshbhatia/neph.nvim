@@ -160,11 +160,11 @@ function M.start_sidecar(root, workspace)
       -- Respawn if unexpected exit and gemini session is still active
       if code ~= 0 then
         vim.defer_fn(function()
-          local agents = require("neph.internal.agents")
-          local agent = agents.get_by_name("gemini")
-          if agent then
-            M.start_sidecar(root, workspace)
+          if not vim.g.gemini_active then
+            log.debug("companion", "skipping respawn — gemini no longer active")
+            return
           end
+          M.start_sidecar(root, workspace)
         end, 2000)
       end
     end),

@@ -9,7 +9,7 @@ local M = {}
 
 local log = require("neph.internal.log")
 
-local MAX_WATCHED = 100
+local max_watched = 100
 
 ---@type table<string, userdata>  filepath → uv_fs_event_t handle
 local watches = {}
@@ -76,8 +76,9 @@ local function buffer_differs_from_disk(filepath)
 
   local buf_lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
   local disk_lines = {}
-  local f = io.open(filepath, "r")
-  if not f then
+  local ok_open, f = pcall(io.open, filepath, "r")
+  if not ok_open or not f then
+    log.debug("fs_watcher", "file unreadable (possibly deleted): %s", filepath)
     return false
   end
   for line in f:lines() do
@@ -160,8 +161,8 @@ function M.watch_file(filepath)
   for _ in pairs(watches) do
     count = count + 1
   end
-  if count >= MAX_WATCHED then
-    log.debug("fs_watcher", "watch limit reached (%d), skipping: %s", MAX_WATCHED, filepath)
+  if count >= max_watched then
+    log.debug("fs_watcher", "watch limit reached (%d), skipping: %s", max_watched, filepath)
     return
   end
 
@@ -179,10 +180,10 @@ function M.watch_file(filepath)
 
     -- Debounce: wait 200ms before processing
     if debounce_timers[filepath] then
-      debounce_timers[filepath]:stop()
-    else
-      debounce_timers[filepath] = vim.uv.new_timer()
+      pcall(debounce_timers[filepath].stop, debounce_timers[filepath])
+      pcall(debounce_timers[filepath].close, debounce_timers[filepath])
     end
+    debounce_timers[filepath] = vim.uv.new_timer()
 
     debounce_timers[filepath]:start(200, 0, vim.schedule_wrap(function()
       debounce_timers[filepath] = nil
@@ -230,6 +231,7 @@ function M.start()
   end
 
   ignore_patterns = watcher_cfg.ignore or { "node_modules", ".git", "dist", "build", "__pycache__" }
+  max_watched = watcher_cfg.max_watched or 100
   active = true
   log.debug("fs_watcher", "started")
 
@@ -299,6 +301,16 @@ function M.stop()
   end
 
   log.debug("fs_watcher", "stopped")
+end
+
+--- Return list of currently watched file paths (for debugging/testing).
+---@return string[]
+function M.get_watches()
+  local paths = {}
+  for filepath in pairs(watches) do
+    table.insert(paths, filepath)
+  end
+  return paths
 end
 
 --- Add a file to the watch list (e.g., after review completion).

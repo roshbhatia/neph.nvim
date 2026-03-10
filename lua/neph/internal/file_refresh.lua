@@ -11,6 +11,9 @@ local timer = nil
 
 ---@param config neph.Config
 function M.setup(config)
+  -- Idempotent: tear down any existing state first
+  M.teardown()
+
   local cfg = (config or {}).file_refresh or {}
   if not cfg.enable then
     return
@@ -33,16 +36,12 @@ function M.setup(config)
   })
 
   -- Also check on a timer
-  if timer then
-    timer:stop()
-    timer:close()
-    timer = nil
-  end
   timer = vim.uv.new_timer()
   if timer then
+    local interval = cfg.interval or 1000
     timer:start(
-      cfg.timer_interval or 1000,
-      cfg.timer_interval or 1000,
+      interval,
+      interval,
       vim.schedule_wrap(function()
         vim.cmd("silent! checktime")
       end)

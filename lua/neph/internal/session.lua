@@ -128,6 +128,7 @@ function M.open(termname)
       full_cmd = agent.cmd .. " " .. table.concat(escaped, " ")
     elseif not ok then
       log.debug("session", "launch_args_fn error for %s: %s", agent.name, tostring(extra))
+      vim.notify("Neph: launch_args_fn failed for " .. agent.name .. ": " .. tostring(extra), vim.log.levels.WARN)
     end
   end
 
@@ -173,7 +174,7 @@ function M.open(termname)
     end
 
     -- Start companion sidecar for agents that need it
-    if agent.type == "extension" and agent.name == "gemini" then
+    if agent and agent.type == "extension" and agent.name == "gemini" then
       local companion = require("neph.internal.companion")
       local tools = require("neph.tools")
       companion.start_sidecar(tools.get_root(), cwd)
@@ -307,6 +308,10 @@ function M.send(termname, text, opts)
   end
 
   -- Default send: WezTerm pane or native terminal via chansend
+  if td.stale_since then
+    log.debug("session", "send: %s skipped — terminal marked stale", termname)
+    return
+  end
   if td.pane_id then
     local full_text = opts.submit and (text .. "\n") or text
     local job_id = vim.fn.jobstart({

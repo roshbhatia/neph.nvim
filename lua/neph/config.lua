@@ -37,6 +37,7 @@ local M = {}
 
 ---@class neph.FileRefreshConfig
 ---@field enable?         boolean  Periodically call :checktime (default: true)
+---@field interval?       integer  Timer interval in ms (default: 1000)
 
 ---@class neph.ReviewSignsConfig
 ---@field accept?    string  Icon for accepted hunk (default: ✓)
@@ -60,8 +61,9 @@ local M = {}
 ---@field pending_notify? boolean               Show notification when review is pending (default: true)
 
 ---@class neph.FsWatcherConfig
----@field enable? boolean    Enable filesystem watcher (default: true)
----@field ignore? string[]   Patterns to exclude from watching (default: node_modules, .git, dist, build, __pycache__)
+---@field enable?      boolean    Enable filesystem watcher (default: true)
+---@field ignore?      string[]   Patterns to exclude from watching (default: node_modules, .git, dist, build, __pycache__)
+---@field max_watched? integer    Maximum number of files to watch (default: 100)
 
 ---@class neph.ReviewQueueConfig
 ---@field enable? boolean    Enable sequential review queue (default: true)
@@ -72,6 +74,7 @@ M.defaults = {
   env = {},
   file_refresh = {
     enable = true,
+    interval = 1000,
   },
   agents = nil,
   backend = nil,
@@ -95,6 +98,7 @@ M.defaults = {
     fs_watcher = {
       enable = true,
       ignore = { "node_modules", ".git", "dist", "build", "__pycache__" },
+      max_watched = 100,
     },
     queue = {
       enable = true,

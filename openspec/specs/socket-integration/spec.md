@@ -18,16 +18,12 @@ neph.nvim SHALL NOT call `vim.fn.serverstart()` or set `--listen` on behalf of t
 - **WHEN** `require("neph").setup({})` is called and `vim.env.NVIM_SOCKET_PATH` is absent
 - **THEN** setup completes without error and without attempting to create a socket
 
-### Requirement: README documents socket integration and Lua script location
-The README SHALL contain a section explaining `NVIM_SOCKET_PATH` and what it enables. The companion tools table SHALL note that `shim.py` loads its Lua scripts from `tools/core/lua/`.
+### Requirement: README documents socket integration
+The README SHALL contain a section explaining `NVIM_SOCKET_PATH` and what it enables.
 
 #### Scenario: Socket section present
 - **WHEN** the README is read
 - **THEN** it contains a "Socket Integration" section with instructions for enabling the socket
-
-#### Scenario: Lua script location documented
-- **WHEN** the README companion tools table is read
-- **THEN** the `shim.py` row mentions that Lua scripts live in `tools/core/lua/`
 
 ### Requirement: Timeout applied via socket.setdefaulttimeout before pynvim.attach
 `shim.py` SHALL apply the connection timeout by calling

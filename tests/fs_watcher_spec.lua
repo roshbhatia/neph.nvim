@@ -52,6 +52,19 @@ describe("neph.internal.fs_watcher", function()
     end)
   end)
 
+  describe("get_watches", function()
+    it("returns empty when inactive", function()
+      assert.are.same({}, fs_watcher.get_watches())
+    end)
+
+    it("returns watched paths after start", function()
+      fs_watcher.start()
+      -- After start, open buffers are watched; get_watches should return a list
+      local watches = fs_watcher.get_watches()
+      assert.is_table(watches)
+    end)
+  end)
+
   describe("config disabled", function()
     it("does not start when fs_watcher.enable is false", function()
       -- Temporarily override config
