@@ -44,12 +44,14 @@ export default function (pi: ExtensionAPI) {
         const result = await neph.review(filePath, newContent);
 
         if (result.decision === "reject") {
-          const reason = result.reason ? `: ${result.reason}` : "";
           return {
             content: [
-              { type: "text" as const, text: `Write rejected${reason}` },
+              {
+                type: "text" as const,
+                text: `Write rejected by user${result.reason ? `: ${result.reason}` : ""}`,
+              },
             ],
-            details: {},
+            details: undefined,
           };
         }
 
@@ -89,67 +91,62 @@ export default function (pi: ExtensionAPI) {
         const oldText = params.oldText as string;
         const newText = params.newText as string;
 
-        let currentContent: string;
+        let newContent: string;
         try {
-          currentContent = readFileSync(filePath, "utf-8");
+          const currentContent = readFileSync(filePath, "utf-8");
+          if (!currentContent.includes(oldText)) {
+            // Let the native tool handle the "oldText not found" error later
+            // but we need full content for review.
+            newContent = currentContent;
+          } else {
+            newContent = currentContent.replace(oldText, newText);
+          }
         } catch {
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: `Cannot read ${params.path as string}`,
-              },
-            ],
-            details: {},
-          };
+          // Let the native tool handle "file not found" error later
+          newContent = "";
         }
 
-        if (!currentContent.includes(oldText)) {
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: `Edit failed: oldText not found in ${params.path as string}`,
-              },
-            ],
-            details: {},
-          };
-        }
-
-        const newContent = currentContent.replace(oldText, newText);
         const result = await neph.review(filePath, newContent);
 
         if (result.decision === "reject") {
-          const reason = result.reason ? `: ${result.reason}` : "";
           return {
             content: [
-              { type: "text" as const, text: `Edit rejected${reason}` },
+              {
+                type: "text" as const,
+                text: `Edit rejected by user${result.reason ? `: ${result.reason}` : ""}`,
+              },
             ],
-            details: {},
+            details: undefined,
           };
         }
 
-        const finalContent = result.content ?? newContent;
-        const writeResult = await createWriteTool(ctx.cwd).execute(
-          toolCallId,
-          { path: params.path as string, content: finalContent },
-          signal,
-          onUpdate,
-        );
+        const actualResult = result.content
+          ? await createWriteTool(ctx.cwd).execute(
+              toolCallId,
+              { path: params.path as string, content: result.content },
+              signal,
+              onUpdate,
+            )
+          : await createEditTool(ctx.cwd).execute(
+              toolCallId,
+              params as any,
+              signal,
+              onUpdate,
+            );
+
         const notes: string[] = [];
         if (result.decision === "partial") notes.push("partial accept");
         if (result.reason) notes.push(result.reason);
         if (notes.length > 0) {
           return {
             content: [
-              ...(writeResult as { content: { type: "text"; text: string }[] })
-                .content,
+              ...(actualResult as { content: { type: "text"; text: string }[] }).content,
               { type: "text" as const, text: `Note: ${notes.join(" — ")}` },
             ],
-            details: (writeResult as { details: unknown }).details,
+            details: (actualResult as { details: unknown }).details,
           };
         }
-        return writeResult;
+        return actualResult;
       },
     });
   }

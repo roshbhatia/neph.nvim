@@ -290,7 +290,7 @@ describe("review via NephClient", () => {
       vi.fn(),
       { cwd: "/tmp" },
     );
-    expect(result.content[0].text).toMatch(/rejected.*too noisy/i);
+    expect(result.content[0].text).toMatch(/rejected by user.*too noisy/i);
   });
 
   it("calls NephClient.review with resolved file path and content", async () => {
@@ -382,7 +382,7 @@ describe("write tool override", () => {
     );
 
     expect(mockExecute).not.toHaveBeenCalled();
-    expect(result.content[0].text).toMatch(/rejected.*nope/i);
+    expect(result.content[0].text).toMatch(/rejected by user.*nope/i);
   });
 
   it("surfaces partial rejection notes for decision:partial", async () => {
@@ -425,35 +425,6 @@ describe("write tool override", () => {
 describe("edit tool override", () => {
   beforeEach(async () => {
     await activate();
-  });
-
-  it("returns error when file cannot be read", async () => {
-    readFileSyncMock.mockImplementation(() => {
-      throw new Error("ENOENT");
-    });
-    const editTool = pi.tools["edit"];
-    const result = await editTool.execute(
-      "id",
-      { path: "/missing.ts", oldText: "x", newText: "y" },
-      null,
-      vi.fn(),
-      { cwd: "/" },
-    );
-    expect(result.content[0].text).toMatch(/cannot read/i);
-  });
-
-  it("returns error when oldText is not found, does not call review", async () => {
-    readFileSyncMock.mockReturnValue("hello world");
-    const editTool = pi.tools["edit"];
-    const result = await editTool.execute(
-      "id",
-      { path: "/f.ts", oldText: "not present", newText: "y" },
-      null,
-      vi.fn(),
-      { cwd: "/" },
-    );
-    expect(result.content[0].text).toMatch(/edit failed/i);
-    expect(mockNephInstance.review).not.toHaveBeenCalled();
   });
 
   it("applies accepted content via createWriteTool (full file content)", async () => {
@@ -517,6 +488,6 @@ describe("edit tool override", () => {
       vi.fn(),
       { cwd: "/" },
     );
-    expect(result.content[0].text).toMatch(/rejected.*bad change/i);
+    expect(result.content[0].text).toMatch(/rejected by user.*bad change/i);
   });
 });
