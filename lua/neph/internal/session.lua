@@ -106,6 +106,10 @@ end
 -- ---------------------------------------------------------------------------
 
 function M.open(termname)
+  if not backend then
+    vim.notify("Neph: not initialized (call setup first)", vim.log.levels.ERROR)
+    return
+  end
   local agent = require("neph.internal.agents").get_by_name(termname)
   if not agent then
     vim.notify("Neph: unknown agent – " .. termname, vim.log.levels.ERROR)

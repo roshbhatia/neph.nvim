@@ -75,9 +75,9 @@ export function createDiffTools(neph: NephClient, sink: DiffNotificationSink) {
         required: ["filePath"],
       },
       handler: async (params: Record<string, unknown>) => {
-        const filePath = params.filePath as string;
-        if (!filePath) {
-          return { content: [{ type: "text", text: "Missing filePath" }], isError: true };
+        const filePath = params.filePath;
+        if (typeof filePath !== "string" || !filePath) {
+          return { content: [{ type: "text", text: "Missing or invalid filePath" }], isError: true };
         }
 
         const resolved = path.resolve(filePath);

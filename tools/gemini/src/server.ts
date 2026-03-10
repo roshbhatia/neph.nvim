@@ -82,12 +82,14 @@ export class McpServer {
       return;
     }
 
-    // Read body (1MB limit)
+    // Read body (1MB limit, tracked in bytes)
     const MAX_BODY = 1_048_576;
     let body = "";
+    let bodyBytes = 0;
     for await (const chunk of req) {
+      bodyBytes += Buffer.isBuffer(chunk) ? chunk.length : Buffer.byteLength(chunk as string);
       body += chunk;
-      if (body.length > MAX_BODY) {
+      if (bodyBytes > MAX_BODY) {
         req.destroy();
         res.writeHead(413, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: "Payload Too Large" }));
@@ -153,9 +155,9 @@ export class McpServer {
         this.sendJsonRpc(res, rpc.id ?? null, result);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        this.sendJsonRpc(res, rpc.id ?? null, {
-          content: [{ type: "text", text: message }],
-          isError: true,
+        this.sendJsonRpc(res, rpc.id ?? null, undefined, {
+          code: -32603,
+          message: `Tool error: ${message}`,
         });
       }
       return;

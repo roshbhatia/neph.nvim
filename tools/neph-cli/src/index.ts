@@ -361,5 +361,8 @@ if (require.main === module) {
       process.stderr.write(`Unhandled error: ${err}\n`);
       process.exit(1);
     });
+  }).catch(err => {
+    process.stderr.write(`Failed to read stdin: ${err}\n`);
+    process.exit(1);
   });
 }

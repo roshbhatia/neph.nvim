@@ -157,7 +157,12 @@ function M._apply_post_write(file_path, envelope, buffer_lines)
       vim.notify("Neph: failed to revert agent changes: " .. file_path, vim.log.levels.WARN)
       return
     end
-    f:write(table.concat(buffer_lines, "\n") .. "\n")
+    local ok, err = f:write(table.concat(buffer_lines, "\n") .. "\n")
+    if not ok then
+      f:close()
+      vim.notify("Neph: failed to revert agent changes: " .. (err or "write error"), vim.log.levels.ERROR)
+      return
+    end
     f:close()
   elseif envelope.decision == "partial" and envelope.content and envelope.content ~= "" then
     -- Partial: write merged content to disk and update buffer
@@ -166,9 +171,19 @@ function M._apply_post_write(file_path, envelope, buffer_lines)
       vim.notify("Neph: failed to write merged content: " .. file_path, vim.log.levels.WARN)
       return
     end
-    f:write(envelope.content)
+    local ok, err = f:write(envelope.content)
+    if not ok then
+      f:close()
+      vim.notify("Neph: failed to write merged content: " .. (err or "write error"), vim.log.levels.ERROR)
+      return
+    end
     if envelope.content:sub(-1) ~= "\n" then
-      f:write("\n")
+      local ok2, err2 = f:write("\n")
+      if not ok2 then
+        f:close()
+        vim.notify("Neph: failed to write merged content: " .. (err2 or "write error"), vim.log.levels.ERROR)
+        return
+      end
     end
     f:close()
     local bufnr = vim.fn.bufnr(file_path)
