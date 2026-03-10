@@ -7,58 +7,60 @@ includes:
 
 tasks:
   lint:
+    # Run all linters for Lua and TypeScript code
     cmds:
-      - stylua --check lua/ tests/
-      - luacheck lua/ tests/ --globals vim Snacks describe it before_each after_each assert
-      - task tools:lint
+      - stylua --check lua/ tests/  # Check Lua code formatting
+      - luacheck lua/ tests/ --globals vim Snacks describe it before_each after_each assert  # Lint Lua code
+      - task tools:lint  # Run linters for tools
 
   test:
+    # Run all tests (Lua and TypeScript)
     cmds:
       - |
         nvim --headless \
           --cmd 'set rtp+=.' \
           --cmd "set rtp+=${PLENARY_PATH:-~/.local/share/nvim/lazy/plenary.nvim}" \
           -c "PlenaryBustedDirectory tests/ {minimal_init='tests/minimal_init.lua'}" \
-          -c 'qa!'
-      - task tools:test
-      - task test:e2e
+          -c 'qa!'  # Run Lua tests using plenary.nvim
+      - task tools:test  # Run TypeScript tests for tools
+      - task test:e2e  # Run end-to-end tests
 
   test:e2e:
     desc: Run e2e tests (headless neovim smoke + agent launch)
     cmds:
-      - nvim --headless --cmd 'set rtp+=.' -l tests/e2e/run.lua
-      - bash tests/e2e/agent_launch.sh
+      - nvim --headless --cmd 'set rtp+=.' -l tests/e2e/run.lua  # Run headless Neovim tests
+      - bash tests/e2e/agent_launch.sh  # Run agent launch tests
 
   build:
     desc: Build all companion tools (neph-cli, pi extension)
     cmds:
-      - task tools:build
+      - task tools:build  # Build tools
 
   install:
     desc: Install (symlink) all bundled tools (neph, pi)
     cmds:
-      - task build
+      - task build  # Build the tools
       - |
         nvim --headless --cmd 'set rtp+=.' \
           -c "lua require('neph').setup({ agents = { require('neph.agents.pi') }, backend = require('neph.backends.snacks') })" \
           -c "lua require('neph.tools').install()" \
-          -c 'qa!'
+          -c 'qa!'  # Install the tools by setting up Neovim and running the installation script
 
   check:
     desc: Fast local lint + type check (no tests, no builds)
     cmds:
-      - stylua --check lua/ tests/
+      - stylua --check lua/ tests/  # Check Lua code formatting
       - cmd: luacheck lua/ tests/ --globals vim Snacks describe it before_each after_each assert
-        ignore_error: true
-      - task: tools:lint:neph
+        ignore_error: true  # Lint Lua code, ignore errors
+      - task: tools:lint:neph  # Run linters for neph-cli
 
   ci:
     desc: Run lint + test
     cmds:
-      - task lint
-      - task test
+      - task lint  # Run all linters
+      - task test  # Run all tests
 
   docs:
     desc: Generate vimdoc from EmmyLua annotations
     cmds:
-      - nvim --headless -u NONE -l scripts/docgen.lua
+      - nvim --headless -u NONE -l scripts/docgen.lua  # Generate vimdoc documentation from EmmyLua annotations
