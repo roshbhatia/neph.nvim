@@ -299,7 +299,7 @@ export async function runGate(
         const json = JSON.parse(data);
         if (json.request_id === requestId) {
           watcher.close();
-          const decision = json.decision as string;
+          const decision = typeof json.decision === 'string' ? json.decision : 'accept';
           await cleanup();
           resolve(decision === 'reject' ? 2 : 0);
         }
@@ -307,11 +307,15 @@ export async function runGate(
     };
 
     transport.onNotification('neph:review_done', (args: unknown[]) => {
-      const p = args[0] as Record<string, unknown> | undefined;
-      if (p && p.request_id === requestId) {
-        if (fs.existsSync(resultPath)) {
-          handleResult(fs.readFileSync(resultPath, 'utf8'));
+      try {
+        const p = args[0] as Record<string, unknown> | undefined;
+        if (p && p.request_id === requestId) {
+          if (fs.existsSync(resultPath)) {
+            handleResult(fs.readFileSync(resultPath, 'utf8'));
+          }
         }
+      } catch (err) {
+        process.stderr.write(`neph gate: notification handler error: ${err}\n`);
       }
     });
 

@@ -46,7 +46,7 @@ function M.enqueue(params)
 
     -- Show notification for queued review
     local config = require("neph.config").current
-    local review_cfg = config.review or {}
+    local review_cfg = type(config.review) == "table" and config.review or {}
     if review_cfg.pending_notify ~= false then
       local rel = vim.fn.fnamemodify(params.path, ":.")
       local agent_str = params.agent and (" (" .. params.agent .. ")") or ""

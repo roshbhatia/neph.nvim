@@ -117,7 +117,7 @@ local function on_file_changed(filepath)
   end
 
   local config = require("neph.config").current
-  local review_cfg = config.review or {}
+  local review_cfg = type(config.review) == "table" and config.review or {}
   if review_cfg.pending_notify == false then
     return
   end
@@ -229,8 +229,8 @@ function M.start()
   end
 
   local config = require("neph.config").current
-  local review_cfg = config.review or {}
-  local watcher_cfg = review_cfg.fs_watcher or {}
+  local review_cfg = type(config.review) == "table" and config.review or {}
+  local watcher_cfg = type(review_cfg.fs_watcher) == "table" and review_cfg.fs_watcher or {}
   if watcher_cfg.enable == false then
     return
   end

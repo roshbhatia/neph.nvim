@@ -339,7 +339,14 @@ function M.start_review(session, ui_state, on_done)
     for _, lhs in ipairs(mapped_keys) do
       pcall(vim.keymap.del, "n", lhs, { buffer = buf })
     end
-    on_done(session.finalize())
+    local ok, envelope = pcall(session.finalize)
+    if not ok then
+      vim.notify("Neph: review finalize error: " .. tostring(envelope), vim.log.levels.ERROR)
+      local review_queue = require("neph.internal.review_queue")
+      review_queue.on_complete(ui_state.request_id or "")
+      return
+    end
+    on_done(envelope)
   end
 
   local function after_action()

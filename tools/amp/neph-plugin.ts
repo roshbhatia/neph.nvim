@@ -61,12 +61,20 @@ export default function (amp: PluginAPI) {
   });
 
   amp.on("agent.start", async () => {
-    await neph.setStatus("amp_running", "true");
+    try {
+      await neph.setStatus("amp_running", "true");
+    } catch (err) {
+      log("amp", `agent.start handler error: ${err}`);
+    }
   });
 
   amp.on("agent.end", async () => {
-    await neph.unsetStatus("amp_running");
-    await neph.checktime();
+    try {
+      await neph.unsetStatus("amp_running");
+      await neph.checktime();
+    } catch (err) {
+      log("amp", `agent.end handler error: ${err}`);
+    }
   });
 
   amp.on("tool.call", async (event, _ctx) => {

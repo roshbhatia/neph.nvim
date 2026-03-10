@@ -21,11 +21,14 @@ export function createDiffTools(neph: NephClient, sink: DiffNotificationSink) {
         required: ["filePath", "newContent"],
       },
       handler: async (params: Record<string, unknown>) => {
-        const filePath = params.filePath as string;
-        const newContent = params.newContent as string;
+        const filePath = params.filePath;
+        const newContent = params.newContent;
 
-        if (!filePath) {
-          return { content: [{ type: "text", text: "Missing filePath" }], isError: true };
+        if (typeof filePath !== "string" || !filePath) {
+          return { content: [{ type: "text", text: "Missing or invalid filePath" }], isError: true };
+        }
+        if (typeof newContent !== "string") {
+          return { content: [{ type: "text", text: "Missing or invalid newContent" }], isError: true };
         }
 
         const resolved = path.resolve(filePath);
@@ -45,7 +48,9 @@ export function createDiffTools(neph: NephClient, sink: DiffNotificationSink) {
           try {
             const dir = path.dirname(resolved);
             fs.mkdirSync(dir, { recursive: true });
-            fs.writeFileSync(resolved, finalContent);
+            const tmpPath = resolved + `.neph-tmp-${Date.now()}`;
+            fs.writeFileSync(tmpPath, finalContent);
+            fs.renameSync(tmpPath, resolved);
             await neph.checktime();
             log("diff-bridge", `openDiff: wrote ${resolved} (decision=${result.decision})`);
           } catch (err) {

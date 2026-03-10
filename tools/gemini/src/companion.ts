@@ -90,11 +90,15 @@ async function main(): Promise<void> {
   };
 
   process.on("SIGTERM", async () => {
-    await cleanup();
+    try { await cleanup(); } catch (err) {
+      log("companion", `cleanup error on SIGTERM: ${err}`);
+    }
     process.exit(0);
   });
   process.on("SIGINT", async () => {
-    await cleanup();
+    try { await cleanup(); } catch (err) {
+      log("companion", `cleanup error on SIGINT: ${err}`);
+    }
     process.exit(0);
   });
   process.on("exit", () => {

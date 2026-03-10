@@ -67,9 +67,12 @@ function M.open(termname, agent_config, cwd)
     })
 
     -- Timeout: fail-open after 30s
-    local timer = vim.uv.new_timer()
-    timer:start(READY_TIMEOUT_MS, 0, vim.schedule_wrap(function()
-      timer:close()
+    td.ready_timer = vim.uv.new_timer()
+    td.ready_timer:start(READY_TIMEOUT_MS, 0, vim.schedule_wrap(function()
+      if td.ready_timer then
+        td.ready_timer:close()
+        td.ready_timer = nil
+      end
       if not matched then
         matched = true
         td.ready = true
@@ -109,6 +112,11 @@ function M.is_visible(term_data)
 end
 
 function M.kill(term_data)
+  if term_data.ready_timer then
+    pcall(term_data.ready_timer.stop, term_data.ready_timer)
+    pcall(term_data.ready_timer.close, term_data.ready_timer)
+    term_data.ready_timer = nil
+  end
   if term_data.win and vim.api.nvim_win_is_valid(term_data.win) then
     vim.api.nvim_win_close(term_data.win, true)
   end

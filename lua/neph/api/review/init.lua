@@ -20,7 +20,7 @@ end)
 --- Public entry point — routes through the review queue.
 function M.open(params)
   local config = require("neph.config").current
-  local review_cfg = config.review or {}
+  local review_cfg = type(config.review) == "table" and config.review or {}
   local queue_cfg = review_cfg.queue or {}
 
   if queue_cfg.enable == false then
@@ -183,7 +183,7 @@ end
 --- Handle review.pending RPC — notify user a review is waiting.
 function M.pending(params)
   local config = require("neph.config").current
-  local review_cfg = config.review or {}
+  local review_cfg = type(config.review) == "table" and config.review or {}
   if review_cfg.pending_notify == false then
     return { ok = true }
   end

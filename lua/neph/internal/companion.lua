@@ -143,6 +143,8 @@ function M.start_sidecar(root, workspace)
     return sidecar_job
   end
 
+  respawn_attempts = 0
+
   local script = root .. "/tools/gemini/dist/companion.js"
   if vim.fn.filereadable(script) ~= 1 then
     vim.notify("Neph: companion sidecar script not found: " .. script, vim.log.levels.ERROR)

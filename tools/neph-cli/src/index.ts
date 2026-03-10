@@ -187,14 +187,18 @@ export async function runCommand(transport: NvimTransport | null, command: strin
     };
 
     transport.onNotification(command === 'review' ? 'neph:review_done' : 'neph:ui_response', async (args: any) => {
-      const payload = args[0];
-      if (payload && payload.request_id === requestId) {
-        if (command === 'review' && resultPath && fs.existsSync(resultPath)) {
-          const result = fs.readFileSync(resultPath, 'utf8');
-          await handleResult(result);
-        } else {
-          await handleResult(payload);
+      try {
+        const payload = args[0];
+        if (payload && payload.request_id === requestId) {
+          if (command === 'review' && resultPath && fs.existsSync(resultPath)) {
+            const result = fs.readFileSync(resultPath, 'utf8');
+            await handleResult(result);
+          } else {
+            await handleResult(payload);
+          }
         }
+      } catch (err) {
+        process.stderr.write(`neph: notification handler error: ${err}\n`);
       }
     });
 

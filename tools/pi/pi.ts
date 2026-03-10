@@ -217,32 +217,48 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("agent_start", async () => {
-    await neph.setStatus("pi_running", "true");
+    try {
+      await neph.setStatus("pi_running", "true");
+    } catch (err) {
+      log("pi", `agent_start handler error: ${err}`);
+    }
   });
 
   pi.on("agent_end", async (_event, ctx) => {
-    await neph.unsetStatus("pi_running");
-    await neph.unsetStatus("pi_reading");
-    await neph.checktime();
-    ctx.ui.setStatus("nvim-reading", "");
+    try {
+      await neph.unsetStatus("pi_running");
+      await neph.unsetStatus("pi_reading");
+      await neph.checktime();
+      ctx.ui.setStatus("nvim-reading", "");
+    } catch (err) {
+      log("pi", `agent_end handler error: ${err}`);
+    }
   });
 
   pi.on("tool_call", async (event, ctx) => {
-    if (event.toolName === "read") {
-      const path = event.input.path as string | undefined;
-      if (path) {
-        const abs = resolve(ctx.cwd, path);
-        const rel = relative(ctx.cwd, abs);
-        const shortPath = rel.startsWith("..") ? basename(abs) : rel;
-        await neph.setStatus("pi_reading", shortPath);
-        ctx.ui.setStatus("nvim-reading", `󰈔 ${shortPath}`);
+    try {
+      if (event.toolName === "read") {
+        const path = event.input.path as string | undefined;
+        if (path) {
+          const abs = resolve(ctx.cwd, path);
+          const rel = relative(ctx.cwd, abs);
+          const shortPath = rel.startsWith("..") ? basename(abs) : rel;
+          await neph.setStatus("pi_reading", shortPath);
+          ctx.ui.setStatus("nvim-reading", `󰈔 ${shortPath}`);
+        }
       }
+    } catch (err) {
+      log("pi", `tool_call handler error: ${err}`);
     }
   });
 
   pi.on("tool_result", async (event) => {
-    if (event.toolName === "write" || event.toolName === "edit") {
-      await neph.checktime();
+    try {
+      if (event.toolName === "write" || event.toolName === "edit") {
+        await neph.checktime();
+      }
+    } catch (err) {
+      log("pi", `tool_result handler error: ${err}`);
     }
   });
 }
