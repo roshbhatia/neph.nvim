@@ -50,10 +50,7 @@ function M.enqueue(params)
     if review_cfg.pending_notify ~= false then
       local rel = vim.fn.fnamemodify(params.path, ":.")
       local agent_str = params.agent and (" (" .. params.agent .. ")") or ""
-      vim.notify(
-        string.format("Review queued: %s%s — %d pending", rel, agent_str, #queue),
-        vim.log.levels.INFO
-      )
+      vim.notify(string.format("Review queued: %s%s — %d pending", rel, agent_str, #queue), vim.log.levels.INFO)
     end
   end
 end
@@ -113,7 +110,13 @@ function M.clear_agent(agent_name)
   end
 
   if removed > 0 or cancelled_active then
-    log.debug("review_queue", "cleared %d queued + %s active for agent %s", removed, cancelled_active and "1" or "0", agent_name)
+    log.debug(
+      "review_queue",
+      "cleared %d queued + %s active for agent %s",
+      removed,
+      cancelled_active and "1" or "0",
+      agent_name
+    )
   end
 
   -- If we cancelled the active review, open next

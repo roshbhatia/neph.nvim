@@ -209,10 +209,7 @@ function M.pending(params)
 
   local rel = vim.fn.fnamemodify(params.path or "", ":.")
   local agent_str = params.agent and (" (" .. params.agent .. ")") or ""
-  vim.notify(
-    string.format("Review pending: %s%s", rel, agent_str),
-    vim.log.levels.INFO
-  )
+  vim.notify(string.format("Review pending: %s%s", rel, agent_str), vim.log.levels.INFO)
   return { ok = true }
 end
 

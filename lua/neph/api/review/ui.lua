@@ -366,7 +366,9 @@ function M.start_review(session, ui_state, on_done)
 
   -- <CR>: primary action — accept/reject dialog for current hunk
   map(keymaps.decide, function()
-    if finalized or not vim.api.nvim_win_is_valid(ui_state.left_win) then return end
+    if finalized or not vim.api.nvim_win_is_valid(ui_state.left_win) then
+      return
+    end
     local hunks = session.get_hunk_ranges()
     local cursor_line = vim.api.nvim_win_get_cursor(ui_state.left_win)[1]
     local idx = M.find_hunk_at_cursor(hunks, cursor_line)
@@ -377,7 +379,9 @@ function M.start_review(session, ui_state, on_done)
     end
     table.insert(choices, "Cancel")
     vim.ui.select(choices, { prompt = string.format("Hunk %d/%d:", idx, #hunks) }, function(choice)
-      if finalized then return end
+      if finalized then
+        return
+      end
       if choice == "Accept" then
         session.accept_at(idx)
         after_action()
@@ -386,7 +390,9 @@ function M.start_review(session, ui_state, on_done)
         after_action()
       elseif choice == "Reject with reason" then
         vim.ui.input({ prompt = "Reason: " }, function(reason)
-          if finalized then return end
+          if finalized then
+            return
+          end
           session.reject_at(idx, reason and reason ~= "" and reason or nil)
           after_action()
         end)
@@ -399,7 +405,9 @@ function M.start_review(session, ui_state, on_done)
 
   -- Shortcut: accept current hunk
   map(keymaps.accept, function()
-    if finalized or not vim.api.nvim_win_is_valid(ui_state.left_win) then return end
+    if finalized or not vim.api.nvim_win_is_valid(ui_state.left_win) then
+      return
+    end
     local hunks = session.get_hunk_ranges()
     local cursor_line = vim.api.nvim_win_get_cursor(ui_state.left_win)[1]
     local idx = M.find_hunk_at_cursor(hunks, cursor_line)
@@ -409,9 +417,13 @@ function M.start_review(session, ui_state, on_done)
 
   -- Shortcut: reject current hunk
   map(keymaps.reject, function()
-    if finalized or not vim.api.nvim_win_is_valid(ui_state.left_win) then return end
+    if finalized or not vim.api.nvim_win_is_valid(ui_state.left_win) then
+      return
+    end
     vim.ui.input({ prompt = "Reject reason (optional): " }, function(reason)
-      if finalized or not vim.api.nvim_win_is_valid(ui_state.left_win) then return end
+      if finalized or not vim.api.nvim_win_is_valid(ui_state.left_win) then
+        return
+      end
       local hunks = session.get_hunk_ranges()
       local cursor_line = vim.api.nvim_win_get_cursor(ui_state.left_win)[1]
       local idx = M.find_hunk_at_cursor(hunks, cursor_line)
@@ -422,16 +434,22 @@ function M.start_review(session, ui_state, on_done)
 
   -- Shortcut: accept all remaining
   map(keymaps.accept_all, function()
-    if finalized then return end
+    if finalized then
+      return
+    end
     session.accept_all_remaining()
     refresh_ui(session, ui_state, keymaps)
   end, "Neph: accept all remaining")
 
   -- Shortcut: reject all remaining
   map(keymaps.reject_all, function()
-    if finalized then return end
+    if finalized then
+      return
+    end
     vim.ui.input({ prompt = "Reject all remaining - reason: " }, function(reason)
-      if finalized then return end
+      if finalized then
+        return
+      end
       session.reject_all_remaining(reason and reason ~= "" and reason or nil)
       refresh_ui(session, ui_state, keymaps)
     end)
@@ -439,7 +457,9 @@ function M.start_review(session, ui_state, on_done)
 
   -- Shortcut: clear decision back to undecided
   map(keymaps.undo, function()
-    if finalized or not vim.api.nvim_win_is_valid(ui_state.left_win) then return end
+    if finalized or not vim.api.nvim_win_is_valid(ui_state.left_win) then
+      return
+    end
     local hunks = session.get_hunk_ranges()
     local cursor_line = vim.api.nvim_win_get_cursor(ui_state.left_win)[1]
     local idx = M.find_hunk_at_cursor(hunks, cursor_line)
@@ -449,7 +469,9 @@ function M.start_review(session, ui_state, on_done)
 
   -- <S-CR>: submit/finalize review
   map(keymaps.submit, function()
-    if finalized then return end
+    if finalized then
+      return
+    end
     local tally = session.get_tally()
     if tally.undecided == 0 then
       do_finalize()
@@ -459,7 +481,9 @@ function M.start_review(session, ui_state, on_done)
       { "Submit (reject undecided)", "Jump to first undecided", "Cancel" },
       { prompt = string.format("%d undecided hunk(s) will be rejected:", tally.undecided) },
       function(choice)
-        if finalized then return end
+        if finalized then
+          return
+        end
         if choice == "Submit (reject undecided)" then
           session.reject_all_remaining("Undecided")
           do_finalize()
@@ -477,7 +501,9 @@ function M.start_review(session, ui_state, on_done)
 
   -- q: quit (reject undecided, finalize)
   map(keymaps.quit, function()
-    if finalized then return end
+    if finalized then
+      return
+    end
     session.reject_all_remaining("User exited review")
     do_finalize()
   end, "Neph: quit review")

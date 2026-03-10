@@ -56,7 +56,6 @@ describe("neph.internal.companion", function()
         os.remove(b.file)
       end
     end)
-
   end)
 
   describe("start_sidecar", function()

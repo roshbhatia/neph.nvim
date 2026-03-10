@@ -68,19 +68,23 @@ function M.open(termname, agent_config, cwd)
 
     -- Timeout: fail-open after 30s
     td.ready_timer = vim.uv.new_timer()
-    td.ready_timer:start(READY_TIMEOUT_MS, 0, vim.schedule_wrap(function()
-      if td.ready_timer then
-        td.ready_timer:close()
-        td.ready_timer = nil
-      end
-      if not matched then
-        matched = true
-        td.ready = true
-        if td.on_ready then
-          td.on_ready()
+    td.ready_timer:start(
+      READY_TIMEOUT_MS,
+      0,
+      vim.schedule_wrap(function()
+        if td.ready_timer then
+          td.ready_timer:close()
+          td.ready_timer = nil
         end
-      end
-    end))
+        if not matched then
+          matched = true
+          td.ready = true
+          if td.on_ready then
+            td.on_ready()
+          end
+        end
+      end)
+    )
   end
 
   return td
