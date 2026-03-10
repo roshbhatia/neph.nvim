@@ -1,5 +1,21 @@
 ## ADDED Requirements
 
+### Requirement: Debug introspection API
+
+The fs_watcher SHALL expose a function to list currently watched files for debugging and testing.
+
+#### Scenario: get_watches returns watched paths
+
+- **WHEN** `fs_watcher.get_watches()` is called
+- **AND** files `a.lua` and `b.ts` are being watched
+- **THEN** the function SHALL return a list containing those two file paths
+
+#### Scenario: get_watches returns empty when inactive
+
+- **WHEN** `fs_watcher.get_watches()` is called
+- **AND** the watcher is not active
+- **THEN** the function SHALL return an empty list
+
 ### Requirement: Filesystem watcher lifecycle
 
 The system SHALL provide a `fs_watcher` module that watches project files for changes and triggers post-write review diffs when an agent is active.
@@ -49,9 +65,9 @@ The fs_watcher SHALL watch individual files, not recursive directories.
 - **AND** `node_modules` is in `config.review.fs_watcher.ignore`
 - **THEN** that file SHALL NOT be watched
 
-#### Scenario: Watch count is capped
+#### Scenario: Watch count is capped at configurable limit
 
-- **WHEN** the number of watched files reaches 100
+- **WHEN** the number of watched files reaches `config.review.fs_watcher.max_watched` (default 100)
 - **THEN** no additional files SHALL be watched
 - **AND** a debug log entry SHALL be written
 
@@ -82,6 +98,13 @@ When a watched file changes on disk and an agent is active, the fs_watcher SHALL
 
 - **WHEN** a watched file changes on disk multiple times within 200ms
 - **THEN** only one notification SHALL be generated for the final state
+
+#### Scenario: File deleted between watch event and read
+
+- **WHEN** a watched file triggers a change event
+- **AND** the file has been deleted before the debounced read occurs
+- **THEN** the watcher SHALL log a debug message and skip the review
+- **AND** no error SHALL be raised
 
 ### Requirement: Post-write review flow
 
@@ -119,8 +142,14 @@ The fs_watcher SHALL be configurable via `neph.Config`.
 
 - **WHEN** no `review.fs_watcher` config is provided
 - **THEN** the fs_watcher SHALL be enabled with default ignore patterns: `node_modules`, `.git`, `dist`, `build`, `__pycache__`
+- **AND** `max_watched` SHALL default to 100
 
 #### Scenario: Custom ignore patterns
 
 - **WHEN** `config.review.fs_watcher.ignore` is set to `{ "vendor", ".cache" }`
 - **THEN** files matching those patterns SHALL be excluded from watching
+
+#### Scenario: Custom max_watched
+
+- **WHEN** `config.review.fs_watcher.max_watched` is set to 50
+- **THEN** the watch count cap SHALL be 50 instead of 100

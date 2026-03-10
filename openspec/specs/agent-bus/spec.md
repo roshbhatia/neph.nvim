@@ -36,6 +36,12 @@ The bus SHALL detect dead channels and clean up stale registrations. The bus SHA
 - **THEN** it SHALL NOT block the Neovim event loop
 - **AND** it SHALL complete in under 1ms for up to 10 registered agents
 
+#### Scenario: Health check failure is logged
+
+- **WHEN** `vim.rpcnotify()` fails for a registered channel
+- **THEN** the bus SHALL log the failure at debug level via `log.debug("bus", ...)`
+- **AND** the agent SHALL be unregistered from the bus
+
 ### Requirement: Bus cleanup on VimLeavePre
 The bus SHALL clean up all registered channels on VimLeavePre. The bus SHALL NOT clear `vim.g` state — session.lua owns that responsibility.
 

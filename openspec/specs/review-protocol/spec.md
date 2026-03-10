@@ -42,6 +42,13 @@ The review flow SHALL be non-blocking to avoid deadlocks in :terminal buffers. T
 - **AND** `os.rename()` to `result_path` (atomic)
 - **AND** fire `vim.rpcnotify(channel_id, "neph:review_done", { request_id = request_id })`
 
+#### Scenario: Atomic result write with nil result_path
+
+- **WHEN** user completes a post-write review
+- **AND** `result_path` is nil (fs_watcher-triggered review has no CLI caller)
+- **THEN** the write_result function SHALL skip file writing
+- **AND** SHALL still apply the review decision to the buffer/disk
+
 #### Scenario: Request ID correlation
 - **WHEN** neph CLI receives `neph:review_done` notification
 - **AND** notification request_id does not match pending review
