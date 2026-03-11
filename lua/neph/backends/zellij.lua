@@ -202,10 +202,11 @@ function M.open(termname, agent_config, cwd)
     end),
   })
 
-  -- Spawn zellij run
+  -- Spawn zellij run (use user's shell or /bin/sh — jobstart may have minimal PATH)
+  local shell = vim.env.SHELL or "/bin/sh"
   local zellij_cmd =
-    string.format("zellij run -d right --cwd %s -- sh -c %s", vim.fn.shellescape(cwd), vim.fn.shellescape(inner_cmd))
-  vim.fn.jobstart({ "sh", "-c", zellij_cmd }, {
+    string.format("zellij run -d right --cwd %s -- %s -c %s", vim.fn.shellescape(cwd), vim.fn.shellescape(shell), vim.fn.shellescape(inner_cmd))
+  vim.fn.jobstart({ shell, "-c", zellij_cmd }, {
     on_exit = vim.schedule_wrap(function(_, code)
       if code ~= 0 then
         vim.notify("Neph/zellij: spawn failed (exit " .. code .. ")", vim.log.levels.ERROR)
