@@ -90,7 +90,8 @@ lua/neph/
 │   └── ...               # amp, codex, copilot, crush, cursor, gemini, opencode
 ├── backends/             # Backend modules (injected via setup)
 │   ├── snacks.lua        # snacks.nvim terminal backend
-│   └── wezterm.lua       # WezTerm pane backend
+│   ├── wezterm.lua      # WezTerm pane backend
+│   └── zellij.lua       # Zellij pane backend
 ├── api/                  # RPC-exposed modules
 │   ├── buffers.lua       # Buffer/tab operations
 │   ├── status.lua        # vim.g status management
@@ -717,6 +718,7 @@ Backends are modules at `lua/neph/backends/<name>.lua` injected via `setup()`:
 
 - **snacks** (`neph.backends.snacks`): Native Neovim splits via snacks.nvim
 - **wezterm** (`neph.backends.wezterm`): WezTerm panes (requires `WEZTERM_PANE` env var)
+- **zellij** (`neph.backends.zellij`): Zellij panes (requires `ZELLIJ` env var; single agent pane at a time)
 
 **Backend interface** (validated by `contracts.validate_backend()` at setup time):
 

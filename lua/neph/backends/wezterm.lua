@@ -277,4 +277,35 @@ function M.cleanup_all(terminals)
   end
 end
 
+---@param td table  term_data with pane_id
+---@param text string
+---@param opts? {submit?: boolean}
+function M.send(td, text, opts)
+  opts = opts or {}
+  if not td or not td.pane_id then
+    return
+  end
+  local full_text = opts.submit and (text .. "\n") or text
+  local job_id = vim.fn.jobstart({
+    "wezterm",
+    "cli",
+    "send-text",
+    "--pane-id",
+    tostring(td.pane_id),
+    "--no-paste",
+  }, {
+    on_exit = vim.schedule_wrap(function(_, code)
+      if code ~= 0 then
+        vim.notify("Neph: wezterm send-text failed (exit " .. code .. ")", vim.log.levels.WARN)
+      end
+    end),
+  })
+  if job_id > 0 then
+    vim.fn.chansend(job_id, full_text)
+    vim.fn.chanclose(job_id, "stdin")
+  else
+    vim.notify("Neph: failed to start wezterm send-text", vim.log.levels.WARN)
+  end
+end
+
 return M

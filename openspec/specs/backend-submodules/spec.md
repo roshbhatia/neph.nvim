@@ -13,6 +13,12 @@ neph.nvim SHALL provide backend implementations as standalone Lua modules under 
 - **THEN** it SHALL return a module table with all required backend methods
 - **AND** the module SHALL pass `contracts.validate_backend()`
 
+#### Scenario: Require zellij backend
+- **WHEN** `require("neph.backends.zellij")` is called
+- **THEN** it SHALL return a module table with all required backend methods
+- **AND** the module SHALL pass `contracts.validate_backend()`
+- **AND** the module SHALL have `single_pane_only = true` and optional `send` method
+
 #### Scenario: Snacks backend uses Snacks.terminal
 - **WHEN** `snacks_backend.open(termname, agent_config, cwd)` is called
 - **THEN** it SHALL open a terminal via `Snacks.terminal.open()` with a right-split layout

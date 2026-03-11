@@ -121,6 +121,20 @@ function M.open(termname)
     return
   end
 
+  -- Single-pane backends (e.g. Zellij): kill other agents before opening
+  if backend.single_pane_only then
+    for name, td in pairs(terminals) do
+      if name ~= termname and backend.is_visible(td) then
+        backend.kill(td)
+        terminals[name] = nil
+        if active_terminal == name then
+          active_terminal = nil
+        end
+        vim.g[name .. "_active"] = nil
+      end
+    end
+  end
+
   local cwd = vim.fn.getcwd()
 
   -- Resolve dynamic launch args if present
@@ -322,34 +336,16 @@ function M.send(termname, text, opts)
     log.debug("session", "send: %s via terminal (len=%d, submit=%s)", termname, #text, tostring(opts.submit or false))
   end
 
-  -- Default send: WezTerm pane or native terminal via chansend
+  -- Default send: backend.send (WezTerm, Zellij) or native terminal via chansend
   if td.stale_since then
     log.debug("session", "send: %s skipped — terminal marked stale", termname)
     return
   end
-  if td.pane_id then
-    local full_text = opts.submit and (text .. "\n") or text
-    local job_id = vim.fn.jobstart({
-      "wezterm",
-      "cli",
-      "send-text",
-      "--pane-id",
-      tostring(td.pane_id),
-      "--no-paste",
-    }, {
-      on_exit = vim.schedule_wrap(function(_, code)
-        if code ~= 0 then
-          vim.notify("Neph: wezterm send-text failed (exit " .. code .. ")", vim.log.levels.WARN)
-        end
-      end),
-    })
-    if job_id > 0 then
-      vim.fn.chansend(job_id, full_text)
-      vim.fn.chanclose(job_id, "stdin")
-    else
-      vim.notify("Neph: failed to start wezterm send-text", vim.log.levels.WARN)
-    end
-  elseif td.buf and vim.api.nvim_buf_is_valid(td.buf) then
+  if backend.send then
+    backend.send(td, text, opts)
+    return
+  end
+  if td.buf and vim.api.nvim_buf_is_valid(td.buf) then
     local chan = vim.b[td.buf].terminal_job_id
     if chan then
       vim.fn.chansend(chan, text)
