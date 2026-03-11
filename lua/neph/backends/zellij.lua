@@ -139,9 +139,8 @@ function M.open(termname, agent_config, cwd)
   local agent_cmd = agent_config.full_cmd or agent_config.cmd
   local full_cmd = env_str ~= "" and (env_str .. " " .. agent_cmd) or agent_cmd
 
-  -- Inner shell: write pane ID to FIFO, then exec agent
-  local inner_cmd =
-    string.format('echo "$ZELLIJ_PANE_ID" > %s; exec %s', vim.fn.shellescape(fifo_path), vim.fn.shellescape(full_cmd))
+  -- Inner shell: write pane ID to FIFO, then run agent (no exec — full_cmd already has export; cmd)
+  local inner_cmd = string.format('echo "$ZELLIJ_PANE_ID" > %s; %s', fifo_path, full_cmd)
 
   local td = {
     pane_id = nil,
