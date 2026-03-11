@@ -339,6 +339,14 @@ export async function runCommand(transport: NvimTransport | null, command: strin
 }
 
 if (require.main === module) {
+  const args = process.argv.slice(2);
+  const command = args[0];
+
+  if (!command) {
+    process.stderr.write('Usage: neph <command> [args...]\nCommands: review, set, unset, get, checktime, close-tab, status, spec, gate, ui-select, ui-input, ui-notify\n');
+    process.exit(1);
+  }
+
   const socketPath = process.env.NVIM_SOCKET_PATH || discoverNvimSocket();
   let transport: SocketTransport | null = null;
   if (socketPath) {
@@ -347,12 +355,13 @@ if (require.main === module) {
     } catch (err) {
       process.stderr.write(`neph: failed to connect to Neovim socket at ${socketPath}: ${err}\n`);
     }
-  }
-  const args = process.argv.slice(2);
-  const command = args[0];
-
-  if (!command) {
-    process.stderr.write('Usage: neph <command> [args...]\nCommands: review, set, unset, get, checktime, close-tab, status, spec, gate, ui-select, ui-input, ui-notify\n');
+  } else if (command !== 'spec' && command !== 'gate') {
+    // spec and gate don't need a live Neovim connection; everything else does.
+    process.stderr.write(
+      'neph: could not determine which Neovim instance to use.\n' +
+      'Multiple instances are running and none matched the current working directory.\n' +
+      'Set NVIM_SOCKET_PATH to the socket of the intended Neovim instance and retry.\n'
+    );
     process.exit(1);
   }
 

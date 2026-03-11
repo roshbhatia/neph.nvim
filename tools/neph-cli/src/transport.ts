@@ -35,6 +35,20 @@ function getPidCwd(pid: string): string | null {
   return null;
 }
 
+function getGitRoot(dir: string): string | null {
+  try {
+    const result = child_process.execSync('git rev-parse --show-toplevel', {
+      cwd: dir,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 2000,
+    });
+    return result.trim();
+  } catch {
+    return null;
+  }
+}
+
 export function discoverNvimSocket(): string | null {
   const patterns = [
     '/tmp/nvim.*/0',
@@ -66,6 +80,10 @@ export function discoverNvimSocket(): string | null {
 
   if (candidates.length === 0) return null;
 
+  // Single instance: return it without requiring a cwd match.
+  if (candidates.length === 1) return candidates[0].path;
+
+  // Multiple instances: prefer the one whose cwd matches ours.
   const cwd = process.cwd();
   for (const candidate of candidates) {
     const nvimCwd = getPidCwd(candidate.pid);
@@ -74,7 +92,24 @@ export function discoverNvimSocket(): string | null {
     }
   }
 
-  return candidates[0].path;
+  // Fallback: match by git root so that subdirectory invocations still resolve
+  // to the right Neovim when the cwd prefix check above didn't match.
+  const myGitRoot = getGitRoot(cwd);
+  if (myGitRoot) {
+    for (const candidate of candidates) {
+      const nvimCwd = getPidCwd(candidate.pid);
+      if (nvimCwd) {
+        const nvimGitRoot = getGitRoot(nvimCwd);
+        if (nvimGitRoot && nvimGitRoot === myGitRoot) {
+          return candidate.path;
+        }
+      }
+    }
+  }
+
+  // No match found among multiple Neovim instances — refuse to guess.
+  // The caller must set NVIM_SOCKET_PATH explicitly.
+  return null;
 }
 
 export class SocketTransport implements NvimTransport {
