@@ -92,8 +92,8 @@ function M._open_immediate(params)
 
   local old_lines, new_lines
 
-  if mode == "post_write" then
-    -- Post-write: left = buffer contents (before), right = disk contents (after)
+  if mode == "post_write" or mode == "manual" then
+    -- Post-write / manual: left = buffer contents (before), right = disk contents (after)
     local bufnr = vim.fn.bufnr(file_path)
     if bufnr ~= -1 and vim.api.nvim_buf_is_valid(bufnr) then
       old_lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
@@ -148,7 +148,7 @@ function M._open_immediate(params)
     result_written = true
     active_review = nil
 
-    if mode == "post_write" then
+    if mode == "post_write" or mode == "manual" then
       M._apply_post_write(file_path, envelope, old_lines)
     end
 
@@ -254,6 +254,74 @@ function M._apply_post_write(file_path, envelope, buffer_lines)
       end)
     end
   end
+end
+
+--- Open a manual review comparing buffer contents to disk.
+---@param file_path string  Absolute path to the file
+---@return {ok: boolean, msg?: string, error?: string}
+function M.open_manual(file_path)
+  if type(file_path) ~= "string" or file_path == "" then
+    return { ok = false, error = "invalid file_path" }
+  end
+
+  if vim.fn.filereadable(file_path) ~= 1 then
+    return { ok = false, error = "File not found: " .. file_path }
+  end
+
+  -- Read buffer lines (old) and disk lines (new)
+  local bufnr = vim.fn.bufnr(file_path)
+  local old_lines
+  if bufnr ~= -1 and vim.api.nvim_buf_is_valid(bufnr) then
+    old_lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+  else
+    return { ok = false, error = "No buffer open for: " .. file_path }
+  end
+
+  local new_lines = {}
+  local f = io.open(file_path, "r")
+  if f then
+    for line in f:lines() do
+      table.insert(new_lines, line)
+    end
+    f:close()
+  end
+
+  -- Check if there are actually changes
+  if #old_lines == #new_lines then
+    local identical = true
+    for i, line in ipairs(old_lines) do
+      if line ~= new_lines[i] then
+        identical = false
+        break
+      end
+    end
+    if identical then
+      return { ok = false, error = "No changes to review" }
+    end
+  end
+
+  local request_id = "manual-" .. tostring(vim.fn.localtime()) .. "-" .. tostring(math.random(10000))
+
+  local params = {
+    request_id = request_id,
+    result_path = nil,
+    channel_id = nil,
+    path = file_path,
+    content = "",
+    agent = nil,
+    mode = "manual",
+  }
+
+  local config = require("neph.config").current
+  local review_cfg = type(config.review) == "table" and config.review or {}
+  local queue_cfg = review_cfg.queue or {}
+
+  if queue_cfg.enable == false then
+    return M._open_immediate(params)
+  end
+
+  review_queue.enqueue(params)
+  return { ok = true, msg = "Review enqueued" }
 end
 
 --- Handle review.pending RPC — notify user a review is waiting.

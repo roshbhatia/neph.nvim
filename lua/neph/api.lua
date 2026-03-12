@@ -84,6 +84,26 @@ function M.comment()
   input_for_active("Comment", default)
 end
 
+--- Open an interactive review of buffer vs disk changes.
+---@param path? string  File path (defaults to current buffer's file)
+---@return {ok: boolean, msg?: string, error?: string}
+function M.review(path)
+  if not path then
+    local bufname = vim.api.nvim_buf_get_name(0)
+    if bufname == "" then
+      vim.notify("Neph: buffer has no file", vim.log.levels.ERROR)
+      return { ok = false, error = "Buffer has no file" }
+    end
+    path = bufname
+  end
+  path = vim.fn.fnamemodify(path, ":p")
+  local result = require("neph.api.review").open_manual(path)
+  if not result.ok then
+    vim.notify("Neph: " .. (result.error or "review failed"), vim.log.levels.ERROR)
+  end
+  return result
+end
+
 --- Resend the previous prompt to the active agent.
 function M.resend()
   local active = get_active()

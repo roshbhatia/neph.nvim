@@ -85,6 +85,16 @@ function M.setup(opts)
     end,
   })
 
+  -- Register :NephReview command
+  vim.api.nvim_create_user_command("NephReview", function(cmd_opts)
+    local path = cmd_opts.fargs[1]
+    require("neph.api").review(path)
+  end, {
+    nargs = "?",
+    complete = "file",
+    desc = "Open interactive review of buffer vs disk changes",
+  })
+
   -- Register :NephTools command
   vim.api.nvim_create_user_command("NephTools", function(cmd_opts)
     local tools = require("neph.tools")

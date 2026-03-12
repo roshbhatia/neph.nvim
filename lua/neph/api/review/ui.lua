@@ -207,7 +207,7 @@ function M.build_winbar(idx, total, decision, keymaps, tally, opts)
   end
 
   -- Mode label
-  local mode_label = opts.mode == "post_write" and "POST-WRITE" or "CURRENT"
+  local mode_label = opts.mode == "manual" and "MANUAL" or opts.mode == "post_write" and "POST-WRITE" or "CURRENT"
 
   return string.format(
     "%%#DiagnosticWarn# %s %%* %%#%s# Hunk %d/%d: %s %%*%s%s  %s=accept %s=reject %s=submit ?=help",
