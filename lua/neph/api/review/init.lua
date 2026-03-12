@@ -135,6 +135,11 @@ function M._open_immediate(params)
 
       M.write_result(result_path, channel_id, request_id, envelope)
       review_queue.on_complete(request_id)
+
+      -- Restore diffopt saved by open_diff_tab
+      if ui_state.original_diffopt then
+        vim.o.diffopt = ui_state.original_diffopt
+      end
     end,
   })
 

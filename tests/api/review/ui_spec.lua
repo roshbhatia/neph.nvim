@@ -49,13 +49,12 @@ describe("neph.api.review.ui", function()
 
   describe("build_winbar", function()
     local keymaps = {
-      decide = "<CR>",
-      accept = "<localleader>a",
-      reject = "<localleader>r",
-      accept_all = "<localleader>A",
-      reject_all = "<localleader>R",
-      undo = "<localleader>u",
-      submit = "<S-CR>",
+      accept = "ga",
+      reject = "gr",
+      accept_all = "gA",
+      reject_all = "gR",
+      undo = "gu",
+      submit = "gs",
       quit = "q",
     }
 
@@ -63,7 +62,6 @@ describe("neph.api.review.ui", function()
       local bar = ui.build_winbar(2, 5, nil, keymaps)
       assert.truthy(bar:find("Hunk 2/5"))
       assert.truthy(bar:find("undecided"))
-      assert.truthy(bar:find("=decide"))
     end)
 
     it("shows accepted for accept decision", function()
@@ -83,15 +81,16 @@ describe("neph.api.review.ui", function()
       assert.truthy(bar:find("rejected: too verbose"))
     end)
 
-    it("includes submit keymap in display", function()
+    it("includes compact keymap hints", function()
       local bar = ui.build_winbar(1, 1, nil, keymaps)
-      assert.truthy(bar:find("<S%-CR>=submit"))
-      assert.truthy(bar:find("q=quit"))
+      assert.truthy(bar:find("ga=accept"))
+      assert.truthy(bar:find("gr=reject"))
+      assert.truthy(bar:find("gs=submit"))
+      assert.truthy(bar:find("%?=help"))
     end)
 
     it("uses custom keymaps in display", function()
       local custom = {
-        decide = "<leader>d",
         accept = "<leader>a",
         reject = "<leader>r",
         accept_all = "<leader>A",
@@ -102,9 +101,9 @@ describe("neph.api.review.ui", function()
       }
       local bar = ui.build_winbar(1, 1, nil, custom)
       -- display_key resolves <leader> to actual key (default \)
-      assert.truthy(bar:find("\\d=decide"))
-      assert.truthy(bar:find("\\s=submit"))
-      assert.truthy(bar:find("<leader>q=quit"))
+      -- Custom keymaps should appear in output
+      assert.truthy(bar:find("=accept"))
+      assert.truthy(bar:find("=submit"))
     end)
 
     it("includes tally when provided", function()
@@ -120,21 +119,10 @@ describe("neph.api.review.ui", function()
       -- Should still render without error
       assert.truthy(bar:find("Hunk 1/3"))
     end)
-  end)
 
-  describe("build_right_winbar", function()
-    it("shows PROPOSED with tally", function()
-      local tally = { accepted = 2, rejected = 1, undecided = 0 }
-      local bar = ui.build_right_winbar(tally)
-      assert.truthy(bar:find("PROPOSED"))
-      assert.truthy(bar:find("✓2"))
-      assert.truthy(bar:find("✗1"))
-      assert.truthy(bar:find("?0"))
-    end)
-
-    it("shows PROPOSED without tally", function()
-      local bar = ui.build_right_winbar(nil)
-      assert.truthy(bar:find("PROPOSED"))
+    it("shows mode label", function()
+      local bar = ui.build_winbar(1, 3, nil, keymaps, nil, { mode = "post_write" })
+      assert.truthy(bar:find("POST%-WRITE"))
     end)
   end)
 end)

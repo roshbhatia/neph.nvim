@@ -6,13 +6,11 @@ function M.setup_signs()
     accept = "✓",
     reject = "✗",
     current = "→",
-    commented = "💬",
   }, config.review_signs or {})
 
   vim.fn.sign_define("neph_current", { text = signs.current, texthl = "DiagnosticInfo" })
   vim.fn.sign_define("neph_accept", { text = signs.accept, texthl = "DiagnosticOk" })
   vim.fn.sign_define("neph_reject", { text = signs.reject, texthl = "DiagnosticError" })
-  vim.fn.sign_define("neph_commented", { text = signs.commented, texthl = "DiagnosticWarn" })
 end
 
 function M.open_diff_tab(path, old_lines, new_lines, opts)
@@ -21,8 +19,14 @@ function M.open_diff_tab(path, old_lines, new_lines, opts)
   local basename = vim.fn.fnamemodify(path, ":t")
   local is_post_write = opts.mode == "post_write"
 
+  -- Save and set diffopt for consistent review experience
+  local original_diffopt = vim.o.diffopt
+
   vim.cmd("tabnew")
   local tab = vim.api.nvim_get_current_tabpage()
+
+  -- Set review-specific diffopt (global option, restored on cleanup)
+  vim.o.diffopt = "internal,filler,closeoff,indent-heuristic,inline:char,linematch:60,algorithm:histogram"
 
   -- Left: current (or buffer contents in post-write mode)
   local left_buf = vim.api.nvim_get_current_buf()
@@ -40,9 +44,10 @@ function M.open_diff_tab(path, old_lines, new_lines, opts)
 
   local left_win = vim.api.nvim_get_current_win()
   vim.cmd("diffthis")
-  -- Force line numbers and sign column after diffthis
+  -- Force line numbers, sign column, and fillchars after diffthis
   vim.wo[left_win].number = true
   vim.wo[left_win].signcolumn = "yes"
+  vim.wo[left_win].fillchars = "diff:╌"
 
   -- Right: proposed
   vim.cmd("rightbelow vsplit")
@@ -63,9 +68,9 @@ function M.open_diff_tab(path, old_lines, new_lines, opts)
   vim.cmd("diffthis")
 
   local right_win = vim.api.nvim_get_current_win()
-  -- Force line numbers and sign column after diffthis
+  -- Force line numbers and fillchars after diffthis (no sign column on right)
   vim.wo[right_win].number = true
-  vim.wo[right_win].signcolumn = "yes"
+  vim.wo[right_win].fillchars = "diff:╌"
   vim.cmd("wincmd h") -- focus left
 
   -- Guard autocmd: re-force line numbers on window enter (scoped to tab)
@@ -83,7 +88,6 @@ function M.open_diff_tab(path, old_lines, new_lines, opts)
       end
       if vim.api.nvim_win_is_valid(right_win) then
         vim.wo[right_win].number = true
-        vim.wo[right_win].signcolumn = "yes"
       end
     end,
   })
@@ -94,11 +98,11 @@ function M.open_diff_tab(path, old_lines, new_lines, opts)
     right_buf = right_buf,
     left_win = left_win,
     right_win = right_win,
-    left_sign_ids = {},
-    right_sign_ids = {},
+    sign_ids = {},
     guard_augroup = guard_augroup,
     mode = opts.mode,
     request_id = opts.request_id,
+    original_diffopt = original_diffopt,
   }
 end
 
@@ -125,7 +129,7 @@ function M.show_hints(buf, hunk_range, idx, total)
     return
   end
 
-  local hint_line = math.max(0, hunk_range.start_b - 2)
+  local hint_line = math.max(0, hunk_range.start_b - 1)
   vim.api.nvim_buf_set_extmark(buf, hints_ns, hint_line, 0, {
     virt_text = { { string.format(" ← hunk %d/%d", idx, total), "DiagnosticInfo" } },
     virt_text_pos = "eol",
@@ -158,7 +162,6 @@ function M.find_hunk_at_cursor(hunks, cursor_line)
 end
 
 --- Resolve a keymap notation string to a human-readable display form.
---- Expands <localleader> to the actual key, and prettifies common notations.
 ---@param lhs string
 ---@return string
 local function display_key(lhs)
@@ -207,7 +210,7 @@ function M.build_winbar(idx, total, decision, keymaps, tally, opts)
   local mode_label = opts.mode == "post_write" and "POST-WRITE" or "CURRENT"
 
   return string.format(
-    "%%#DiagnosticWarn# %s %%* %%#%s# Hunk %d/%d: %s %%*%s%s  %s=decide  %s=submit  %s=quit",
+    "%%#DiagnosticWarn# %s %%* %%#%s# Hunk %d/%d: %s %%*%s%s  %s=accept %s=reject %s=submit ?=help",
     mode_label,
     hl,
     idx,
@@ -215,28 +218,85 @@ function M.build_winbar(idx, total, decision, keymaps, tally, opts)
     status,
     tally_str,
     queue_str,
-    display_key(keymaps.decide or "<CR>"),
-    display_key(keymaps.submit or "<S-CR>"),
-    keymaps.quit
+    display_key(keymaps.accept or "ga"),
+    display_key(keymaps.reject or "gr"),
+    display_key(keymaps.submit or "gs")
   )
 end
 
---- Build right-side winbar with tally.
----@param tally? { accepted: integer, rejected: integer, undecided: integer }
----@return string
-function M.build_right_winbar(tally, opts)
-  opts = opts or {}
-  local label = opts.mode == "post_write" and "DISK (AFTER)" or "PROPOSED"
-  if tally then
-    return string.format(
-      "%%#DiagnosticWarn# %s %%*  ✓%d ✗%d ?%d",
-      label,
-      tally.accepted,
-      tally.rejected,
-      tally.undecided
-    )
+--- Show or hide the help popup.
+---@param ui_state table
+---@param keymaps neph.ReviewKeymapsConfig
+local function toggle_help_popup(ui_state, keymaps)
+  -- Close if already open
+  if ui_state.help_win and vim.api.nvim_win_is_valid(ui_state.help_win) then
+    pcall(vim.api.nvim_win_close, ui_state.help_win, true)
+    ui_state.help_win = nil
+    ui_state.help_buf = nil
+    return
   end
-  return string.format("%%#DiagnosticWarn# %s %%*", label)
+
+  local lines = {
+    "  Neph Review Keybindings",
+    "",
+    "  " .. display_key(keymaps.accept or "ga") .. "      Accept hunk",
+    "  " .. display_key(keymaps.reject or "gr") .. "      Reject hunk (with reason)",
+    "  " .. display_key(keymaps.accept_all or "gA") .. "      Accept all remaining",
+    "  " .. display_key(keymaps.reject_all or "gR") .. "      Reject all remaining",
+    "  " .. display_key(keymaps.undo or "gu") .. "      Undo decision",
+    "",
+    "  <CR>    Decision menu",
+    "  " .. display_key(keymaps.submit or "gs") .. "      Submit review",
+    "  " .. display_key(keymaps.quit or "q") .. "       Quit (reject undecided)",
+    "",
+    "  ]c      Next diff hunk",
+    "  [c      Previous diff hunk",
+    "",
+    "  ?       Toggle this help",
+    "",
+  }
+
+  local width = 40
+  local height = #lines
+  local buf = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  vim.bo[buf].buftype = "nofile"
+  vim.bo[buf].bufhidden = "wipe"
+  vim.bo[buf].modifiable = false
+
+  local win_height = vim.api.nvim_win_get_height(ui_state.left_win)
+  local win_width = vim.api.nvim_win_get_width(ui_state.left_win)
+  local row = math.max(0, math.floor((win_height - height) / 2))
+  local col = math.max(0, math.floor((win_width - width) / 2))
+
+  local win = vim.api.nvim_open_win(buf, true, {
+    relative = "win",
+    win = ui_state.left_win,
+    row = row,
+    col = col,
+    width = width,
+    height = height,
+    style = "minimal",
+    border = "rounded",
+    title = " Neph Review ",
+    title_pos = "center",
+  })
+
+  ui_state.help_win = win
+  ui_state.help_buf = buf
+
+  -- Close the help popup with ?, q, or Esc
+  local function close_help()
+    if vim.api.nvim_win_is_valid(win) then
+      pcall(vim.api.nvim_win_close, win, true)
+    end
+    ui_state.help_win = nil
+    ui_state.help_buf = nil
+  end
+
+  vim.keymap.set("n", "?", close_help, { buffer = buf, nowait = true })
+  vim.keymap.set("n", "q", close_help, { buffer = buf, nowait = true })
+  vim.keymap.set("n", "<Esc>", close_help, { buffer = buf, nowait = true })
 end
 
 --- Update signs and winbar for the current review state.
@@ -252,47 +312,31 @@ local function refresh_ui(session, ui_state, keymaps)
   local cursor_line = vim.api.nvim_win_get_cursor(ui_state.left_win)[1]
   local idx = M.find_hunk_at_cursor(hunks, cursor_line)
 
-  -- Update signs for all hunks on both buffers with inverse semantics
+  -- Update signs on left buffer only
   for i, h in ipairs(hunks) do
-    local left_line = math.max(1, h.start_a - 1)
-    local right_line = math.max(1, h.start_b - 1)
+    local left_line = h.start_a
     local d = session.get_decision(i)
     if d then
       if d.decision == "accept" then
-        -- Accept: left gets ✗ (replaced), right gets ✓ (taken)
-        M.place_sign(ui_state.left_buf, "neph_reject", left_line, ui_state.left_sign_ids)
-        M.place_sign(ui_state.right_buf, "neph_accept", right_line, ui_state.right_sign_ids)
-      elseif d.reason and d.reason ~= "" then
-        -- Reject with reason: left gets ✓ (kept), right gets 💬 (feedback)
-        M.place_sign(ui_state.left_buf, "neph_accept", left_line, ui_state.left_sign_ids)
-        M.place_sign(ui_state.right_buf, "neph_commented", right_line, ui_state.right_sign_ids)
+        M.place_sign(ui_state.left_buf, "neph_accept", left_line, ui_state.sign_ids)
       else
-        -- Reject without reason: left gets ✓ (kept), right gets ✗ (discarded)
-        M.place_sign(ui_state.left_buf, "neph_accept", left_line, ui_state.left_sign_ids)
-        M.place_sign(ui_state.right_buf, "neph_reject", right_line, ui_state.right_sign_ids)
+        M.place_sign(ui_state.left_buf, "neph_reject", left_line, ui_state.sign_ids)
       end
     elseif i == idx then
-      -- Current undecided: arrow on both sides
-      M.place_sign(ui_state.left_buf, "neph_current", left_line, ui_state.left_sign_ids)
-      M.place_sign(ui_state.right_buf, "neph_current", right_line, ui_state.right_sign_ids)
+      M.place_sign(ui_state.left_buf, "neph_current", left_line, ui_state.sign_ids)
     else
-      -- Non-current undecided: no signs
-      M.unplace_sign(ui_state.left_buf, left_line, ui_state.left_sign_ids)
-      M.unplace_sign(ui_state.right_buf, right_line, ui_state.right_sign_ids)
+      M.unplace_sign(ui_state.left_buf, left_line, ui_state.sign_ids)
     end
   end
 
   -- Update hints on right buffer
   M.show_hints(ui_state.right_buf, hunks[idx], idx, total)
 
-  -- Update winbars with tally
+  -- Update winbar on left only
   local decision = session.get_decision(idx)
   local tally = session.get_tally()
   local mode_opts = { mode = ui_state.mode }
   vim.wo[ui_state.left_win].winbar = M.build_winbar(idx, total, decision, keymaps, tally, mode_opts)
-  if vim.api.nvim_win_is_valid(ui_state.right_win) then
-    vim.wo[ui_state.right_win].winbar = M.build_right_winbar(tally, mode_opts)
-  end
 end
 
 --- Jump cursor to a specific hunk on the left buffer.
@@ -302,8 +346,7 @@ local function jump_to_hunk(ui_state, hunks, idx)
   end
   if vim.api.nvim_win_is_valid(ui_state.left_win) then
     vim.api.nvim_set_current_win(ui_state.left_win)
-    local jump_line = math.max(1, hunks[idx].start_a - 1)
-    vim.api.nvim_win_set_cursor(ui_state.left_win, { jump_line, 0 })
+    vim.api.nvim_win_set_cursor(ui_state.left_win, { hunks[idx].start_a, 0 })
     vim.cmd("normal! zz")
   end
 end
@@ -311,13 +354,12 @@ end
 function M.start_review(session, ui_state, on_done)
   local config = require("neph.config").current
   local keymaps = vim.tbl_extend("force", {
-    accept = "<localleader>a",
-    reject = "<localleader>r",
-    accept_all = "<localleader>A",
-    reject_all = "<localleader>R",
-    undo = "<localleader>u",
-    decide = "<CR>",
-    submit = "<S-CR>",
+    accept = "ga",
+    reject = "gr",
+    accept_all = "gA",
+    reject_all = "gR",
+    undo = "gu",
+    submit = "gs",
     quit = "q",
   }, config.review_keymaps or {})
 
@@ -339,6 +381,10 @@ function M.start_review(session, ui_state, on_done)
     finalized = true
     for _, lhs in ipairs(mapped_keys) do
       pcall(vim.keymap.del, "n", lhs, { buffer = buf })
+    end
+    -- Restore diffopt
+    if ui_state.original_diffopt then
+      vim.o.diffopt = ui_state.original_diffopt
     end
     local ok, envelope = pcall(session.finalize)
     if not ok then
@@ -365,8 +411,8 @@ function M.start_review(session, ui_state, on_done)
     refresh_ui(session, ui_state, keymaps)
   end
 
-  -- <CR>: primary action — accept/reject dialog for current hunk
-  map(keymaps.decide, function()
+  -- <CR>: decision menu for current hunk
+  map("<CR>", function()
     if finalized or not vim.api.nvim_win_is_valid(ui_state.left_win) then
       return
     end
@@ -404,7 +450,7 @@ function M.start_review(session, ui_state, on_done)
     end)
   end, "Neph: decide on hunk")
 
-  -- Shortcut: accept current hunk
+  -- ga: accept current hunk
   map(keymaps.accept, function()
     if finalized or not vim.api.nvim_win_is_valid(ui_state.left_win) then
       return
@@ -416,7 +462,7 @@ function M.start_review(session, ui_state, on_done)
     after_action()
   end, "Neph: accept hunk")
 
-  -- Shortcut: reject current hunk
+  -- gr: reject current hunk
   map(keymaps.reject, function()
     if finalized or not vim.api.nvim_win_is_valid(ui_state.left_win) then
       return
@@ -433,7 +479,7 @@ function M.start_review(session, ui_state, on_done)
     end)
   end, "Neph: reject hunk")
 
-  -- Shortcut: accept all remaining
+  -- gA: accept all remaining
   map(keymaps.accept_all, function()
     if finalized then
       return
@@ -442,7 +488,7 @@ function M.start_review(session, ui_state, on_done)
     refresh_ui(session, ui_state, keymaps)
   end, "Neph: accept all remaining")
 
-  -- Shortcut: reject all remaining
+  -- gR: reject all remaining
   map(keymaps.reject_all, function()
     if finalized then
       return
@@ -456,7 +502,7 @@ function M.start_review(session, ui_state, on_done)
     end)
   end, "Neph: reject all remaining")
 
-  -- Shortcut: clear decision back to undecided
+  -- gu: clear decision back to undecided
   map(keymaps.undo, function()
     if finalized or not vim.api.nvim_win_is_valid(ui_state.left_win) then
       return
@@ -468,7 +514,7 @@ function M.start_review(session, ui_state, on_done)
     refresh_ui(session, ui_state, keymaps)
   end, "Neph: undo decision")
 
-  -- <S-CR>: submit/finalize review
+  -- gs: submit/finalize review
   map(keymaps.submit, function()
     if finalized then
       return
@@ -509,6 +555,14 @@ function M.start_review(session, ui_state, on_done)
     do_finalize()
   end, "Neph: quit review")
 
+  -- ?: toggle help popup
+  map("?", function()
+    if finalized then
+      return
+    end
+    toggle_help_popup(ui_state, keymaps)
+  end, "Neph: toggle help")
+
   -- Initial: jump to first hunk and refresh UI
   local hunks = session.get_hunk_ranges()
   if #hunks > 0 then
@@ -530,12 +584,21 @@ end
 
 function M.cleanup(ui_state)
   pcall(vim.fn.sign_unplace, "neph_review", { buffer = ui_state.left_buf })
-  pcall(vim.fn.sign_unplace, "neph_review", { buffer = ui_state.right_buf })
   pcall(vim.api.nvim_buf_clear_namespace, ui_state.right_buf, hints_ns, 0, -1)
+
+  -- Close help popup if open
+  if ui_state.help_win and vim.api.nvim_win_is_valid(ui_state.help_win) then
+    pcall(vim.api.nvim_win_close, ui_state.help_win, true)
+  end
 
   -- Clean up guard autocmd
   if ui_state.guard_augroup then
     pcall(vim.api.nvim_del_augroup_by_id, ui_state.guard_augroup)
+  end
+
+  -- Restore diffopt
+  if ui_state.original_diffopt then
+    vim.o.diffopt = ui_state.original_diffopt
   end
 
   if vim.api.nvim_win_is_valid(ui_state.right_win) then
