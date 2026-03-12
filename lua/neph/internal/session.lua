@@ -281,6 +281,10 @@ function M.kill_session(termname)
     active_terminal = nil
   end
   vim.g[termname .. "_active"] = nil
+  -- Force-cleanup active review UI if it belongs to this agent
+  pcall(function()
+    require("neph.api.review").force_cleanup(termname)
+  end)
   -- Clear queued reviews for this agent
   pcall(function()
     require("neph.internal.review_queue").clear_agent(termname)

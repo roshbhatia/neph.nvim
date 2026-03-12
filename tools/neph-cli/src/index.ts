@@ -151,7 +151,8 @@ export async function runCommand(transport: NvimTransport | null, command: strin
     }
 
     const requestId = crypto.randomUUID();
-    const resultPath = command === 'review' ? path.join(os.tmpdir(), `neph-review-${requestId}.json`) : undefined;
+    const resultDir = command === 'review' ? fs.mkdtempSync(path.join(os.tmpdir(), 'neph-review-')) : undefined;
+    const resultPath = resultDir ? path.join(resultDir, `${requestId}.json`) : undefined;
 
     let done = false;
     const cleanup = async () => {
@@ -159,6 +160,9 @@ export async function runCommand(transport: NvimTransport | null, command: strin
       done = true;
       if (resultPath && fs.existsSync(resultPath)) {
         try { fs.unlinkSync(resultPath); } catch {}
+      }
+      if (resultDir && fs.existsSync(resultDir)) {
+        try { fs.rmdirSync(resultDir); } catch {}
       }
       try {
         await transport.executeLua(RPC_CALL, ['status.unset', { name: 'neph_connected' }]);
@@ -203,15 +207,18 @@ export async function runCommand(transport: NvimTransport | null, command: strin
     });
 
     let watcher: fs.FSWatcher | undefined;
-    if (command === 'review' && resultPath) {
-      watcher = fs.watch(os.tmpdir(), async (event, filename) => {
+    if (command === 'review' && resultPath && resultDir) {
+      watcher = fs.watch(resultDir, async (event, filename) => {
         if (filename === path.basename(resultPath) && fs.existsSync(resultPath)) {
           const result = fs.readFileSync(resultPath, 'utf8');
           await handleResult(result);
         }
       });
-      watcher.on('error', (err) => {
+      watcher.on('error', async (err) => {
         process.stderr.write(`neph: fs.watch error: ${err.message}\n`);
+        if (watcher) watcher.close();
+        await cleanup();
+        process.exit(1);
       });
     }
 

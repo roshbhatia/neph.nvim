@@ -38,7 +38,7 @@ function M.setup(config)
   -- Also check on a timer
   timer = vim.uv.new_timer()
   if timer then
-    local interval = cfg.interval or 1000
+    local interval = cfg.interval ~= nil and cfg.interval or 1000
     timer:start(
       interval,
       interval,

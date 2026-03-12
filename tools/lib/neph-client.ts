@@ -273,6 +273,11 @@ export class NephClient {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
+    // Reject all pending requests so callers don't hang
+    for (const [id, resolve] of this.pendingRequests) {
+      resolve({ schema: "review/v1", decision: "reject", content: "", hunks: [], reason: "Disconnected" } as any);
+    }
+    this.pendingRequests.clear();
     if (this.client) {
       try {
         this.client.close();

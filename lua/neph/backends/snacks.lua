@@ -131,6 +131,11 @@ end
 
 function M.cleanup_all(terminals)
   for _, td in pairs(terminals) do
+    if td.ready_timer then
+      pcall(td.ready_timer.stop, td.ready_timer)
+      pcall(td.ready_timer.close, td.ready_timer)
+      td.ready_timer = nil
+    end
     if td.win and vim.api.nvim_win_is_valid(td.win) then
       vim.api.nvim_win_close(td.win, true)
     end

@@ -12,10 +12,51 @@ local engine = require("neph.api.review.engine")
 local ui = require("neph.api.review.ui")
 local review_queue = require("neph.internal.review_queue")
 
+---@type {session: table, ui_state: table, result_path: string?, channel_id: number?, request_id: string, mode: string, file_path: string, old_lines: string[], agent: string?}|nil
+local active_review = nil
+
 -- Wire the queue to call our internal open function
 review_queue.set_open_fn(function(params)
   M._open_immediate(params)
 end)
+
+-- Finalize any active review on Neovim exit
+vim.api.nvim_create_autocmd("VimLeavePre", {
+  callback = function()
+    if not active_review then
+      return
+    end
+    local ar = active_review
+    pcall(ar.session.reject_all_remaining, "Neovim exiting")
+    local ok, envelope = pcall(ar.session.finalize)
+    if ok then
+      if ar.mode == "post_write" then
+        pcall(M._apply_post_write, ar.file_path, envelope, ar.old_lines)
+      end
+      M.write_result(ar.result_path, ar.channel_id, ar.request_id, envelope)
+    end
+    pcall(review_queue.on_complete, ar.request_id)
+    active_review = nil
+  end,
+})
+
+--- Force cleanup of an active review belonging to a specific agent.
+--- Called from session.kill_session() when an agent dies.
+---@param agent_name string
+function M.force_cleanup(agent_name)
+  if not active_review or active_review.agent ~= agent_name then
+    return
+  end
+  local ar = active_review
+  pcall(ar.session.reject_all_remaining, "Agent killed")
+  local ok, envelope = pcall(ar.session.finalize)
+  if ok then
+    M.write_result(ar.result_path, ar.channel_id, ar.request_id, envelope)
+  end
+  pcall(ui.cleanup, ar.ui_state)
+  pcall(review_queue.on_complete, ar.request_id)
+  active_review = nil
+end
 
 --- Public entry point — routes through the review queue.
 function M.open(params)
@@ -100,12 +141,12 @@ function M._open_immediate(params)
 
   local result_written = false
 
-  ui.start_review(session, ui_state, function(envelope)
+  local function finish_review(envelope)
     if result_written then
       return
     end
     result_written = true
-    ui.cleanup(ui_state)
+    active_review = nil
 
     if mode == "post_write" then
       M._apply_post_write(file_path, envelope, old_lines)
@@ -113,6 +154,24 @@ function M._open_immediate(params)
 
     M.write_result(result_path, channel_id, request_id, envelope)
     review_queue.on_complete(request_id)
+  end
+
+  -- Track active review for graceful exit
+  active_review = {
+    session = session,
+    ui_state = ui_state,
+    result_path = result_path,
+    channel_id = channel_id,
+    request_id = request_id,
+    mode = mode,
+    file_path = file_path,
+    old_lines = old_lines,
+    agent = params.agent,
+  }
+
+  ui.start_review(session, ui_state, function(envelope)
+    ui.cleanup(ui_state)
+    finish_review(envelope)
   end)
 
   -- Handle manual tab close
@@ -125,16 +184,9 @@ function M._open_immediate(params)
       if result_written then
         return
       end
-      result_written = true
       session.reject_all_remaining("User manually closed diff")
       local envelope = session.finalize()
-
-      if mode == "post_write" then
-        M._apply_post_write(file_path, envelope, old_lines)
-      end
-
-      M.write_result(result_path, channel_id, request_id, envelope)
-      review_queue.on_complete(request_id)
+      finish_review(envelope)
 
       -- Restore diffopt saved by open_diff_tab
       if ui_state.original_diffopt then
@@ -228,7 +280,10 @@ function M.write_result(path, channel_id, request_id, envelope)
       vim.notify("Neph: failed to write review result: " .. (err or "unknown error"), vim.log.levels.ERROR)
       return
     end
-    f:write(vim.json.encode(envelope))
+    local wok, werr = f:write(vim.json.encode(envelope))
+    if not wok then
+      vim.notify("Neph: write_result write error: " .. (werr or "unknown"), vim.log.levels.ERROR)
+    end
     f:close()
     local ok, rename_err = os.rename(tmp_path, path)
     if not ok then

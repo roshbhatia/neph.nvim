@@ -382,6 +382,11 @@ function M.start_review(session, ui_state, on_done)
     for _, lhs in ipairs(mapped_keys) do
       pcall(vim.keymap.del, "n", lhs, { buffer = buf })
     end
+    -- Remove CursorMoved autocmd
+    if ui_state.cursor_autocmd_id then
+      pcall(vim.api.nvim_del_autocmd, ui_state.cursor_autocmd_id)
+      ui_state.cursor_autocmd_id = nil
+    end
     -- Restore diffopt
     if ui_state.original_diffopt then
       vim.o.diffopt = ui_state.original_diffopt
@@ -397,7 +402,7 @@ function M.start_review(session, ui_state, on_done)
   end
 
   local function after_action()
-    if finalized or not vim.api.nvim_win_is_valid(ui_state.left_win) then
+    if finalized or not vim.api.nvim_buf_is_valid(buf) or not vim.api.nvim_win_is_valid(ui_state.left_win) then
       return
     end
     -- Jump to next undecided hunk if any exist
@@ -413,7 +418,7 @@ function M.start_review(session, ui_state, on_done)
 
   -- <CR>: decision menu for current hunk
   map("<CR>", function()
-    if finalized or not vim.api.nvim_win_is_valid(ui_state.left_win) then
+    if finalized or not vim.api.nvim_buf_is_valid(buf) or not vim.api.nvim_win_is_valid(ui_state.left_win) then
       return
     end
     local hunks = session.get_hunk_ranges()
@@ -452,7 +457,7 @@ function M.start_review(session, ui_state, on_done)
 
   -- ga: accept current hunk
   map(keymaps.accept, function()
-    if finalized or not vim.api.nvim_win_is_valid(ui_state.left_win) then
+    if finalized or not vim.api.nvim_buf_is_valid(buf) or not vim.api.nvim_win_is_valid(ui_state.left_win) then
       return
     end
     local hunks = session.get_hunk_ranges()
@@ -464,11 +469,11 @@ function M.start_review(session, ui_state, on_done)
 
   -- gr: reject current hunk
   map(keymaps.reject, function()
-    if finalized or not vim.api.nvim_win_is_valid(ui_state.left_win) then
+    if finalized or not vim.api.nvim_buf_is_valid(buf) or not vim.api.nvim_win_is_valid(ui_state.left_win) then
       return
     end
     vim.ui.input({ prompt = "Reject reason (optional): " }, function(reason)
-      if finalized or not vim.api.nvim_win_is_valid(ui_state.left_win) then
+      if finalized or not vim.api.nvim_buf_is_valid(buf) or not vim.api.nvim_win_is_valid(ui_state.left_win) then
         return
       end
       local hunks = session.get_hunk_ranges()
@@ -504,7 +509,7 @@ function M.start_review(session, ui_state, on_done)
 
   -- gu: clear decision back to undecided
   map(keymaps.undo, function()
-    if finalized or not vim.api.nvim_win_is_valid(ui_state.left_win) then
+    if finalized or not vim.api.nvim_buf_is_valid(buf) or not vim.api.nvim_win_is_valid(ui_state.left_win) then
       return
     end
     local hunks = session.get_hunk_ranges()
@@ -571,20 +576,29 @@ function M.start_review(session, ui_state, on_done)
   refresh_ui(session, ui_state, keymaps)
 
   -- Update winbar on cursor movement
-  vim.api.nvim_create_autocmd("CursorMoved", {
+  local cursor_autocmd_id = vim.api.nvim_create_autocmd("CursorMoved", {
     buffer = buf,
     callback = function()
-      if finalized then
+      if finalized or not vim.api.nvim_buf_is_valid(buf) then
         return true -- remove autocmd
       end
       refresh_ui(session, ui_state, keymaps)
     end,
   })
+
+  -- Store autocmd ID on ui_state for explicit cleanup
+  ui_state.cursor_autocmd_id = cursor_autocmd_id
 end
 
 function M.cleanup(ui_state)
   pcall(vim.fn.sign_unplace, "neph_review", { buffer = ui_state.left_buf })
   pcall(vim.api.nvim_buf_clear_namespace, ui_state.right_buf, hints_ns, 0, -1)
+
+  -- Remove CursorMoved autocmd
+  if ui_state.cursor_autocmd_id then
+    pcall(vim.api.nvim_del_autocmd, ui_state.cursor_autocmd_id)
+    ui_state.cursor_autocmd_id = nil
+  end
 
   -- Close help popup if open
   if ui_state.help_win and vim.api.nvim_win_is_valid(ui_state.help_win) then

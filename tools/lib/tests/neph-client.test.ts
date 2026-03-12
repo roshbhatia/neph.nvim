@@ -151,6 +151,30 @@ describe("NephClient", () => {
     vi.useRealTimers();
   });
 
+  it("disconnect clears pending requests", async () => {
+    vi.useFakeTimers();
+    const client = new NephClient();
+    const mock = (await import("neovim") as any).__mockClient;
+    mock.request.mockResolvedValue([5, {}]);
+    mock.on.mockImplementation(() => {});
+    mock.executeLua.mockResolvedValue({ ok: true, result: { ok: true } });
+
+    await client.connect("/tmp/test.sock");
+
+    // Start a review (creates a pending request)
+    const reviewPromise = client.review("/tmp/test.ts", "content");
+
+    // Disconnect while review is pending
+    client.disconnect();
+
+    // The review promise should resolve with a reject (disconnected)
+    const result = await reviewPromise;
+    expect(result.decision).toBe("reject");
+    expect(result.reason).toBe("Disconnected");
+
+    vi.useRealTimers();
+  });
+
   it("setStatus calls status.set RPC", async () => {
     const client = new NephClient();
     const mock = (await import("neovim") as any).__mockClient;
