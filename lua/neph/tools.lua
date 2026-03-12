@@ -520,6 +520,78 @@ local function clear_stamp(name)
 end
 
 -- ---------------------------------------------------------------------------
+-- Install locking (PID-based lock files)
+-- ---------------------------------------------------------------------------
+
+local function lock_dir()
+  local state_dir = vim.fn.stdpath("state")
+  if not state_dir then
+    state_dir = vim.fn.stdpath("data")
+  end
+  return state_dir .. "/neph"
+end
+
+--- Acquire an exclusive lock for a build name.
+---@param name string  lock name (e.g. build dir name)
+---@return boolean  true if lock was acquired
+function M.acquire_lock(name)
+  local dir = lock_dir()
+  if vim.fn.isdirectory(dir) == 0 then
+    vim.fn.mkdir(dir, "p")
+  end
+
+  local path = dir .. "/install-" .. name .. ".lock"
+
+  -- Check for existing lock
+  local f = io.open(path, "r")
+  if f then
+    local pid_str = f:read("*l")
+    f:close()
+    if pid_str then
+      local pid = tonumber(pid_str)
+      if pid then
+        -- Check if the process is still alive
+        local alive = pcall(function()
+          local ret = vim.uv.kill(pid, 0)
+          if ret ~= 0 and ret ~= true then
+            error("dead")
+          end
+        end)
+        if alive then
+          return false -- lock held by a live process
+        end
+        -- Stale lock — remove and retry
+        pcall(os.remove, path)
+      end
+    end
+  end
+
+  -- Try exclusive create
+  local lf, err = io.open(path, "wx")
+  if not lf then
+    -- "wx" mode not supported in all Lua versions; fall back
+    lf, err = io.open(path, "w")
+    if not lf then
+      return false
+    end
+  end
+  lf:write(tostring(vim.fn.getpid()))
+  lf:close()
+  return true
+end
+
+--- Release an install lock.
+---@param name string  lock name
+function M.release_lock(name)
+  local path = lock_dir() .. "/install-" .. name .. ".lock"
+  local ok, err = os.remove(path)
+  if not ok then
+    local log = require("neph.internal.log")
+    log.debug("tools", "failed to release lock %s: %s", name, tostring(err))
+  end
+end
+
+-- ---------------------------------------------------------------------------
 -- Helpers
 -- ---------------------------------------------------------------------------
 
@@ -701,6 +773,7 @@ end
 ---@param build_spec table  { dir, src_dirs, check }
 ---@param callback fun(ok: boolean, err?: string)
 function M.run_build(root, build_spec, callback)
+  local lock_name = build_spec.dir
   local tool_dir = root .. "/tools/" .. build_spec.dir
   if vim.fn.filereadable(tool_dir .. "/package.json") == 0 then
     callback(true)
@@ -733,9 +806,15 @@ function M.run_build(root, build_spec, callback)
     return
   end
 
+  if not M.acquire_lock(lock_name) then
+    callback(false, "could not acquire build lock for " .. lock_name)
+    return
+  end
+
   local cmd = string.format("cd %q && npm install --ignore-scripts 2>/dev/null && npm run build 2>&1", tool_dir)
   vim.fn.jobstart({ "sh", "-c", cmd }, {
     on_exit = vim.schedule_wrap(function(_, code)
+      M.release_lock(lock_name)
       if code ~= 0 then
         callback(false, "npm build failed (exit " .. code .. ")")
       else
@@ -750,6 +829,7 @@ end
 ---@return boolean ok
 ---@return string? err
 function M.run_build_sync(root, build_spec)
+  local lock_name = build_spec.dir
   local tool_dir = root .. "/tools/" .. build_spec.dir
   if vim.fn.filereadable(tool_dir .. "/package.json") == 0 then
     return true
@@ -778,11 +858,17 @@ function M.run_build_sync(root, build_spec)
     return true
   end
 
+  if not M.acquire_lock(lock_name) then
+    return false, "could not acquire build lock for " .. lock_name
+  end
+
   local cmd = string.format("cd %q && npm install --ignore-scripts 2>/dev/null && npm run build 2>&1", tool_dir)
   local output = vim.fn.system({ "sh", "-c", cmd })
   if vim.v.shell_error ~= 0 then
+    M.release_lock(lock_name)
     return false, "npm build failed: " .. (output or "")
   end
+  M.release_lock(lock_name)
   return true
 end
 

@@ -61,12 +61,12 @@ function M.setup(opts)
     if sub == "on" then
       vim.g.neph_debug = true
       log.truncate()
-      vim.notify("Neph: debug logging ON → /tmp/neph-debug.log", vim.log.levels.INFO)
+      vim.notify("Neph: debug logging ON → " .. log.LOG_PATH, vim.log.levels.INFO)
     elseif sub == "off" then
       vim.g.neph_debug = nil
       vim.notify("Neph: debug logging OFF", vim.log.levels.INFO)
     elseif sub == "tail" then
-      vim.cmd("split /tmp/neph-debug.log")
+      vim.cmd("split " .. vim.fn.fnameescape(log.LOG_PATH))
     else
       -- Toggle
       if vim.g.neph_debug then
@@ -75,7 +75,7 @@ function M.setup(opts)
       else
         vim.g.neph_debug = true
         log.truncate()
-        vim.notify("Neph: debug logging ON → /tmp/neph-debug.log", vim.log.levels.INFO)
+        vim.notify("Neph: debug logging ON → " .. log.LOG_PATH, vim.log.levels.INFO)
       end
     end
   end, {

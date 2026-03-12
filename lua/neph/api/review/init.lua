@@ -96,7 +96,7 @@ function M._open_immediate(params)
   end
 
   ui.setup_signs()
-  local ui_state = ui.open_diff_tab(file_path, old_lines, new_lines, { mode = mode })
+  local ui_state = ui.open_diff_tab(file_path, old_lines, new_lines, { mode = mode, request_id = request_id })
 
   local result_written = false
 

@@ -129,7 +129,8 @@ local function on_file_changed(filepath)
   end
 
   local rel = vim.fn.fnamemodify(filepath, ":.")
-  vim.notify(string.format("Agent changed: %s — use :NephReviewPost to review", rel), vim.log.levels.INFO)
+  local msg_suffix = review_queue.get_active() and "review queued" or "opening review"
+  vim.notify(string.format("Agent changed: %s — %s", rel, msg_suffix), vim.log.levels.INFO)
 
   -- Enqueue a post-write review
   local crypto = tostring(vim.uv.hrtime())

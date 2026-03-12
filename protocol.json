@@ -36,6 +36,14 @@
     "ui.notify": {
       "params": ["message", "level"],
       "async": false
+    },
+    "bus.register": {
+      "params": ["agent", "channel_id"],
+      "async": false
+    },
+    "review.pending": {
+      "params": ["path", "agent"],
+      "async": false
     }
   }
 }

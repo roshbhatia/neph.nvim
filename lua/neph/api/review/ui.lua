@@ -1,7 +1,7 @@
 local M = {}
 
 function M.setup_signs()
-  local config = vim.g.neph_config or {}
+  local config = require("neph.config").current
   local signs = vim.tbl_extend("force", {
     accept = "✓",
     reject = "✗",
@@ -98,6 +98,7 @@ function M.open_diff_tab(path, old_lines, new_lines, opts)
     right_sign_ids = {},
     guard_augroup = guard_augroup,
     mode = opts.mode,
+    request_id = opts.request_id,
   }
 end
 
@@ -308,7 +309,7 @@ local function jump_to_hunk(ui_state, hunks, idx)
 end
 
 function M.start_review(session, ui_state, on_done)
-  local config = vim.g.neph_config or {}
+  local config = require("neph.config").current
   local keymaps = vim.tbl_extend("force", {
     accept = "<localleader>a",
     reject = "<localleader>r",

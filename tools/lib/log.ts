@@ -1,7 +1,7 @@
 import { appendFileSync } from "node:fs";
 import process from "node:process";
 
-const LOG_PATH = "/tmp/neph-debug.log";
+const LOG_PATH = `/tmp/neph-debug-${process.ppid}.log`;
 const enabled = !!process.env.NEPH_DEBUG;
 
 export function debug(module: string, message: string): void {

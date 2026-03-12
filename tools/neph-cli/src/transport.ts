@@ -94,16 +94,21 @@ export function discoverNvimSocket(): string | null {
 
   // Fallback: match by git root so that subdirectory invocations still resolve
   // to the right Neovim when the cwd prefix check above didn't match.
+  // Only return a socket if exactly one candidate shares the same git root.
   const myGitRoot = getGitRoot(cwd);
   if (myGitRoot) {
+    const gitMatches: typeof candidates = [];
     for (const candidate of candidates) {
       const nvimCwd = getPidCwd(candidate.pid);
       if (nvimCwd) {
         const nvimGitRoot = getGitRoot(nvimCwd);
         if (nvimGitRoot && nvimGitRoot === myGitRoot) {
-          return candidate.path;
+          gitMatches.push(candidate);
         }
       }
+    }
+    if (gitMatches.length === 1) {
+      return gitMatches[0].path;
     }
   }
 

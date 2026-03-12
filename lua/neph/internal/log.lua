@@ -6,7 +6,7 @@
 
 local M = {}
 
-local LOG_PATH = "/tmp/neph-debug.log"
+local LOG_PATH = "/tmp/neph-debug-" .. vim.fn.getpid() .. ".log"
 
 ---@param module string  Short module name (e.g. "session", "rpc")
 ---@param fmt string     Format string (string.format style)
