@@ -17,4 +17,10 @@ The `fs.watch()` watcher in the review CLI command SHALL be closed on success, e
 
 ### Requirement: Temp directory security
 
-Review result temp files SHOULD use `fs.mkdtempSync()` to create a per-process directory with restricted permissions, rather than writing directly to `/tmp`.
+Review result temp files SHALL use `fs.mkdtempSync()` to create a per-process directory with restricted permissions, rather than writing directly to `/tmp`.
+
+#### Scenario: Temp directory is per-process
+
+- **WHEN** the CLI creates a review result temp file
+- **THEN** it SHALL be placed in a directory created by `fs.mkdtempSync()`
+- **AND** the directory is unique to the process
