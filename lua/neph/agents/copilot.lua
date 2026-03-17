@@ -6,4 +6,5 @@ return {
   cmd = "copilot",
   args = { "--allow-all-paths" },
   type = "hook",
+  integration_group = "hook",
 }

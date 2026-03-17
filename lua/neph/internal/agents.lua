@@ -6,10 +6,6 @@
 
 local M = {}
 
----@class neph.AgentIntegration
----@field type     "hook"|"terminal"  Integration mechanism (hook = Cupcake-managed, terminal = terminal-only)
----@field capabilities string[]         Supported capabilities (e.g. "review", "status", "checktime")
-
 ---@class neph.AgentDef
 ---@field name        string                Unique identifier (used as terminal key)
 ---@field label       string                Display name
@@ -18,8 +14,9 @@ local M = {}
 ---@field args        string[]              Command-line arguments
 ---@field env?        table<string,string>  Per-agent environment variables
 ---@field full_cmd    string                Computed full command string (set at runtime)
----@field integration neph.AgentIntegration|nil  Hook/extension integration metadata (nil = terminal-only)
----@field send_adapter (fun(td:table,text:string,opts:table):boolean|nil)|nil  Custom send function (nil = use default)
+---@field integration_group? string         Integration group name for defaults
+---@field integration_overrides? neph.IntegrationOverrides  Per-agent integration overrides
+---@field integration_pipeline? table       Resolved integration pipeline (runtime)
 
 ---@type neph.AgentDef[]
 local agents = {}
@@ -61,6 +58,9 @@ function M.init(agent_defs)
   for _, agent in ipairs(agents) do
     agent.full_cmd = build_cmd(agent)
   end
+  pcall(function()
+    require("neph.internal.integration").apply_all(agents)
+  end)
 end
 
 --- Return all agents whose executable is present on PATH.

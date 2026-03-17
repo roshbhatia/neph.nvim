@@ -9,4 +9,5 @@ return {
   cmd = "opencode",
   args = {},
   type = "hook",
+  integration_group = "harness",
 }

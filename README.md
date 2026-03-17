@@ -22,6 +22,7 @@ return {
       return {
         agents = require("neph.agents.all"),
         backend = require("neph.backends.wezterm"), -- or neph.backend.snacks
+        review_provider = require("neph.reviewers.vimdiff"),
       }
     end,
     keys = function()
@@ -36,6 +37,9 @@ return {
         { "<leader>ja", api.ask, mode = { "n", "v" }, desc = "Neph: ask active" },
         { "<leader>jf", api.fix, desc = "Neph: fix diagnostics" },
         { "<leader>jc", api.comment, mode = { "n", "v" }, desc = "Neph: comment" },
+
+        -- Review
+        { "<leader>jr", api.review, desc = "Neph: review current file" },
 
         -- History / replay
         { "<leader>jv", api.resend, desc = "Neph: resend previous prompt" },

@@ -1,99 +1,79 @@
 local M = {}
 
----@param tools table
----@param root string
----@param agent neph.AgentDef
-local function check_agent(tools, root, agent)
-  local on_path = vim.fn.executable(agent.cmd) == 1
-  if not on_path then
-    vim.health.info(agent.name .. ": not on PATH (tools not installed)")
-    return
-  end
+local function run_cli(cmd)
+  local output = vim.fn.systemlist(cmd .. " 2>&1")
+  local code = vim.v.shell_error
+  return output, code
+end
 
-  for _, sym in ipairs(agent.tools.symlinks or {}) do
-    local src = root .. "/tools/" .. sym.src
-    local dst = vim.fn.expand(sym.dst)
-    local status = tools.check_symlink(src, dst)
-    if status == "ok" then
-      vim.health.ok(agent.name .. " symlink: " .. dst)
-    elseif status == "missing" then
-      vim.health.warn(agent.name .. " symlink missing: " .. dst .. "\n  Run :NephTools install " .. agent.name)
-    elseif status == "broken" then
-      vim.health.error(agent.name .. " symlink broken: " .. dst)
-    else
-      vim.health.warn(agent.name .. " symlink wrong target: " .. dst)
+local function check_deps()
+  local output, code = run_cli("neph deps status")
+  local has_required_error = false
+  local has_agent_warning = false
+
+  for _, line in ipairs(output) do
+    if line:find("%(required%)") then
+      if line:find("missing") then
+        has_required_error = true
+        vim.health.error("deps: " .. line)
+      else
+        vim.health.ok("deps: " .. line)
+      end
+    elseif line:find("%(optional%)") then
+      if line:find("missing") then
+        vim.health.warn("deps: " .. line)
+      else
+        vim.health.ok("deps: " .. line)
+      end
+    elseif line:find("No supported CLI agents") then
+      has_agent_warning = true
+      vim.health.warn("deps: " .. line)
     end
   end
 
-  for _, spec in ipairs(agent.tools.merges or {}) do
-    local dst = vim.fn.expand(spec.dst)
-    if vim.fn.filereadable(dst) == 1 then
-      vim.health.ok(agent.name .. " config merged: " .. dst)
-    else
-      vim.health.warn(agent.name .. " config file missing: " .. dst)
+  if code ~= 0 and not has_required_error then
+    vim.health.warn("deps: neph deps status reported issues")
+  end
+
+  return not has_required_error and not has_agent_warning
+end
+
+local function check_integrations()
+  local output, code = run_cli("neph integration status")
+  if code ~= 0 then
+    vim.health.warn("integration: neph integration status failed")
+    return false
+  end
+
+  local any_enabled = false
+  for _, line in ipairs(output) do
+    local name, state = line:match("^([%w%-%_]+):%s*(%w+)")
+    if name and state then
+      if state == "enabled" then
+        any_enabled = true
+      end
     end
   end
 
-  for _, b in ipairs(agent.tools.builds or {}) do
-    local artifact = root .. "/tools/" .. b.dir .. "/" .. b.check
-    if vim.fn.filereadable(artifact) == 1 then
-      vim.health.ok(agent.name .. " build artifact: " .. artifact)
-    else
-      vim.health.warn(
-        agent.name .. " build artifact missing: " .. artifact .. "\n  Run :NephTools install " .. agent.name
-      )
-    end
+  if any_enabled then
+    vim.health.ok("integration: at least one integration enabled")
+  else
+    vim.health.warn("integration: no enabled integrations detected")
   end
+
+  return any_enabled
 end
 
 function M.check()
   vim.health.start("neph")
 
-  local tools = require("neph.tools")
-  local agents_mod = require("neph.internal.agents")
-  local root = tools.get_root()
-  local build_spec, sym_spec = tools.get_universal_specs()
-
-  -- Dependencies
-  if vim.fn.executable("node") == 1 then
-    vim.health.ok("node found: " .. vim.fn.exepath("node"))
-  else
-    vim.health.warn("node not found (needed for neph-cli and agent extensions)")
+  if vim.fn.executable("neph") ~= 1 then
+    vim.health.warn("neph CLI not found on PATH (integration checks unavailable)")
+    return
   end
 
-  if vim.fn.executable("npm") == 1 then
-    vim.health.ok("npm found: " .. vim.fn.exepath("npm"))
-  else
-    vim.health.warn("npm not found (needed for building neph-cli and agent extensions)")
-  end
-
-  -- Universal neph-cli
-  local cli_src = root .. "/tools/" .. sym_spec.src
-  local cli_dst = vim.fn.expand(sym_spec.dst)
-  local cli_status = tools.check_symlink(cli_src, cli_dst)
-  if cli_status == "ok" then
-    vim.health.ok("neph-cli symlink: " .. cli_dst)
-  elseif cli_status == "missing" then
-    vim.health.warn("neph-cli symlink missing at " .. cli_dst .. "\n  Run :NephTools install all")
-  elseif cli_status == "broken" then
-    vim.health.error("neph-cli symlink broken at " .. cli_dst)
-  else
-    vim.health.warn("neph-cli symlink points to wrong target at " .. cli_dst)
-  end
-
-  local build_artifact = root .. "/tools/" .. build_spec.dir .. "/" .. build_spec.check
-  if vim.fn.filereadable(build_artifact) == 1 then
-    vim.health.ok("neph-cli build artifact: " .. build_artifact)
-  else
-    vim.health.warn("neph-cli build artifact missing: " .. build_artifact .. "\n  Run :NephTools install all")
-  end
-
-  -- Per-agent status
-  for _, agent in ipairs(agents_mod.get_all_registered()) do
-    if agent.tools then
-      check_agent(tools, root, agent)
-    end
-  end
+  check_deps()
+  check_integrations()
 end
 
 return M

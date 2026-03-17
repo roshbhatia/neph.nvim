@@ -61,3 +61,17 @@ describe('cursor hooks.json', () => {
     expect(config.hooks.afterFileEdit[0].command).toBe('cupcake eval --harness cursor');
   });
 });
+
+describe('gemini settings.json', () => {
+  const config = readJson('gemini/settings.json') as any;
+
+  it('has hooks.BeforeTool array', () => {
+    expect(config.hooks).toBeDefined();
+    expect(Array.isArray(config.hooks.BeforeTool)).toBe(true);
+  });
+
+  it('runs neph integration hook gemini', () => {
+    const hook = config.hooks.BeforeTool[0];
+    expect(hook.hooks[0].command).toBe('neph integration hook gemini');
+  });
+});

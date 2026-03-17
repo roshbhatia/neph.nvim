@@ -11,6 +11,7 @@ local M = {}
 local engine = require("neph.api.review.engine")
 local ui = require("neph.api.review.ui")
 local review_queue = require("neph.internal.review_queue")
+local review_provider = require("neph.internal.review_provider")
 
 ---@type {session: table, ui_state: table, result_path: string?, channel_id: number?, request_id: string, mode: string, file_path: string, old_lines: string[], agent: string?}|nil
 local active_review = nil
@@ -60,6 +61,22 @@ end
 
 --- Public entry point — routes through the review queue.
 function M.open(params)
+  if not review_provider.is_enabled() then
+    local content = params.content
+    if content == nil and type(params.path) == "string" and params.path ~= "" then
+      local f = io.open(params.path, "r")
+      if f then
+        content = f:read("*all")
+        f:close()
+      end
+    end
+    content = content or ""
+    local envelope = engine.build_envelope({}, content)
+    M.write_result(params.result_path, params.channel_id, params.request_id, envelope)
+    review_queue.on_complete(params.request_id)
+    return { ok = true, msg = "Review skipped (noop)" }
+  end
+
   local config = require("neph.config").current
   local review_cfg = type(config.review) == "table" and config.review or {}
   local queue_cfg = review_cfg.queue or {}
@@ -260,6 +277,10 @@ end
 ---@param file_path string  Absolute path to the file
 ---@return {ok: boolean, msg?: string, error?: string}
 function M.open_manual(file_path)
+  if not review_provider.is_enabled() then
+    return { ok = false, error = "Review provider not configured" }
+  end
+
   if type(file_path) ~= "string" or file_path == "" then
     return { ok = false, error = "invalid file_path" }
   end

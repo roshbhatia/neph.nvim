@@ -1037,90 +1037,12 @@ function M.uninstall_universal(root)
 end
 
 -- ---------------------------------------------------------------------------
--- Async install (used by :NephTools install all)
+-- Async install (deprecated; use neph CLI)
 -- ---------------------------------------------------------------------------
 
---- Non-blocking install. Each agent installs independently.
+--- Neovim no longer installs integrations; use neph CLI instead.
 function M.install_async()
-  local root = plugin_root()
-  local agents = require("neph.internal.agents").get_all()
-
-  -- Universal neph-cli (build only at startup — symlink is opt-in via :NephTools install)
-  if not is_agent_up_to_date(root, nil, UNIVERSAL_NAME) then
-    -- Async build for neph-cli (no symlink during automatic startup)
-    M.run_build(root, UNIVERSAL_BUILD, function(ok, err)
-      if ok then
-        touch_stamp(nil, UNIVERSAL_NAME)
-      else
-        vim.notify("Neph: " .. UNIVERSAL_NAME .. ": " .. (err or "build failed"), vim.log.levels.WARN)
-      end
-    end)
-  end
-
-  -- Deploy Cupcake policies if cupcake is available
-  local cupcake_ok = vim.fn.executable("cupcake") == 1
-  if cupcake_ok then
-    local policy_src = root .. "/.cupcake/policies/neph"
-    local policy_dst = ".cupcake/policies/neph"
-    local rulebook_src = root .. "/.cupcake/rulebook.yml"
-    local rulebook_dst = ".cupcake/rulebook.yml"
-    local signals_src = root .. "/.cupcake/signals"
-    local signals_dst = ".cupcake/signals"
-    -- Copy policies, rulebook, and signals to project .cupcake/
-    vim.fn.mkdir(policy_dst, "p")
-    vim.fn.mkdir(signals_dst, "p")
-    for _, f in ipairs(vim.fn.glob(policy_src .. "/*.rego", false, true)) do
-      local name = vim.fn.fnamemodify(f, ":t")
-      local content = vim.fn.readfile(f)
-      vim.fn.writefile(content, policy_dst .. "/" .. name)
-    end
-    if vim.fn.filereadable(rulebook_src) == 1 then
-      vim.fn.writefile(vim.fn.readfile(rulebook_src), rulebook_dst)
-    end
-    for _, f in ipairs(vim.fn.glob(signals_src .. "/*", false, true)) do
-      local name = vim.fn.fnamemodify(f, ":t")
-      local dst = signals_dst .. "/" .. name
-      vim.fn.writefile(vim.fn.readfile(f), dst)
-      vim.fn.setfperm(dst, "rwxr-xr-x")
-    end
-  end
-
-  -- Per-agent install
-  for _, agent in ipairs(agents) do
-    if agent.tools and not is_agent_up_to_date(root, agent, agent.name) then
-      local results = M.install_agent(root, agent)
-      local agent_ok = true
-      for _, r in ipairs(results) do
-        if not r.ok then
-          agent_ok = false
-          vim.notify("Neph: " .. agent.name .. " " .. r.op .. ": " .. (r.err or "unknown error"), vim.log.levels.WARN)
-        end
-      end
-
-      -- Async builds for this agent
-      local builds = agent.tools.builds or {}
-      if #builds > 0 then
-        local pending = #builds
-        local build_ok = true
-        for _, b in ipairs(builds) do
-          M.run_build(root, b, function(ok, err)
-            if not ok then
-              build_ok = false
-              vim.notify("Neph: " .. agent.name .. " build: " .. (err or "failed"), vim.log.levels.WARN)
-            end
-            pending = pending - 1
-            if pending == 0 and agent_ok and build_ok then
-              touch_stamp(agent, agent.name)
-            end
-          end)
-        end
-      else
-        if agent_ok then
-          touch_stamp(agent, agent.name)
-        end
-      end
-    end
-  end
+  vim.notify("Neph: install moved to CLI. Use `neph integration`.", vim.log.levels.WARN)
 end
 
 -- ---------------------------------------------------------------------------
@@ -1146,30 +1068,19 @@ function M.check_version()
 
   if #stale > 0 then
     vim.notify(
-      "Neph: tools out of date (" .. table.concat(stale, ", ") .. ")\nRun :NephTools install all",
+      "Neph: tools out of date (" .. table.concat(stale, ", ") .. ")\nRun `neph integration toggle`",
       vim.log.levels.WARN
     )
   end
 end
 
---- Synchronous install (blocking). Use install_async() for startup.
+--- Synchronous install (deprecated; use neph CLI).
 function M.install()
-  local root = plugin_root()
-  local agents = require("neph.internal.agents").get_all()
-
-  M.install_universal(root, { sync = true })
-  touch_stamp(nil, UNIVERSAL_NAME)
-
-  for _, agent in ipairs(agents) do
-    if agent.tools then
-      M.install_agent(root, agent, { sync = true })
-      touch_stamp(agent, agent.name)
-    end
-  end
+  vim.notify("Neph: install moved to CLI. Use `neph integration`.", vim.log.levels.WARN)
 end
 
 -- ---------------------------------------------------------------------------
--- Query helpers (used by NephTools command and checkhealth)
+-- Query helpers
 -- ---------------------------------------------------------------------------
 
 --- Get the plugin root path.

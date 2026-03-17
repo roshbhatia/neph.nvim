@@ -8,6 +8,7 @@ return {
   cmd = "pi",
   args = { "--continue" },
   type = "hook",
+  integration_group = "hook",
   tools = {
     symlinks = {
       { src = "pi/package.json", dst = "~/.pi/agent/extensions/nvim/package.json" },

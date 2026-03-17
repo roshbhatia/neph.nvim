@@ -11,6 +11,12 @@
 
 local M = {}
 
+---@class neph.IntegrationOverrides
+---@field policy_engine?  string   Override policy engine id
+---@field review_provider? string  Override review provider id
+---@field formatter?      string   Override response formatter id
+---@field adapter?        string   Override adapter id
+
 ---@class neph.AgentDef
 ---@field name            string               Unique agent identifier
 ---@field label           string               Human-readable display name
@@ -23,6 +29,17 @@ local M = {}
 ---@field launch_args_fn? fun(root: string): string[]  Compute additional CLI args at launch time
 ---@field ready_pattern?  string               Lua pattern matched against terminal output to detect readiness
 ---@field full_cmd?       string               Resolved command (set by agents module at runtime)
+---@field integration_group? string            Integration group name for defaults
+---@field integration_overrides? neph.IntegrationOverrides  Per-agent integration overrides
+
+---@class neph.IntegrationGroup
+---@field policy_engine?  string   Policy engine id (e.g. "cupcake", "noop")
+---@field review_provider? string  Review provider id (e.g. "vimdiff", "noop")
+---@field formatter?      string   Response formatter id
+---@field adapter?        string   Adapter id
+
+---@class neph.ReviewProvider
+---@field name string
 
 ---@class neph.Config
 ---@field keymaps?        boolean              Register default keymaps (default: true)
@@ -33,6 +50,9 @@ local M = {}
 ---@field review_signs?   neph.ReviewSignsConfig  Sign icons for diff review UI
 ---@field review_keymaps? neph.ReviewKeymapsConfig  Keymaps for diff review UI
 ---@field review?         neph.ReviewConfig     Review system configuration
+---@field review_provider? neph.ReviewProvider  Explicit review provider (default: noop)
+---@field integration_groups? table<string, neph.IntegrationGroup>  Integration group defaults
+---@field integration_default_group? string    Default integration group name
 
 ---@class neph.FileRefreshConfig
 ---@field enable?         boolean  Periodically call :checktime (default: true)
@@ -100,6 +120,13 @@ M.defaults = {
     },
     pending_notify = true,
   },
+  review_provider = nil,
+  integration_groups = {
+    default = { policy_engine = "noop", review_provider = "noop", formatter = "noop" },
+    harness = { policy_engine = "cupcake", review_provider = "vimdiff", formatter = "noop" },
+    hook = { policy_engine = "noop", review_provider = "vimdiff", formatter = "noop" },
+  },
+  integration_default_group = "default",
 }
 
 ---@type neph.Config

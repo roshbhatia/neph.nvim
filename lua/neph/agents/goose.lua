@@ -6,4 +6,5 @@ return {
   cmd = "goose",
   args = {},
   ready_pattern = "^%s*%(.-%)>",
+  integration_group = "default",
 }

@@ -1,20 +1,30 @@
 # neph.nvim tools
 
-Companion tooling bundled with neph.nvim. `require("neph").setup()` automatically
-installs the relevant files to their expected locations.
+Companion tooling bundled with neph.nvim. Integrations are installed and validated
+via the `neph` CLI (`neph integration`, `neph deps`). Neovim does not install
+these files automatically.
 
 ## Architecture
 
-All agent hooks point to **Cupcake** (`cupcake eval`). Cupcake evaluates policies
-and invokes `neph-cli` as a signal for interactive review. No agent ever calls
-`neph-cli` directly.
+Integrations flow through a composable pipeline:
+
+```
+Agent event → Adapter → Policy engine → Review provider → Response formatter
+```
+
+- Policy engine: `cupcake` or `noop`
+- Review provider: `vimdiff` (Neovim, opt-in) or `noop`
+- Response formatter: agent-specific output schema
+
+Hook-based agents call `neph integration hook <agent>` or Cupcake harnesses,
+which invoke `neph review` when review is enabled.
 
 ```
 tools/
-  neph-cli/          CLI binary (neph) — review, set/unset, checktime, ui-*
-  pi/                Pi Cupcake harness (intercepts tool_call → cupcake eval)
-  lib/               Shared utilities — neph-run.ts (CLI wrapper), log.ts
-  amp/               Amp plugin (pending Cupcake harness support)
+  neph-cli/          CLI binary (neph) — integration/deps/review/status/ui-*
+  pi/                Pi extension (legacy Cupcake harness)
+  lib/               Shared utilities — neph-client.ts, log.ts
+  amp/               Amp plugin (pending hook integration)
   opencode/          OpenCode (uses native Cupcake plugin)
   claude/            Claude Code hook config
   copilot/           Copilot hook config
@@ -22,21 +32,32 @@ tools/
   gemini/            Gemini hook config
 ```
 
+## CLI commands
+
+```
+neph integration toggle [name]
+neph integration status [name] [--show-config]
+neph deps status
+```
+
+`--show-config` pretty-prints the resolved config and highlights neph-managed lines.
+
 ## Agent Integration
 
-| Agent | Mechanism | Review |
-|-------|-----------|--------|
-| Claude | `PreToolUse` hook → `cupcake eval --harness claude` | YES |
-| Gemini | `BeforeTool` hook → `cupcake eval --harness gemini` | YES |
-| Pi | Extension → `cupcake eval --harness pi` | YES |
-| OpenCode | Native Cupcake plugin | YES |
-| Amp | Terminal-only (Cupcake harness pending) | NO |
-| Goose, Codex, Crush | Terminal-only | NO |
+| Agent | Mechanism | Policy engine |
+|-------|-----------|---------------|
+| Claude | `PreToolUse` hook → `cupcake eval --harness claude` | Cupcake |
+| Cursor | hooks.json → `cupcake eval --harness cursor` | Cupcake |
+| Gemini | `BeforeTool` hook → `neph integration hook gemini` | noop |
+| Copilot | hooks.json → `cupcake eval --harness copilot` | Cupcake |
+| Pi | Extension → Cupcake harness (legacy) | Cupcake |
+| Amp | Terminal-only (hook integration pending) | noop |
+| Goose, Codex, Crush | Terminal-only | noop |
 
-## `neph-cli review`
+## `neph review`
 
-Editor abstraction for interactive code review. Called by Cupcake's
-`neph_review` signal, not by agents directly.
+Editor abstraction for interactive code review. Called by Cupcake signals or
+direct hook integrations.
 
 **Protocol:**
 - stdin: `{ "path": "/abs/path", "content": "proposed content" }`
@@ -44,11 +65,10 @@ Editor abstraction for interactive code review. Called by Cupcake's
 - Exit codes: `0` = accept/partial, `2` = reject, `3` = timeout
 
 ```sh
-# Called by Cupcake signal, not by users directly
-echo '{"path":"/tmp/f.lua","content":"hello"}' | neph-cli review
+echo '{"path":"/tmp/f.lua","content":"hello"}' | neph review
 ```
 
-## Cupcake Policies
+## Cupcake policies
 
 Rego policies in `.cupcake/policies/neph/`:
 - `review.rego` — routes write/edit tools through interactive review
@@ -59,14 +79,8 @@ Signals in `.cupcake/signals/`:
 - `neph_review` — chains reconstruct + review
 - `neph_reconstruct` — normalizes agent JSON to `{ path, content }`
 
-## Install Targets
-
-| Source | Destination | Method |
-|--------|------------|--------|
-| `neph-cli/dist/index.js` | `~/.local/bin/neph` | symlink (opt-in) |
-| `pi/dist/cupcake-harness.js` | `~/.pi/agent/extensions/nvim/dist` | symlink |
-| `.cupcake/policies/` | `.cupcake/policies/neph/` | file copy |
-| `.cupcake/signals/` | `.cupcake/signals/` | file copy |
+Cupcake assets are installed when enabling a Cupcake-backed integration via
+`neph integration toggle`.
 
 ## Running tests
 

@@ -5,6 +5,8 @@ import * as os from 'node:os';
 import * as crypto from 'node:crypto';
 import { discoverNvimSocket, SocketTransport, NvimTransport } from './transport';
 import { runReview } from './review';
+import { runIntegrationCommand } from './integration';
+import { runDepsCommand } from './deps';
 
 const RPC_CALL = 'return require("neph.rpc").request(...)';
 
@@ -19,6 +21,16 @@ async function readStdin(): Promise<string> {
 }
 
 export async function runCommand(transport: NvimTransport | null, command: string, args: string[], stdin: string = ''): Promise<void> {
+  if (command === 'integration') {
+    await runIntegrationCommand(args, stdin, transport);
+    return;
+  }
+
+  if (command === 'deps') {
+    await runDepsCommand(args);
+    return;
+  }
+
   if (command === 'spec') {
     const spec = {
       name: "neph",
@@ -259,7 +271,10 @@ if (require.main === module) {
   const command = args[0];
 
   if (!command) {
-    process.stderr.write('Usage: neph <command> [args...]\nCommands: review, set, unset, get, checktime, close-tab, status, spec, ui-select, ui-input, ui-notify\n');
+    process.stderr.write(
+      'Usage: neph <command> [args...]\n' +
+        'Commands: review, set, unset, get, checktime, close-tab, status, spec, ui-select, ui-input, ui-notify, integration, deps\n'
+    );
     process.exit(1);
   }
 
@@ -271,7 +286,7 @@ if (require.main === module) {
     } catch (err) {
       process.stderr.write(`neph: failed to connect to Neovim socket at ${socketPath}: ${err}\n`);
     }
-  } else if (command !== 'spec') {
+  } else if (command !== 'spec' && command !== 'integration' && command !== 'deps') {
     // review handles missing transport itself (fail-open); other commands need it
     if (command !== 'review') {
       process.stderr.write(

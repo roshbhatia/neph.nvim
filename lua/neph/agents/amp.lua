@@ -10,4 +10,5 @@ return {
   args = { "--ide" },
   env = { PLUGINS = "all" },
   type = "terminal",
+  integration_group = "hook",
 }

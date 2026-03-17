@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "BeforeTool": [
+      {
+        "matcher": "write_file|edit_file|replace",
+        "hooks": [
+          {
+            "type": "command",
+            "name": "neph-review",
+            "command": "neph integration hook gemini",
+            "timeout": 600000
+          }
+        ]
+      }
+    ]
+  }
+}

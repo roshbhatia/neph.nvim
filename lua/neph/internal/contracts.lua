@@ -20,6 +20,8 @@ local AGENT_OPTIONAL_FIELDS = {
   type = "string",
   launch_args_fn = "function",
   ready_pattern = "string",
+  integration_group = "string",
+  integration_overrides = "table",
 }
 
 local VALID_AGENT_TYPES = { hook = true, terminal = true }

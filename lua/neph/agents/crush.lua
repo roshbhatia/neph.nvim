@@ -6,4 +6,5 @@ return {
   cmd = "crush",
   args = {},
   ready_pattern = "^%s*>",
+  integration_group = "default",
 }

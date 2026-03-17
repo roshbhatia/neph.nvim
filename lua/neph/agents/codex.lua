@@ -6,4 +6,5 @@ return {
   cmd = "codex",
   args = {},
   ready_pattern = "^%s*>",
+  integration_group = "default",
 }
