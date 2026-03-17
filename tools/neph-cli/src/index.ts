@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import * as crypto from 'node:crypto';
 import { discoverNvimSocket, SocketTransport, NvimTransport } from './transport';
-import { runGate } from './gate';
+import { runReview } from './review';
 
 const RPC_CALL = 'return require("neph.rpc").request(...)';
 
@@ -112,132 +112,51 @@ export async function runCommand(transport: NvimTransport | null, command: strin
     return;
   }
 
-  if (command === 'gate') {
-    const agentIdx = args.indexOf('--agent');
-    const agent = agentIdx >= 0 ? args[agentIdx + 1] : undefined;
-    if (!agent) {
-      process.stderr.write('Usage: neph gate --agent <name>\n');
-      process.exit(1);
-    }
-    const exitCode = await runGate(transport, agent, stdin);
+  if (command === 'review') {
+    const timeoutIdx = args.indexOf('--timeout');
+    const timeout = timeoutIdx >= 0 ? parseInt(args[timeoutIdx + 1], 10) || 300 : 300;
+    const exitCode = await runReview({ stdin, timeout, transport });
     process.exit(exitCode);
   }
 
-  const dryRun = process.env.NEPH_DRY_RUN === '1' || (!transport && command === 'review');
+  // --- UI commands that need notification-based responses ---
 
-  if (command === 'review' || command === 'ui-select' || command === 'ui-input') {
-    if (command === 'review') {
-      const filePath = args[1];
-      if (!filePath) {
-        process.stderr.write('Usage: neph review <path>\n');
-        process.exit(1);
-      }
-
-      if (dryRun) {
-        process.stdout.write(JSON.stringify({
-          schema: 'review/v1',
-          decision: 'accept',
-          content: stdin,
-          hunks: [],
-          reason: 'Dry-run auto-accept'
-        }) + '\n');
-        return;
-      }
-    }
-
+  if (command === 'ui-select' || command === 'ui-input') {
     if (!transport) {
       process.stderr.write('Error: No Neovim socket found. Set NVIM_SOCKET_PATH or run within Neovim.\n');
       process.exit(1);
     }
 
     const requestId = crypto.randomUUID();
-    const resultDir = command === 'review' ? fs.mkdtempSync(path.join(os.tmpdir(), 'neph-review-')) : undefined;
-    const resultPath = resultDir ? path.join(resultDir, `${requestId}.json`) : undefined;
 
     let done = false;
     const cleanup = async () => {
       if (done) return;
       done = true;
-      if (resultPath && fs.existsSync(resultPath)) {
-        try { fs.unlinkSync(resultPath); } catch {}
-      }
-      if (resultDir && fs.existsSync(resultDir)) {
-        try { fs.rmdirSync(resultDir); } catch {}
-      }
       try {
         await transport.executeLua(RPC_CALL, ['status.unset', { name: 'neph_connected' }]);
       } catch {}
       await transport.close();
     };
 
-    const handleResult = async (data: any) => {
-      if (done) return;
-      if (command === 'review') {
-        const json = typeof data === 'string' ? JSON.parse(data) : data;
-        if (json.request_id === requestId) {
-          if (watcher) watcher.close();
-          process.stdout.write((typeof data === 'string' ? data : JSON.stringify(data)) + '\n');
-          await cleanup();
-          process.exit(0);
-        }
-      } else {
-        // ui-select / ui-input
-        if (data.request_id === requestId) {
-          process.stdout.write(String(data.choice) + '\n');
-          await cleanup();
-          process.exit(0);
-        }
-      }
-    };
-
-    transport.onNotification(command === 'review' ? 'neph:review_done' : 'neph:ui_response', async (args: any) => {
+    transport.onNotification('neph:ui_response', async (args: any) => {
       try {
         const payload = args[0];
         if (payload && payload.request_id === requestId) {
-          if (command === 'review' && resultPath && fs.existsSync(resultPath)) {
-            const result = fs.readFileSync(resultPath, 'utf8');
-            await handleResult(result);
-          } else {
-            await handleResult(payload);
-          }
+          process.stdout.write(String(payload.choice) + '\n');
+          await cleanup();
+          process.exit(0);
         }
       } catch (err) {
         process.stderr.write(`neph: notification handler error: ${err}\n`);
       }
     });
 
-    let watcher: fs.FSWatcher | undefined;
-    if (command === 'review' && resultPath && resultDir) {
-      watcher = fs.watch(resultDir, async (event, filename) => {
-        if (filename === path.basename(resultPath) && fs.existsSync(resultPath)) {
-          const result = fs.readFileSync(resultPath, 'utf8');
-          await handleResult(result);
-        }
-      });
-      watcher.on('error', async (err) => {
-        process.stderr.write(`neph: fs.watch error: ${err.message}\n`);
-        if (watcher) watcher.close();
-        await cleanup();
-        process.exit(1);
-      });
-    }
-
     try {
       await transport.executeLua(RPC_CALL, ['status.set', { name: 'neph_connected', value: 'true' }]);
       const channelId = await transport.getChannelId();
-      
-      if (command === 'review') {
-        await transport.executeLua(RPC_CALL, [
-          'review.open',
-          {
-            request_id: requestId,
-            result_path: resultPath,
-            channel_id: channelId,
-            path: path.resolve(args[1]),
-            content: stdin
-          }
-        ]);
-      } else if (command === 'ui-select') {
+
+      if (command === 'ui-select') {
         const title = args[1];
         const options = args.slice(2);
         if (!title || options.length === 0) {
@@ -246,12 +165,7 @@ export async function runCommand(transport: NvimTransport | null, command: strin
         }
         await transport.executeLua(RPC_CALL, [
           'ui.select',
-          {
-            request_id: requestId,
-            channel_id: channelId,
-            title,
-            options
-          }
+          { request_id: requestId, channel_id: channelId, title, options }
         ]);
       } else if (command === 'ui-input') {
         const title = args[1];
@@ -262,17 +176,11 @@ export async function runCommand(transport: NvimTransport | null, command: strin
         }
         await transport.executeLua(RPC_CALL, [
           'ui.input',
-          {
-            request_id: requestId,
-            channel_id: channelId,
-            title,
-            default: defaultValue
-          }
+          { request_id: requestId, channel_id: channelId, title, default: defaultValue }
         ]);
       }
     } catch (err) {
       process.stderr.write(`Failed to start ${command}: ${err}\n`);
-      if (watcher) watcher.close();
       await cleanup();
       process.exit(1);
     }
@@ -280,7 +188,6 @@ export async function runCommand(transport: NvimTransport | null, command: strin
     setTimeout(async () => {
       if (!done) {
         process.stderr.write(`${command} timed out after 300s\n`);
-        if (watcher) watcher.close();
         await cleanup();
         process.exit(1);
       }
@@ -288,6 +195,8 @@ export async function runCommand(transport: NvimTransport | null, command: strin
 
     return;
   }
+
+  // --- Simple fire-and-forget commands ---
 
   if (!transport) {
     process.stderr.write('Error: No Neovim socket found.\n');
@@ -350,11 +259,11 @@ if (require.main === module) {
   const command = args[0];
 
   if (!command) {
-    process.stderr.write('Usage: neph <command> [args...]\nCommands: review, set, unset, get, checktime, close-tab, status, spec, gate, ui-select, ui-input, ui-notify\n');
+    process.stderr.write('Usage: neph <command> [args...]\nCommands: review, set, unset, get, checktime, close-tab, status, spec, ui-select, ui-input, ui-notify\n');
     process.exit(1);
   }
 
-  const socketPath = process.env.NVIM_SOCKET_PATH || discoverNvimSocket();
+  const socketPath = process.env.NVIM || process.env.NVIM_SOCKET_PATH || discoverNvimSocket();
   let transport: SocketTransport | null = null;
   if (socketPath) {
     try {
@@ -362,14 +271,15 @@ if (require.main === module) {
     } catch (err) {
       process.stderr.write(`neph: failed to connect to Neovim socket at ${socketPath}: ${err}\n`);
     }
-  } else if (command !== 'spec' && command !== 'gate') {
-    // spec and gate don't need a live Neovim connection; everything else does.
-    process.stderr.write(
-      'neph: could not determine which Neovim instance to use.\n' +
-      'Multiple instances are running and none matched the current working directory.\n' +
-      'Set NVIM_SOCKET_PATH to the socket of the intended Neovim instance and retry.\n'
-    );
-    process.exit(1);
+  } else if (command !== 'spec') {
+    // review handles missing transport itself (fail-open); other commands need it
+    if (command !== 'review') {
+      process.stderr.write(
+        'neph: could not determine which Neovim instance to use.\n' +
+        'Set NVIM_SOCKET_PATH to the socket of the intended Neovim instance and retry.\n'
+      );
+      process.exit(1);
+    }
   }
 
   readStdin().then(stdin => {

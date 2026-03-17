@@ -38,11 +38,6 @@ function M.setup(opts, backend_mod)
   backend = backend_mod
   backend.setup(config)
 
-  -- Clear bus fallback notification flag when an agent re-registers
-  require("neph.internal.bus").on_register(function(name)
-    notified_fallback[name] = nil
-  end)
-
   if not augroup then
     augroup = vim.api.nvim_create_augroup("NephSession", { clear = true })
 
@@ -73,14 +68,6 @@ function M.setup(opts, backend_mod)
         for name in pairs(terminals) do
           vim.g[name .. "_active"] = nil
         end
-        -- Clean up the agent bus
-        pcall(function()
-          require("neph.internal.bus").cleanup_all()
-        end)
-        -- Clean up companion sidecar
-        pcall(function()
-          require("neph.internal.companion").teardown()
-        end)
         backend.cleanup_all(terminals)
         -- Clean up all pending timers
         for name, pt in pairs(pending_timers) do
@@ -198,13 +185,6 @@ function M.open(termname)
       td.on_ready()
     end
 
-    -- Start companion sidecar for agents that need it
-    if agent and agent.type == "extension" and agent.name == "gemini" then
-      local companion = require("neph.internal.companion")
-      local tools = require("neph.tools")
-      companion.start_sidecar(tools.get_root(), cwd)
-      companion.setup_autocmds("gemini")
-    end
   end
 end
 
@@ -289,17 +269,6 @@ function M.kill_session(termname)
   pcall(function()
     require("neph.internal.review_queue").clear_agent(termname)
   end)
-  -- Extension agents: unregister from bus
-  local agent = require("neph.internal.agents").get_by_name(termname)
-  if agent and agent.type == "extension" then
-    require("neph.internal.bus").unregister(termname)
-  end
-  -- Stop companion sidecar if this was gemini
-  if agent and agent.name == "gemini" then
-    pcall(function()
-      require("neph.internal.companion").teardown()
-    end)
-  end
   -- Stop fs_watcher if no agents remain active
   pcall(function()
     local has_active = false
@@ -322,23 +291,7 @@ function M.send(termname, text, opts)
     return
   end
 
-  -- Extension agents: route through bus if connected
-  local agent = require("neph.internal.agents").get_by_name(termname)
-  if agent and agent.type == "extension" then
-    local bus = require("neph.internal.bus")
-    if bus.is_connected(termname) then
-      log.debug("session", "send: %s via bus (len=%d, submit=%s)", termname, #text, tostring(opts.submit or false))
-      bus.send_prompt(termname, text, opts)
-      return
-    end
-    log.debug("session", "send: %s extension not connected, falling through to terminal", termname)
-    if not notified_fallback[termname] then
-      notified_fallback[termname] = true
-      vim.notify("Neph: " .. termname .. " bus disconnected, using terminal fallback", vim.log.levels.WARN)
-    end
-  else
-    log.debug("session", "send: %s via terminal (len=%d, submit=%s)", termname, #text, tostring(opts.submit or false))
-  end
+  log.debug("session", "send: %s via terminal (len=%d, submit=%s)", termname, #text, tostring(opts.submit or false))
 
   -- Default send: backend.send (WezTerm, Zellij) or native terminal via chansend
   if td.stale_since then

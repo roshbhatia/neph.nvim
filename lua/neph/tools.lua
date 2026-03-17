@@ -1057,6 +1057,34 @@ function M.install_async()
     end)
   end
 
+  -- Deploy Cupcake policies if cupcake is available
+  local cupcake_ok = vim.fn.executable("cupcake") == 1
+  if cupcake_ok then
+    local policy_src = root .. "/.cupcake/policies/neph"
+    local policy_dst = ".cupcake/policies/neph"
+    local rulebook_src = root .. "/.cupcake/rulebook.yml"
+    local rulebook_dst = ".cupcake/rulebook.yml"
+    local signals_src = root .. "/.cupcake/signals"
+    local signals_dst = ".cupcake/signals"
+    -- Copy policies, rulebook, and signals to project .cupcake/
+    vim.fn.mkdir(policy_dst, "p")
+    vim.fn.mkdir(signals_dst, "p")
+    for _, f in ipairs(vim.fn.glob(policy_src .. "/*.rego", false, true)) do
+      local name = vim.fn.fnamemodify(f, ":t")
+      local content = vim.fn.readfile(f)
+      vim.fn.writefile(content, policy_dst .. "/" .. name)
+    end
+    if vim.fn.filereadable(rulebook_src) == 1 then
+      vim.fn.writefile(vim.fn.readfile(rulebook_src), rulebook_dst)
+    end
+    for _, f in ipairs(vim.fn.glob(signals_src .. "/*", false, true)) do
+      local name = vim.fn.fnamemodify(f, ":t")
+      local dst = signals_dst .. "/" .. name
+      vim.fn.writefile(vim.fn.readfile(f), dst)
+      vim.fn.setfperm(dst, "rwxr-xr-x")
+    end
+  end
+
   -- Per-agent install
   for _, agent in ipairs(agents) do
     if agent.tools and not is_agent_up_to_date(root, agent, agent.name) then

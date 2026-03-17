@@ -2,7 +2,8 @@
   "version": "neph-rpc/v1",
   "methods": {
     "review.open": {
-      "params": ["request_id", "result_path", "channel_id", "path", "content"],
+      "params": ["request_id", "path", "content"],
+      "optional_params": ["channel_id", "result_path", "agent", "mode"],
       "async": true
     },
     "status.set": {
@@ -35,14 +36,6 @@
     },
     "ui.notify": {
       "params": ["message", "level"],
-      "async": false
-    },
-    "bus.register": {
-      "params": ["agent", "channel_id"],
-      "async": false
-    },
-    "review.pending": {
-      "params": ["path", "agent"],
       "async": false
     }
   }

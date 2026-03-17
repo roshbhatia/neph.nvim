@@ -14,7 +14,7 @@ tasks:
       - task tools:lint  # Run linters for tools
 
   test:
-    # Run all tests (Lua and TypeScript)
+    # Run all tests (Lua, TypeScript, Rego)
     cmds:
       - |
         nvim --headless \
@@ -23,7 +23,13 @@ tasks:
           -c "PlenaryBustedDirectory tests/ {minimal_init='tests/minimal_init.lua'}" \
           -c 'qa!'  # Run Lua tests using plenary.nvim
       - task tools:test  # Run TypeScript tests for tools
+      - task test:rego  # Run Rego policy tests
       - task test:e2e  # Run end-to-end tests
+
+  test:rego:
+    desc: Run OPA Rego policy tests
+    cmds:
+      - opa test .cupcake/policies/neph/ -v
 
   test:e2e:
     desc: Run e2e tests (headless neovim smoke + agent launch)
@@ -31,8 +37,13 @@ tasks:
       - nvim --headless --cmd 'set rtp+=.' -l tests/e2e/run.lua  # Run headless Neovim tests
       - bash tests/e2e/agent_launch.sh  # Run agent launch tests
 
+  test:e2e:review:
+    desc: Run neph-cli review integration tests
+    cmds:
+      - cd tools/neph-cli && npx vitest run tests/integration/
+
   build:
-    desc: Build all companion tools (neph-cli, pi extension)
+    desc: Build all companion tools (neph-cli, pi cupcake harness)
     cmds:
       - task tools:build  # Build tools
 

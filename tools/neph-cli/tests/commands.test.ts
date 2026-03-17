@@ -32,12 +32,20 @@ describe('neph commands', () => {
   it('handles dry-run review', async () => {
     process.env.NEPH_DRY_RUN = '1';
     const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
-    await runCommand(null, 'review', ['review', 'test.txt'], 'new content');
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => { throw new Error('EXIT'); }) as any);
+    try {
+      await runCommand(null, 'review', ['review'], JSON.stringify({ path: '/tmp/test.txt', content: 'new content' }));
+    } catch (e: any) {
+      if (e.message !== 'EXIT') throw e;
+    }
     const output = JSON.parse(stdoutSpy.mock.calls[0][0] as string);
     expect(output.decision).toBe('accept');
     expect(output.content).toBe('new content');
     delete process.env.NEPH_DRY_RUN;
     stdoutSpy.mockRestore();
+    stderrSpy.mockRestore();
+    exitSpy.mockRestore();
   });
 });
 
@@ -89,29 +97,26 @@ describe('review command', () => {
 });
 
 describe('neph_connected status', () => {
-  it('review command sets neph_connected before review.open', async () => {
+  it('review command sets neph_connected via runReview', async () => {
     const transport = new FakeTransport();
-    // Make review.open fail so we don't hang waiting for result
-    transport.executeLua = vi.fn()
-      .mockResolvedValueOnce({ ok: true }) // status.set neph_connected
-      .mockResolvedValueOnce(42) // getChannelId (via nvim_get_api_info mock)
-      .mockRejectedValueOnce(new Error('review failed')); // review.open
-
-    // getChannelId calls executeLua internally, but FakeTransport may differ
-    // Override getChannelId to return a value
-    transport.getChannelId = vi.fn().mockResolvedValue(42);
+    transport.responses['review.open'] = { ok: true, msg: 'No changes' };
 
     const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
-    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
+    const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => { throw new Error('EXIT'); }) as any);
 
-    await runCommand(transport, 'review', ['review', 'test.txt'], 'new content');
+    try {
+      await runCommand(transport, 'review', ['review'], JSON.stringify({ path: '/tmp/test.txt', content: 'new content' }));
+    } catch (e: any) {
+      if (e.message !== 'EXIT') throw e;
+    }
 
-    expect(transport.executeLua).toHaveBeenCalledWith(
-      expect.any(String),
-      ['status.set', { name: 'neph_connected', value: 'true' }],
-    );
+    // Verify status.set was called (neph_connected)
+    const statusCalls = transport.calls.filter(c => c.args[0] === 'status.set');
+    expect(statusCalls.length).toBeGreaterThan(0);
 
     stderrSpy.mockRestore();
+    stdoutSpy.mockRestore();
     exitSpy.mockRestore();
   });
 });
@@ -129,13 +134,13 @@ describe('error cases', () => {
     exitSpy.mockRestore();
   });
 
-  it('exits with usage when review has no file path', async () => {
+  it('review with empty stdin fails open (invalid JSON)', async () => {
     const transport = new FakeTransport();
     const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
-    await runCommand(transport, 'review', ['review']);
-    expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('Usage: neph review <path>'));
-    expect(exitSpy).toHaveBeenCalledWith(1);
+    await runCommand(transport, 'review', ['review'], '');
+    expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('invalid JSON'));
+    expect(exitSpy).toHaveBeenCalledWith(0); // fail-open
     stderrSpy.mockRestore();
     exitSpy.mockRestore();
   });

@@ -1,0 +1,16 @@
+# Cupcake rulebook for neph.nvim
+# Configures the neph_review signal and policy routing
+
+signals:
+  neph_review:
+    command: ".cupcake/signals/neph_review"
+    timeout_seconds: 600
+    description: "Reconstructs edits then opens interactive hunk-by-hunk review in Neovim"
+
+builtins:
+  rulebook_security_guardrails:
+    enabled: true
+  system_protection:
+    enabled: true
+  sensitive_data_protection:
+    enabled: true

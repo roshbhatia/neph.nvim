@@ -324,19 +324,6 @@ function M.open_manual(file_path)
   return { ok = true, msg = "Review enqueued" }
 end
 
---- Handle review.pending RPC — notify user a review is waiting.
-function M.pending(params)
-  local config = require("neph.config").current
-  local review_cfg = type(config.review) == "table" and config.review or {}
-  if review_cfg.pending_notify == false then
-    return { ok = true }
-  end
-
-  local rel = vim.fn.fnamemodify(params.path or "", ":.")
-  local agent_str = params.agent and (" (" .. params.agent .. ")") or ""
-  vim.notify(string.format("Review pending: %s%s", rel, agent_str), vim.log.levels.INFO)
-  return { ok = true }
-end
 
 function M.write_result(path, channel_id, request_id, envelope)
   envelope.request_id = request_id

@@ -22,9 +22,14 @@ describe("neph.rpc", function()
       assert.is_true(result.ok)
     end)
 
-    it("routes review.pending to the review module", function()
-      local result = rpc.request("review.pending", { path = "/tmp/test.lua", agent = "claude" })
-      assert.is_true(result.ok)
+    it("returns METHOD_NOT_FOUND for removed methods (bus.register, review.pending)", function()
+      local r1 = rpc.request("bus.register", { agent = "test", channel_id = 1 })
+      assert.is_false(r1.ok)
+      assert.are.equal("METHOD_NOT_FOUND", r1.error.code)
+
+      local r2 = rpc.request("review.pending", { path = "/tmp/test.lua" })
+      assert.is_false(r2.ok)
+      assert.are.equal("METHOD_NOT_FOUND", r2.error.code)
     end)
   end)
 

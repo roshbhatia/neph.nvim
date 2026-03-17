@@ -1,0 +1,73 @@
+#!/usr/bin/env node
+// neph_reconstruct — Cupcake signal that reconstructs full file content
+// from edit operations (old_str/new_str → full content).
+//
+// For Write tools: passes through { path, content } unchanged.
+// For Edit tools: reads the file, applies the replacement, returns { path, content }.
+//
+// stdin: Cupcake event JSON (agent-specific)
+// stdout: { path: string, content: string } or { skip: true } for non-mutation tools
+
+const fs = require('node:fs');
+const path = require('node:path');
+
+let input = '';
+process.stdin.setEncoding('utf8');
+process.stdin.on('data', (chunk) => { input += chunk; });
+process.stdin.on('end', () => {
+  try {
+    const event = JSON.parse(input);
+    const result = reconstruct(event);
+    process.stdout.write(JSON.stringify(result) + '\n');
+  } catch (err) {
+    process.stderr.write(`neph_reconstruct: ${err.message}\n`);
+    process.stdout.write(JSON.stringify({ skip: true }) + '\n');
+  }
+});
+
+function reconstruct(event) {
+  const toolName = event.tool_name || '';
+  const toolInput = event.tool_input || {};
+
+  // Detect write tools (pass through)
+  const writeTools = ['Write', 'write_file'];
+  if (writeTools.includes(toolName)) {
+    const filePath = toolInput.file_path || toolInput.filepath;
+    const content = toolInput.content || '';
+    if (!filePath) return { skip: true };
+    return { path: path.resolve(filePath), content };
+  }
+
+  // Detect edit tools (reconstruct)
+  const editTools = ['Edit', 'edit_file', 'replace'];
+  if (editTools.includes(toolName)) {
+    const filePath = toolInput.file_path || toolInput.filepath;
+    if (!filePath) return { skip: true };
+
+    const oldStr = toolInput.old_string || toolInput.old_str || '';
+    const newStr = toolInput.new_string || toolInput.new_str || '';
+
+    let current;
+    try {
+      current = fs.readFileSync(path.resolve(filePath), 'utf-8');
+    } catch {
+      // New file — return just the new content
+      return { path: path.resolve(filePath), content: newStr };
+    }
+
+    if (oldStr && !current.includes(oldStr)) {
+      // old_str not found — pass through, let agent handle the error
+      return { path: path.resolve(filePath), content: current };
+    }
+
+    const replaceAll = toolInput.replace_all === true;
+    const content = oldStr
+      ? (replaceAll ? current.replaceAll(oldStr, newStr) : current.replace(oldStr, newStr))
+      : current;
+
+    return { path: path.resolve(filePath), content };
+  }
+
+  // Non-mutation tool
+  return { skip: true };
+}

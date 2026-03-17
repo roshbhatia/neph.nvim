@@ -28,9 +28,6 @@ local dispatch = {
   ["tab.close"] = function(p)
     return require("neph.api.buffers").close_tab(p)
   end,
-  ["bus.register"] = function(p)
-    return require("neph.internal.bus").register(p)
-  end,
   ["ui.select"] = function(p)
     return require("neph.api.ui").select(p)
   end,
@@ -39,9 +36,6 @@ local dispatch = {
   end,
   ["ui.notify"] = function(p)
     return require("neph.api.ui").notify(p)
-  end,
-  ["review.pending"] = function(p)
-    return require("neph.api.review").pending(p)
   end,
 }
 

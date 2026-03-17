@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# neph_review — Cupcake signal that chains reconstruction + interactive review.
+#
+# 1. Reads Cupcake event JSON from stdin
+# 2. Pipes through neph_reconstruct to get { path, content }
+# 3. If reconstruction says skip (non-mutation tool), outputs { skip: true }
+# 4. Otherwise pipes { path, content } to neph-cli review
+#
+# stdout: { decision, content, reason? } for Rego policy consumption
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Step 1: reconstruct
+RECONSTRUCTED=$("$SCRIPT_DIR/neph_reconstruct")
+
+# Step 2: check if we should skip
+if echo "$RECONSTRUCTED" | grep -q '"skip"'; then
+  echo '{"decision":"accept","content":"","reason":"non-mutation tool"}'
+  exit 0
+fi
+
+# Step 3: pipe to neph-cli review
+echo "$RECONSTRUCTED" | neph-cli review

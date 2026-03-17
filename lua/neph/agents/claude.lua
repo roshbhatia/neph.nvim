@@ -2,15 +2,14 @@
 return {
   name = "claude",
   label = "Claude",
-  icon = "",
+  icon = "",
   cmd = "claude",
   args = { "--permission-mode", "plan" },
   type = "hook",
   ready_pattern = "^%s*>",
-  ---@param root string  neph.nvim plugin root path
+  ---@param _root string  neph.nvim plugin root path (unused — hooks point to cupcake)
   ---@return string[]
-  launch_args_fn = function(root)
-    local neph_bin = root .. "/tools/neph-cli/dist/index.js"
+  launch_args_fn = function(_root)
     local settings = vim.json.encode({
       hooks = {
         PreToolUse = {
@@ -19,7 +18,7 @@ return {
             hooks = {
               {
                 type = "command",
-                command = "node " .. neph_bin .. " gate --agent claude",
+                command = "cupcake eval --harness claude",
               },
             },
           },

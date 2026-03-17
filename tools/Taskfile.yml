@@ -17,17 +17,12 @@ tasks:
       - npm run build
 
   test:
-    deps: [test:neph, test:lib, test:pi]
+    deps: [test:neph, test:pi]
 
   test:neph:
     dir: neph-cli
     cmds:
       - npm test -- --run
-
-  test:lib:
-    dir: lib
-    cmds:
-      - npx vitest --run
 
   test:pi:
     dir: pi
@@ -45,4 +40,4 @@ tasks:
   lint:pi:
     dir: pi
     cmds:
-      - deno lint pi.ts
+      - deno lint cupcake-harness.ts
