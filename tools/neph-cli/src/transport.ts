@@ -120,12 +120,23 @@ export function discoverNvimSocket(): string | null {
 export class SocketTransport implements NvimTransport {
   private client: NeovimClient;
   private notificationListeners: Array<(method: string, args: unknown[]) => void> = [];
+  private lastError: Error | null = null;
 
   constructor(socketPath: string) {
     this.client = attach({ socket: socketPath });
+    this.client.on('error', (err: Error) => {
+      this.lastError = err;
+    });
+  }
+
+  private ensureConnected() {
+    if (this.lastError) {
+      throw this.lastError;
+    }
   }
 
   async executeLua(code: string, args: unknown[]): Promise<unknown> {
+    this.ensureConnected();
     return this.client.executeLua(code, args as any[]);
   }
 
@@ -140,6 +151,7 @@ export class SocketTransport implements NvimTransport {
   }
 
   async getChannelId(): Promise<number> {
+    this.ensureConnected();
     const apiInfo = await this.client.request('nvim_get_api_info');
     return (apiInfo as any)[0];
   }

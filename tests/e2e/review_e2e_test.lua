@@ -26,14 +26,14 @@ end
 --- Spawn neph-cli review as a job and return a handle for checking results.
 local function spawn_review(neph_cli, nvim_socket, stdin_json, extra_env)
   local state = { stdout = {}, stderr = {}, exited = false, code = nil }
-  local env = { NVIM = nvim_socket, PATH = os.getenv("PATH") }
+  local env = { NVIM = "", NVIM_SOCKET_PATH = nvim_socket, PATH = os.getenv("PATH") }
   if extra_env then
     for k, v in pairs(extra_env) do
       env[k] = v
     end
   end
 
-  local job_id = vim.fn.jobstart({ "node", neph_cli, "review" }, {
+  local job_id = vim.fn.jobstart({ "npx", "tsx", neph_cli, "review" }, {
     env = env,
     on_stdout = function(_, data)
       for _, l in ipairs(data) do
@@ -62,13 +62,25 @@ end
 
 return function(t)
   local plugin_root = vim.fn.getcwd()
-  local neph_cli = plugin_root .. "/tools/neph-cli/dist/index.js"
+  local neph_cli = plugin_root .. "/tools/neph-cli/src/index.ts"
+  if vim.fn.executable("npx") ~= 1 then
+    t.skip("review e2e", "npx not available on PATH")
+    return
+  end
   if vim.fn.filereadable(neph_cli) ~= 1 then
-    t.skip("review e2e", "neph-cli not built (run task tools:build first)")
+    t.skip("review e2e", "neph-cli source not found")
     return
   end
 
   local nvim_socket = vim.v.servername
+  if not nvim_socket or nvim_socket == "" then
+    nvim_socket = vim.fn.serverstart(vim.fn.tempname())
+  end
+  if nvim_socket and nvim_socket ~= "" then
+    vim.wait(1000, function()
+      return vim.uv.fs_stat(nvim_socket) ~= nil
+    end)
+  end
   if not nvim_socket or nvim_socket == "" then
     t.skip("review e2e", "no Neovim server socket")
     return
@@ -92,6 +104,7 @@ return function(t)
       kill = function() end,
       cleanup_all = function() end,
     },
+    review_provider = require("neph.reviewers.vimdiff"),
   })
 
   t.describe("neph-cli review e2e", function()

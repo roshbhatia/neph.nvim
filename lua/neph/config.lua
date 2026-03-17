@@ -79,7 +79,9 @@ local M = {}
 
 ---@class neph.FsWatcherConfig
 ---@field enable?      boolean    Enable filesystem watcher (default: true)
----@field ignore?      string[]   Patterns to exclude from watching (default: node_modules, .git, dist, build, __pycache__)
+--- Patterns to exclude from watching (default: node_modules, .git,
+--- dist, build, __pycache__)
+---@field ignore?      string[]
 ---@field max_watched? integer    Maximum number of files to watch (default: 100)
 
 ---@class neph.ReviewQueueConfig

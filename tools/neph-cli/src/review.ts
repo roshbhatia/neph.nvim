@@ -77,7 +77,16 @@ export async function runReview(opts: ReviewOptions): Promise<number> {
   };
 
   const requestId = crypto.randomUUID();
-  const channelId = await transport.getChannelId();
+  let channelId: number;
+  try {
+    channelId = await transport.getChannelId();
+  } catch (err) {
+    process.stderr.write(`neph review: failed to get channel id: ${err}\n`);
+    const envelope: ReviewEnvelope = { decision: 'accept', content: input.content, reason: 'RPC error (fail-open)' };
+    process.stdout.write(JSON.stringify(envelope) + '\n');
+    await transport.close();
+    return 0;
+  }
 
   return new Promise<number>((resolve) => {
     // Listen for review completion

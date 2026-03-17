@@ -13,7 +13,18 @@ local ui = require("neph.api.review.ui")
 local review_queue = require("neph.internal.review_queue")
 local review_provider = require("neph.internal.review_provider")
 
----@type {session: table, ui_state: table, result_path: string?, channel_id: number?, request_id: string, mode: string, file_path: string, old_lines: string[], agent: string?}|nil
+---@class neph.ReviewActive
+---@field session table
+---@field ui_state table
+---@field result_path string?
+---@field channel_id number?
+---@field request_id string
+---@field mode string
+---@field file_path string
+---@field old_lines string[]
+---@field agent string?
+
+---@type neph.ReviewActive|nil
 local active_review = nil
 
 -- Wire the queue to call our internal open function

@@ -52,7 +52,7 @@ describe("health checks", function()
 
     vim.fn.systemlist = function(cmd)
       if cmd:match("neph deps status") then
-        vim.v.shell_error = 1
+        vim.g.neph_test_shell_error = 1
         return {
           "Dependencies:",
           "- neovim: ok (required)",
@@ -61,7 +61,7 @@ describe("health checks", function()
           "- claude: ok",
         }
       end
-      vim.v.shell_error = 0
+      vim.g.neph_test_shell_error = 0
       return { "claude: enabled" }
     end
 

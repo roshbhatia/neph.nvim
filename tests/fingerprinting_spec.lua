@@ -1,5 +1,3 @@
-local tools = require("neph.tools")
-
 describe("fingerprinting", function()
   local tmp_dir
   local manifest_path

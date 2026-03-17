@@ -36,7 +36,10 @@ end
 
 -- Setup neph
 local ok, err = pcall(function()
-  require("neph").setup()
+  require("neph").setup({
+    agents = { require("neph.agents." .. agent_name) },
+    backend = require("neph.backends.snacks"),
+  })
 end)
 if not ok then
   io.stderr:write("neph.setup() failed: " .. tostring(err) .. "\n")

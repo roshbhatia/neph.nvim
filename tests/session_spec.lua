@@ -210,7 +210,6 @@ describe("neph.session", function()
     end)
 
     it("drains queue when on_ready fires", function()
-      local sent_texts = {}
       local captured_td = nil
       local backend_spy = make_stub_backend(true)
       backend_spy.open = function(_, agent_cfg, _)

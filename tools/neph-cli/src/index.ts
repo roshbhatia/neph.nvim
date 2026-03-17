@@ -278,7 +278,14 @@ if (require.main === module) {
     process.exit(1);
   }
 
-  const socketPath = process.env.NVIM || process.env.NVIM_SOCKET_PATH || discoverNvimSocket();
+  let socketPath = process.env.NVIM || process.env.NVIM_SOCKET_PATH || discoverNvimSocket();
+  const isDryRun = process.env.NEPH_DRY_RUN === '1';
+  if (command === 'review' && isDryRun) {
+    socketPath = null;
+  }
+  if (socketPath && !fs.existsSync(socketPath)) {
+    socketPath = null;
+  }
   let transport: SocketTransport | null = null;
   if (socketPath) {
     try {

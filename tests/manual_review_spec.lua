@@ -10,9 +10,21 @@ describe("neph.api.review.open_manual", function()
     package.loaded["neph.api.review.ui"] = nil
     package.loaded["neph.internal.review_queue"] = nil
     review = require("neph.api.review")
+    local config = require("neph.config")
+    config.current = vim.tbl_deep_extend("force", config.defaults, {
+      review_provider = require("neph.reviewers.vimdiff"),
+    })
   end)
 
   describe("validation", function()
+    it("returns error when review provider is not configured", function()
+      local config = require("neph.config")
+      config.current.review_provider = nil
+      local result = review.open_manual("/tmp/neph-test-review-provider.lua")
+      assert.is_false(result.ok)
+      assert.truthy(result.error:find("Review provider not configured"))
+    end)
+
     it("returns error for nil file_path", function()
       local result = review.open_manual(nil)
       assert.is_false(result.ok)

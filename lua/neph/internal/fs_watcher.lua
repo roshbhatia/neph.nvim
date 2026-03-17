@@ -176,7 +176,7 @@ function M.watch_file(filepath)
     return
   end
 
-  local ok, err = handle:start(filepath, {}, function(err_msg, filename, events)
+  local ok, err = handle:start(filepath, {}, function(err_msg, _filename, _events)
     if err_msg then
       log.debug("fs_watcher", "fs_event error for %s: %s", filepath, err_msg)
       return
@@ -302,7 +302,7 @@ function M.stop()
   end
   watches = {}
 
-  for filepath, timer in pairs(debounce_timers) do
+  for _, timer in pairs(debounce_timers) do
     pcall(timer.stop, timer)
     pcall(timer.close, timer)
   end

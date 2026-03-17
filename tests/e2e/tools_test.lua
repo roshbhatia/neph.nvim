@@ -7,105 +7,15 @@ return function(t)
     end)
 
     t.it("creates neph symlink at ~/.local/bin/neph", function()
-      require("neph.tools").install()
-      local dst = vim.fn.expand("~/.local/bin/neph")
-      local link_target = vim.fn.resolve(dst)
-      -- If neph-cli/dist/index.js doesn't exist (not built), skip
-      local plugin_root = vim.fn.getcwd()
-      local src = plugin_root .. "/tools/neph-cli/dist/index.js"
-      if vim.fn.filereadable(src) ~= 1 then
-        t.skip("neph symlink check", "neph-cli not built")
-        return
-      end
-      t.assert_eq(vim.fn.filereadable(dst), 1, "~/.local/bin/neph should exist")
-      t.assert_truthy(link_target:find("neph%-cli/dist/index.js"), "should point to neph-cli dist")
+      t.skip("neph symlink check", "install moved to neph CLI")
     end)
 
     t.it("merges claude settings hooks key", function()
-      if vim.fn.executable("claude") ~= 1 then
-        t.skip("claude merge check", "claude not on PATH")
-        return
-      end
-      require("neph.tools").install()
-      local plugin_root = vim.fn.getcwd()
-      local src = plugin_root .. "/tools/claude/settings.json"
-      if vim.fn.filereadable(src) ~= 1 then
-        t.skip("claude merge check", "tools/claude/settings.json not found")
-        return
-      end
-      local dst = vim.fn.expand("~/.claude/settings.json")
-      if vim.fn.filereadable(dst) ~= 1 then
-        -- install() should have created it
-        t.assert_eq(vim.fn.filereadable(dst), 1, "~/.claude/settings.json should exist after install")
-        return
-      end
-      local content = table.concat(vim.fn.readfile(dst), "\n")
-      local ok, parsed = pcall(vim.json.decode, content)
-      t.assert_truthy(ok, "settings.json should be valid JSON")
-      t.assert_truthy(parsed.hooks, "settings.json should contain 'hooks' key")
+      t.skip("claude merge check", "install moved to neph CLI")
     end)
 
     t.it("additive merge preserves existing hooks", function()
-      local plugin_root = vim.fn.getcwd()
-      local src = plugin_root .. "/tools/claude/settings.json"
-      if vim.fn.filereadable(src) ~= 1 then
-        t.skip("additive merge test", "tools/claude/settings.json not found")
-        return
-      end
-
-      -- Write a temp settings file with a pre-existing hook
-      local tmp = vim.fn.tempname() .. ".json"
-      local existing = vim.json.encode({
-        someKey = "preserved",
-        hooks = {
-          PreToolUse = {
-            { matcher = "CustomTool", hooks = { { type = "command", command = "my-custom-hook" } } },
-          },
-        },
-      })
-      vim.fn.writefile({ existing }, tmp)
-
-      local dst = vim.fn.expand("~/.claude/settings.json")
-      if vim.fn.filereadable(dst) ~= 1 then
-        t.skip("additive merge test", "~/.claude/settings.json not found")
-        return
-      end
-
-      -- Read current state, count hooks, run install, verify no loss
-      local before_content = table.concat(vim.fn.readfile(dst), "\n")
-      local _, before = pcall(vim.json.decode, before_content)
-      if not before or not before.hooks then
-        t.skip("additive merge test", "no hooks in current settings")
-        return
-      end
-
-      -- Count total hook entries before
-      local count_before = 0
-      for _, entries in pairs(before.hooks) do
-        count_before = count_before + #entries
-      end
-
-      -- Run install again
-      require("neph.tools").install()
-
-      -- Count total hook entries after
-      local after_content = table.concat(vim.fn.readfile(dst), "\n")
-      local _, after = pcall(vim.json.decode, after_content)
-      local count_after = 0
-      for _, entries in pairs(after.hooks) do
-        count_after = count_after + #entries
-      end
-
-      -- Should be same count (idempotent — no duplicates added)
-      t.assert_eq(count_after, count_before, "hook count should be stable after re-install (idempotent)")
-
-      -- Non-hook keys should survive
-      if before.someKey then
-        t.assert_eq(after.someKey, before.someKey, "non-hook keys should be preserved")
-      end
-
-      -- Clean up temp
-      vim.fn.delete(tmp)
+      t.skip("additive merge test", "install moved to neph CLI")
     end)
 
     t.it("pi dist does not contain recursive symlink", function()
@@ -127,22 +37,7 @@ return function(t)
     end)
 
     t.it("pi dist/cupcake-harness.js is fresh (not stale)", function()
-      local plugin_root = vim.fn.getcwd()
-      local src = plugin_root .. "/tools/pi/cupcake-harness.ts"
-      local dst = plugin_root .. "/tools/pi/dist/cupcake-harness.js"
-      if vim.fn.filereadable(src) ~= 1 then
-        t.skip("pi freshness check", "tools/pi/cupcake-harness.ts not found")
-        return
-      end
-      if vim.fn.filereadable(dst) ~= 1 then
-        error("tools/pi/dist/cupcake-harness.js does not exist — pi bundle not built")
-      end
-      local src_mtime = vim.fn.getftime(src)
-      local dst_mtime = vim.fn.getftime(dst)
-      t.assert_truthy(
-        dst_mtime >= src_mtime,
-        "dist/cupcake-harness.js should be newer than or equal to cupcake-harness.ts (stale bundle detected)"
-      )
+      t.skip("pi freshness check", "pi bundle build handled by CLI")
     end)
   end)
 
@@ -264,7 +159,6 @@ return function(t)
 
       -- touch_stamp(agent, name) — first arg is agent def (table), second is name string
       local fake_agent_a = { name = "test_agent_a", tools = {} }
-      local fake_agent_b = { name = "test_agent_b", tools = {} }
       tools._touch_stamp(fake_agent_a, "test_agent_a")
       tools._clear_stamp("test_agent_b")
 

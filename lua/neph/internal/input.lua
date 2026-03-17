@@ -9,10 +9,10 @@ local M = {}
 local placeholders = require("neph.internal.placeholders")
 
 --- Open an input prompt for *termname*.
----@param termname    string
+---@param _termname   string
 ---@param agent_icon  string
 ---@param opts?       {action?:string, default?:string, on_confirm?:fun(text:string)}
-function M.create_input(termname, agent_icon, opts)
+function M.create_input(_termname, agent_icon, opts)
   opts = opts or {}
   local title = string.format("%s %s: ", agent_icon or "", opts.action or "Ask")
 

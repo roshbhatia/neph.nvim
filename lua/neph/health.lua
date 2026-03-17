@@ -3,6 +3,10 @@ local M = {}
 local function run_cli(cmd)
   local output = vim.fn.systemlist(cmd .. " 2>&1")
   local code = vim.v.shell_error
+  if vim.g.neph_test_shell_error ~= nil then
+    code = vim.g.neph_test_shell_error
+    vim.g.neph_test_shell_error = nil
+  end
   return output, code
 end
 
