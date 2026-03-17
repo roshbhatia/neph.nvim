@@ -22,9 +22,9 @@ describe('claude settings.json', () => {
     expect(hook.matcher).toBe('Edit|Write');
   });
 
-  it('runs neph gate --agent claude', () => {
+  it('runs cupcake eval --harness claude', () => {
     const hook = config.hooks.PreToolUse[0];
-    expect(hook.hooks[0].command).toBe('neph gate --agent claude');
+    expect(hook.hooks[0].command).toBe('cupcake eval --harness claude');
     expect(hook.hooks[0].type).toBe('command');
   });
 });
@@ -44,8 +44,8 @@ describe('copilot hooks.json', () => {
     expect(hook.filter.toolNames).toContain('create');
   });
 
-  it('runs neph gate --agent copilot', () => {
-    expect(config.hooks[0].command).toBe('neph gate --agent copilot');
+  it('runs cupcake eval --harness copilot', () => {
+    expect(config.hooks[0].command).toBe('cupcake eval --harness copilot');
   });
 });
 
@@ -57,25 +57,7 @@ describe('cursor hooks.json', () => {
     expect(Array.isArray(config.hooks.afterFileEdit)).toBe(true);
   });
 
-  it('runs neph gate --agent cursor', () => {
-    expect(config.hooks.afterFileEdit[0].command).toBe('neph gate --agent cursor');
-  });
-});
-
-describe('gemini settings.json', () => {
-  const config = readJson('gemini/settings.json') as any;
-
-  it('has hooks.BeforeTool array', () => {
-    expect(config.hooks).toBeDefined();
-    expect(Array.isArray(config.hooks.BeforeTool)).toBe(true);
-  });
-
-  it('matches write_file|edit_file', () => {
-    expect(config.hooks.BeforeTool[0].matcher).toBe('write_file|edit_file');
-  });
-
-  it('runs neph gate --agent gemini', () => {
-    expect(config.hooks.BeforeTool[0].hooks[0].command).toBe('neph gate --agent gemini');
-    expect(config.hooks.BeforeTool[0].hooks[0].type).toBe('command');
+  it('runs cupcake eval --harness cursor', () => {
+    expect(config.hooks.afterFileEdit[0].command).toBe('cupcake eval --harness cursor');
   });
 });

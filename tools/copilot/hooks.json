@@ -5,7 +5,7 @@
       "filter": {
         "toolNames": ["edit", "create"]
       },
-      "command": "neph gate --agent copilot"
+      "command": "cupcake eval --harness copilot"
     }
   ]
 }

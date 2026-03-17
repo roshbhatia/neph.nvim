@@ -13,15 +13,8 @@ describe("neph.agents submodules", function()
     end)
   end
 
-  local extension_agents = { "amp", "gemini", "opencode", "pi" }
-  for _, name in ipairs(extension_agents) do
-    it(name .. " has type = extension", function()
-      local def = require("neph.agents." .. name)
-      assert.are.equal("extension", def.type)
-    end)
-  end
-
-  local hook_agents = { "claude", "copilot", "cursor" }
+  -- Hook agents: use Cupcake for write/edit interception
+  local hook_agents = { "claude", "copilot", "cursor", "gemini", "opencode", "pi" }
   for _, name in ipairs(hook_agents) do
     it(name .. " has type = hook", function()
       local def = require("neph.agents." .. name)
@@ -29,15 +22,26 @@ describe("neph.agents submodules", function()
     end)
   end
 
-  local terminal_agents = { "codex", "crush", "goose" }
+  -- Terminal agents: Cupcake harness pending or no hook system
+  local terminal_agents = { "amp" }
   for _, name in ipairs(terminal_agents) do
+    it(name .. " has type = terminal", function()
+      local def = require("neph.agents." .. name)
+      assert.are.equal("terminal", def.type)
+    end)
+  end
+
+  -- Terminal-only agents: no type field (legacy compat)
+  local untyped_agents = { "codex", "crush", "goose" }
+  for _, name in ipairs(untyped_agents) do
     it(name .. " has no type field", function()
       local def = require("neph.agents." .. name)
       assert.is_nil(def.type)
     end)
   end
 
-  local agents_with_tools = { "amp", "cursor", "gemini", "opencode", "pi" }
+  -- Agents with tools manifests
+  local agents_with_tools = { "pi" }
   for _, name in ipairs(agents_with_tools) do
     it(name .. " has a valid tools manifest", function()
       local def = require("neph.agents." .. name)
@@ -48,7 +52,8 @@ describe("neph.agents submodules", function()
     end)
   end
 
-  local agents_without_tools = { "claude", "codex", "copilot", "crush", "goose" }
+  -- Agents without tools (hooks managed via launch_args_fn or Cupcake native)
+  local agents_without_tools = { "amp", "claude", "codex", "copilot", "crush", "gemini", "goose", "opencode" }
   for _, name in ipairs(agents_without_tools) do
     it(name .. " has no tools field", function()
       local def = require("neph.agents." .. name)
@@ -65,9 +70,9 @@ describe("neph.agents submodules", function()
     end)
   end
 
-  -- Claude: runtime settings injection via launch_args_fn (no tools.merges)
+  -- Claude: runtime settings injection via launch_args_fn
   describe("claude runtime config", function()
-    it("has launch_args_fn and no tools.merges", function()
+    it("has launch_args_fn and no tools", function()
       local def = require("neph.agents.claude")
       assert.is_function(def.launch_args_fn)
       assert.is_nil(def.tools)
@@ -78,25 +83,41 @@ describe("neph.agents submodules", function()
       local args = def.launch_args_fn("/fake/root")
       assert.are.equal(2, #args)
       assert.are.equal("--settings", args[1])
-      -- Verify the JSON is parseable
       local ok, parsed = pcall(vim.json.decode, args[2])
       assert.is_true(ok, "launch_args_fn JSON must be valid")
       assert.is_table(parsed.hooks)
       assert.is_table(parsed.hooks.PreToolUse)
     end)
 
-    it("launch_args_fn hook command uses absolute path to neph-cli", function()
+    it("launch_args_fn hook command points to cupcake eval", function()
       local def = require("neph.agents.claude")
       local args = def.launch_args_fn("/test/neph.nvim")
       local parsed = vim.json.decode(args[2])
       local hook_cmd = parsed.hooks.PreToolUse[1].hooks[1].command
-      assert.truthy(hook_cmd:find("/test/neph.nvim/tools/neph%-cli/dist/index.js", 1, false))
-      assert.truthy(hook_cmd:find("^node "))
+      assert.truthy(hook_cmd:find("cupcake eval"))
+      assert.truthy(hook_cmd:find("claude"))
+    end)
+  end)
+
+  -- Gemini: runtime settings injection via launch_args_fn
+  describe("gemini runtime config", function()
+    it("has launch_args_fn", function()
+      local def = require("neph.agents.gemini")
+      assert.is_function(def.launch_args_fn)
+    end)
+
+    it("launch_args_fn hook command points to cupcake eval", function()
+      local def = require("neph.agents.gemini")
+      local args = def.launch_args_fn("/fake/root")
+      local parsed = vim.json.decode(args[2])
+      local hook_cmd = parsed.hooks.BeforeTool[1].hooks[1].command
+      assert.truthy(hook_cmd:find("cupcake eval"))
+      assert.truthy(hook_cmd:find("gemini"))
     end)
   end)
 
   -- Agents with launch_args_fn
-  local agents_with_launch_args = { "claude" }
+  local agents_with_launch_args = { "claude", "gemini" }
   for _, name in ipairs(agents_with_launch_args) do
     it(name .. " has a valid launch_args_fn", function()
       local def = require("neph.agents." .. name)

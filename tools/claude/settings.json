@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "neph gate --agent claude"
+            "command": "cupcake eval --harness claude"
           }
         ]
       }

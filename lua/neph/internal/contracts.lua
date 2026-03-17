@@ -22,12 +22,12 @@ local AGENT_OPTIONAL_FIELDS = {
   ready_pattern = "string",
 }
 
-local VALID_AGENT_TYPES = { extension = true, hook = true }
+local VALID_AGENT_TYPES = { hook = true, terminal = true }
 
 ---@type table<string, string>
 local REMOVED_FIELDS = {
-  send_adapter = "send_adapter is no longer supported; extension agents use the bus for prompt delivery (set type = 'extension' instead)",
-  integration = "integration is no longer supported; use type = 'extension' or type = 'hook' instead",
+  send_adapter = "send_adapter is no longer supported; all agents use Cupcake for integration",
+  integration = "integration is no longer supported; use type = 'hook' or type = 'terminal' instead",
 }
 
 local BACKEND_REQUIRED_METHODS = { "setup", "open", "focus", "hide", "is_visible", "kill", "cleanup_all" }
@@ -64,7 +64,7 @@ function M.validate_agent(def)
 
   -- Validate type value if present
   if def.type ~= nil and not VALID_AGENT_TYPES[def.type] then
-    error(string.format("neph: agent '%s' field 'type' must be one of: extension, hook (got '%s')", name, def.type))
+    error(string.format("neph: agent '%s' field 'type' must be one of: hook, terminal (got '%s')", name, def.type))
   end
 
   if def.tools ~= nil then

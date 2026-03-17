@@ -40,4 +40,4 @@ tasks:
   lint:pi:
     dir: pi
     cmds:
-      - deno lint cupcake-harness.ts
+      - npx tsc --noEmit
