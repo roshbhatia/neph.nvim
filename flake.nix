@@ -41,6 +41,9 @@
             # Build tooling
             pkgs.go-task
 
+            # Policy enforcement
+            pkgs.open-policy-agent
+
             # Neovim + test dependencies
             pkgs.neovim
             pkgs.vimPlugins.plenary-nvim

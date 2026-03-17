@@ -17,13 +17,14 @@ jobs:
         with:
           nix_path: nixpkgs=channel:nixos-unstable
       - uses: DeterminateSystems/magic-nix-cache-action@v8
+      - name: Install Cupcake
+        run: curl -fsSL https://get.eqtylab.io/cupcake | bash
       - name: CI
         run: |
           nix develop -c bash -c '
             set -euo pipefail
             npm ci --prefix tools/neph-cli
             npm ci --prefix tools/pi
-            npm ci --prefix tools/lib
             task tools:build
             task lint
             task test
