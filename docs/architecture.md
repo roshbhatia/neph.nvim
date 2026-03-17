@@ -1,110 +1,117 @@
 # Neph Architecture
 
-Neph.nvim is a Neovim integration layer for AI agents. It provides a universal bridge between external agentic processes and Neovim, enabling interactive reviews, state management, and tool discovery.
+Neph.nvim is a Neovim integration layer for AI agents. It provides interactive code review, terminal management, and status bridging between agents and Neovim.
+
+## Core Principle
+
+**Cupcake is the sole integration layer.** No agent ever talks to Neovim directly. All agent hooks point to `cupcake eval`. Cupcake evaluates deterministic policies, then invokes `neph-cli` as a signal for interactive review.
+
+```
+Agent ──▶ Cupcake ──▶ neph-cli ──▶ Neovim
+                                      │
+Agent ◀── Cupcake ◀── neph-cli ◀──────┘
+```
 
 ## Component Boundaries
 
-### 1. Neovim Bridge CLI (`neph`)
-A Node.js/TypeScript CLI (`tools/neph-cli/`) that serves as the entry point for hook-based agents:
-- **Gate command**: Intercepts agent tool calls (write/edit) via config file hooks, runs interactive review in Neovim, returns accept/reject exit code.
-- **Review command**: Direct interactive diff review (`neph review <path>` with content on stdin).
-- **Status commands**: `set`, `unset`, `get`, `checktime`, `close-tab` — one-off RPC calls.
+### 1. Cupcake (Policy + Routing Layer)
 
-### 2. Extension Agent SDK (`tools/lib/`)
-A shared TypeScript library (`NephClient`) for extension agents that maintain persistent socket connections to Neovim:
-- **NephClient** (`neph-client.ts`): Persistent msgpack-rpc connection with auto-reconnect (exponential backoff, 100ms → 5s cap).
-- **Debug logging** (`log.ts`): Shared logger writing to `/tmp/neph-debug.log` when `NEPH_DEBUG=1`.
+Every agent hook points to `cupcake eval --harness <agent>`. Cupcake:
+- Evaluates deterministic Rego/Wasm policies (< 1ms) — blocks dangerous commands, protects sensitive paths
+- Invokes the `neph_review` signal for write/edit tools
+- Handles agent-specific JSON normalization and response formatting
+- Returns decisions in the agent's expected format
+
+Policies live in `.cupcake/policies/neph/`:
+- `review.rego` — routes write/edit tools through interactive review
+- `dangerous_commands.rego` — blocks rm -rf, force push, --no-verify
+- `protected_paths.rego` — blocks writes to .env, credentials, SSH keys
+
+### 2. neph-cli (Editor Abstraction)
+
+A Node.js CLI (`tools/neph-cli/`) that bridges Cupcake signals to Neovim. Speaks one protocol:
+- **stdin**: `{ path: string, content: string }`
+- **stdout**: `{ decision: "accept"|"reject"|"partial", content: string, reason?: string }`
+- **Exit codes**: 0 = accept/partial, 2 = reject, 3 = timeout
+
+neph-cli has **zero agent awareness** — no `--agent` flag, no per-agent normalizers or formatters. It knows about Neovim, not about agents. Swappable to other editors by replacing the transport layer.
+
+Other commands: `set`, `unset`, `get`, `checktime`, `close-tab`, `ui-select`, `ui-input`, `ui-notify`.
 
 ### 3. RPC Dispatch Facade (`lua/neph/rpc.lua`)
-A single Lua module that routes all incoming RPC requests to internal API modules. It handles:
-- Method routing
-- Error normalization
-- Pcall-wrapped execution
+
+Single Lua module routing all incoming RPC to internal API modules. Handles method routing, error normalization, pcall-wrapped execution.
 
 ### 4. API Modules (`lua/neph/api/`)
-Stateless modules implementing specific capabilities:
-- `review/`: Core diff review logic and UI.
-- `status.lua`: Global state management (`vim.g`).
-- `buffers.lua`: Buffer and tab operations.
+
+Stateless modules implementing capabilities:
+- `review/`: Core diff review logic and UI
+- `status.lua`: Global state management (`vim.g`)
+- `buffers.lua`: Buffer and tab operations
+- `ui.lua`: Selection, input, notification dialogs
 
 ### 5. Review Engine vs. UI
+
 The review system is split into two layers:
 - **Engine** (`lua/neph/api/review/engine.lua`): Pure logic for hunk computation and decision application. Testable in headless Neovim.
-- **UI** (`lua/neph/api/review/ui.lua`): Vimdiff tab with per-hunk accept/reject keymaps, signs, winbar, and virtual text hints.
+- **UI** (`lua/neph/api/review/ui.lua`): Vimdiff tab with per-hunk accept/reject keymaps, signs, winbar, and help popup.
 
-### 6. Agent Bus (`lua/neph/internal/bus.lua`)
-Persistent channel registry for extension agents (type `"extension"`):
-- Agents register with their msgpack-rpc channel ID on connect.
-- Prompts are pushed via `vim.rpcnotify(channel, "neph:prompt", text)` — no polling.
-- A 1-second health timer detects dead channels via `pcall(vim.rpcnotify, ch, "neph:ping")` and auto-unregisters them.
+### 6. Cupcake Signals (`.cupcake/signals/`)
 
-### 7. Gate System (`tools/neph-cli/src/gate.ts`)
-Declarative agent schemas for intercepting file mutations from hook-based agents:
-- Each agent has an `AgentSchema` defining tool names, field mappings, and optional preprocessing.
-- `parseWithSchema()` generically extracts `{ filePath, content }` from any agent's JSON.
-- Supported agents: Claude, Copilot, Gemini, Cursor.
-- Cursor is post-write-only (just `checktime`, no review).
+- `neph_review` — Wrapper script that chains reconstruction + interactive review:
+  1. Pipes Cupcake event JSON through `neph_reconstruct`
+  2. Pipes the resulting `{ path, content }` to `neph-cli review`
+  3. Returns `{ decision, content }` for Rego policy consumption
+- `neph_reconstruct` — Extracts `{ path, content }` from agent tool JSON. For edit tools, reads the file and applies old_str/new_str replacement.
 
-## Architecture
+## Architecture Diagram
 
-```mermaid
-graph TD
-    subgraph Extension Agents
-        Pi[Pi Extension] -->|persistent socket| Bus[Agent Bus]
-    end
-
-    subgraph Hook Agents
-        Claude[Claude / Gemini / Copilot] -->|config hook| Gate[Gate Command]
-        Gate -->|msgpack-rpc| RPC
-    end
-
-    subgraph Neovim
-        Bus -->|vim.rpcnotify| Prompt[Prompt Delivery]
-        RPC[RPC Dispatch Facade] --> API_Review[API: review/]
-        RPC --> API_Status[API: status.lua]
-        RPC --> API_Buffers[API: buffers.lua]
-        RPC --> Bus
-
-        API_Review --> Engine[Review Engine]
-        API_Review --> ReviewUI[Review UI vimdiff]
-
-        Engine --> Envelope[ReviewEnvelope JSON]
-        ReviewUI --> Envelope
-    end
-
-    Envelope -->|temp file + rpcnotify| Gate
-    Envelope -->|direct RPC return| Pi
-
-    Cursor[Cursor] -->|post-write hook| Gate
-    Gate -->|checktime only| API_Buffers
+```
+┌─────────────┐     ┌──────────────────────────┐     ┌───────────┐     ┌─────────┐
+│   Agents    │────▶│        Cupcake           │────▶│ neph-cli  │────▶│ Neovim  │
+│             │◀────│                          │◀────│           │◀────│ (neph)  │
+│ Claude      │     │  Rego/Wasm policies      │     │ review    │     │ vimdiff │
+│ Gemini      │     │  Signals:                │     │ set/unset │     │ status  │
+│ Pi          │     │    neph_review            │     │ checktime │     │ ui.*    │
+│ OpenCode    │     │    neph_reconstruct       │     │           │     │         │
+│ Amp (soon)  │     │                          │     │           │     │         │
+└─────────────┘     └──────────────────────────┘     └───────────┘     └─────────┘
 ```
 
 ## Data Flow: Interactive Review
 
-### Hook-based agents (Claude, Gemini, Copilot)
-1. Agent makes a tool call (Write/Edit). Config hook runs `neph gate --agent <name>` with JSON on stdin.
-2. Gate parses JSON using the agent's declarative schema, extracts `{ filePath, content }`.
-3. Gate calls `review.open` via RPC with a unique `request_id` and `result_path`.
-4. Neovim opens a vimdiff tab. User makes per-hunk accept/reject decisions.
-5. Review engine builds a `ReviewEnvelope`, writes to `result_path`, fires `neph:review_done` notification.
-6. Gate reads result, exits with code 0 (accept) or 2 (reject).
-7. Agent continues or retries based on exit code.
+1. Agent proposes a file write/edit. Agent's hook fires `cupcake eval --harness <agent>`.
+2. Cupcake evaluates deterministic policies (block dangerous ops, protect paths).
+3. If write/edit tool: `neph_review` signal fires.
+4. Signal runs `neph_reconstruct` to normalize agent JSON → `{ path, content }`.
+5. Signal pipes `{ path, content }` to `neph-cli review`.
+6. neph-cli connects to Neovim via `$NVIM` socket, calls `review.open` RPC.
+7. Neovim opens vimdiff tab. User makes per-hunk accept/reject decisions.
+8. neph-cli returns `{ decision, content }` on stdout.
+9. Rego policy reads signal result, emits `allow` / `modify(updated_input)` / `deny`.
+10. Cupcake returns decision to agent in agent-specific format.
 
-### Extension agents (Pi)
-1. Agent calls `neph.review(filePath, content)` via NephClient.
-2. NephClient invokes `review.open` RPC directly (no temp file needed for the call).
-3. Neovim opens vimdiff tab, user reviews.
-4. `ReviewEnvelope` is returned directly via RPC response.
-5. Agent uses the envelope's `decision` and `content` fields.
+### Outside Neovim (agent not in :terminal)
 
-### Post-write agents (Cursor)
-1. Cursor writes a file. Post-write hook runs `neph gate --agent cursor`.
-2. Gate detects `postWriteOnly` schema, calls `buffers.check` (checktime) and sets statusline state.
-3. Gate exits immediately with code 0 (no review needed).
+When no editor is reachable (`$NVIM` not set):
+- Deterministic policies still enforce (block rm -rf, protect .env)
+- `neph-cli review` returns `{ decision: "accept" }` (fail-open)
+- The user opted out of interactive review by running outside Neovim
+
+## Agent Integration
+
+| Agent | Hook | Cupcake Harness | Status |
+|-------|------|----------------|--------|
+| Claude | `PreToolUse` → `cupcake eval --harness claude` | Native | Active |
+| Gemini | `BeforeTool` → `cupcake eval --harness gemini` | Native | Active |
+| Pi | `tool_call` → `cupcake eval --harness pi` | Custom extension | Active |
+| OpenCode | Plugin → `cupcake eval --harness opencode` | Native | Active |
+| Amp | — | Pending upstream | Terminal-only |
+| Goose, Codex, Crush | — | — | Terminal-only |
 
 ## Protocols
 
-- **Neovim RPC**: Standard msgpack-rpc over Unix sockets.
-- **Neph RPC**: A custom method+params contract defined in `protocol.json`.
-- **Review Protocol**: Asynchronous, request-id-correlated exchange via temp files and notifications.
-- **Agent Bus**: Channel registration via `bus.register` RPC, prompt push via `vim.rpcnotify`.
+- **Neovim RPC**: Standard msgpack-rpc over Unix sockets (`$NVIM`).
+- **Neph RPC**: Custom method+params contract defined in `protocol.json`.
+- **Neph CLI Protocol**: `{ path, content }` → `{ decision, content, reason? }` via stdin/stdout.
+- **Cupcake**: Rego policies + signals, stdin/stdout JSON per harness.

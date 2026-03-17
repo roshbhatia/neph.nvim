@@ -5,63 +5,68 @@ installs the relevant files to their expected locations.
 
 ## Architecture
 
+All agent hooks point to **Cupcake** (`cupcake eval`). Cupcake evaluates policies
+and invokes `neph-cli` as a signal for interactive review. No agent ever calls
+`neph-cli` directly.
+
 ```
 tools/
-  neph-cli/          CLI binary (neph) — review, set/unset, checktime, gate
-  lib/               Shared TypeScript module — nephRun(), review(), createNephQueue()
-  pi/                Pi coding agent extension (overrides write/edit tools)
-  amp/               Amp plugin (tool.call handler, file write interception)
-  opencode/          OpenCode custom tools (write.ts, edit.ts overrides)
-  claude/            Claude Code hook config (PreToolUse)
-  copilot/           Copilot hook config (preToolUse)
-  cursor/            Cursor hook config (afterFileEdit — informational only)
-  gemini/            Gemini hook config (BeforeTool)
+  neph-cli/          CLI binary (neph) — review, set/unset, checktime, ui-*
+  pi/                Pi Cupcake harness (intercepts tool_call → cupcake eval)
+  lib/               Shared utilities — neph-run.ts (CLI wrapper), log.ts
+  amp/               Amp plugin (pending Cupcake harness support)
+  opencode/          OpenCode (uses native Cupcake plugin)
+  claude/            Claude Code hook config
+  copilot/           Copilot hook config
+  cursor/            Cursor hook config
+  gemini/            Gemini hook config
 ```
 
-## Agent Integration Tiers
+## Agent Integration
 
-| Tier | Agents | Mechanism | Review Gating |
-|------|--------|-----------|---------------|
-| Hook | Claude, Copilot, Gemini | Shell hook → `neph gate` | YES |
-| Hook (post-write) | Cursor | `afterFileEdit` hook | NO (informational) |
-| Extension | Pi, Amp, OpenCode | TS plugin overrides tools | YES |
-| Terminal-only | Goose, Codex, Crush | No hook system | None |
+| Agent | Mechanism | Review |
+|-------|-----------|--------|
+| Claude | `PreToolUse` hook → `cupcake eval --harness claude` | YES |
+| Gemini | `BeforeTool` hook → `cupcake eval --harness gemini` | YES |
+| Pi | Extension → `cupcake eval --harness pi` | YES |
+| OpenCode | Native Cupcake plugin | YES |
+| Amp | Terminal-only (Cupcake harness pending) | NO |
+| Goose, Codex, Crush | Terminal-only | NO |
 
-## `neph gate` command
+## `neph-cli review`
 
-Universal hook handler for shell-hook agents. Reads agent-specific JSON from
-stdin, normalizes to `{ filePath, content }`, runs the review flow.
+Editor abstraction for interactive code review. Called by Cupcake's
+`neph_review` signal, not by agents directly.
+
+**Protocol:**
+- stdin: `{ "path": "/abs/path", "content": "proposed content" }`
+- stdout: `{ "decision": "accept|reject|partial", "content": "...", "reason?": "..." }`
+- Exit codes: `0` = accept/partial, `2` = reject, `3` = timeout
 
 ```sh
-# Called by agent hooks, not directly by users
-echo '{"tool_name":"Write","tool_input":{"file_path":"/tmp/f","content":"hi"}}' | neph gate --agent claude
+# Called by Cupcake signal, not by users directly
+echo '{"path":"/tmp/f.lua","content":"hello"}' | neph-cli review
 ```
 
-Exit codes: `0` = accept, `2` = reject.
+## Cupcake Policies
 
-## `lib/neph-run.ts`
+Rego policies in `.cupcake/policies/neph/`:
+- `review.rego` — routes write/edit tools through interactive review
+- `dangerous_commands.rego` — blocks rm -rf, force push, --no-verify
+- `protected_paths.rego` — blocks writes to .env, credentials, SSH keys
 
-Shared module used by pi, amp, and opencode adapters:
-- `nephRun(args, stdin?, timeoutMs?)` — spawn neph CLI, return stdout
-- `review(filePath, content)` — blocking vimdiff review, returns `ReviewEnvelope`
-- `createNephQueue()` — fire-and-forget serial command queue
+Signals in `.cupcake/signals/`:
+- `neph_review` — chains reconstruct + review
+- `neph_reconstruct` — normalizes agent JSON to `{ path, content }`
 
 ## Install Targets
 
 | Source | Destination | Method |
 |--------|------------|--------|
-| `neph-cli/dist/index.js` | `~/.local/bin/neph` | symlink |
-| `pi/package.json` | `~/.pi/agent/extensions/nvim/package.json` | symlink |
-| `pi/dist` | `~/.pi/agent/extensions/nvim/dist` | symlink |
-| `claude/settings.json` | `~/.claude/settings.json` | JSON merge (hooks key) |
-| `gemini/settings.json` | `~/.gemini/settings.json` | JSON merge (hooks key) |
-| `cursor/hooks.json` | `~/.cursor/hooks.json` | symlink |
-| `amp/neph-plugin.ts` | `~/.config/amp/plugins/neph-plugin.ts` | symlink |
-| `opencode/write.ts` | `~/.config/opencode/tools/write.ts` | symlink |
-| `opencode/edit.ts` | `~/.config/opencode/tools/edit.ts` | symlink |
-| `copilot/hooks.json` | (manual) `.github/hooks/hooks.json` | documented |
-
-Copilot requires the hooks file committed to the project's default branch.
+| `neph-cli/dist/index.js` | `~/.local/bin/neph` | symlink (opt-in) |
+| `pi/dist/cupcake-harness.js` | `~/.pi/agent/extensions/nvim/dist` | symlink |
+| `.cupcake/policies/` | `.cupcake/policies/neph/` | file copy |
+| `.cupcake/signals/` | `.cupcake/signals/` | file copy |
 
 ## Running tests
 
@@ -70,6 +75,12 @@ Copilot requires the hooks file committed to the project's default branch.
 task tools:test
 
 # Individual suites
-cd tools/neph-cli && npm test -- --run   # CLI + gate + hook config tests
-cd tools/lib && npx vitest --run          # Shared lib tests
+cd tools/neph-cli && npm test -- --run   # CLI + review + integration tests
+cd tools/pi && npx vitest --run          # Pi Cupcake harness tests
+
+# Rego policy tests
+task test:rego                            # Requires OPA installed
+
+# Integration tests
+task test:e2e:review                      # neph-cli protocol + reconstruct signal
 ```
