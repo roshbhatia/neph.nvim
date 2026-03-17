@@ -7,7 +7,7 @@
 local M = {}
 
 ---@class neph.AgentIntegration
----@field type     "hook"|"extension"  Integration mechanism
+---@field type     "hook"|"terminal"  Integration mechanism (hook = Cupcake-managed, terminal = terminal-only)
 ---@field capabilities string[]         Supported capabilities (e.g. "review", "status", "checktime")
 
 ---@class neph.AgentDef
