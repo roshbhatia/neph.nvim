@@ -112,7 +112,8 @@ function hookEntryMatches(existing: any, entry: any): boolean {
 function mergeHooks(dst: any, src: any): any {
   const out = dst ?? {};
   out.hooks = out.hooks ?? {};
-  for (const [event, entries] of Object.entries(src.hooks ?? {})) {
+  const hooks = (src.hooks ?? {}) as Record<string, any[]>;
+  for (const [event, entries] of Object.entries(hooks)) {
     out.hooks[event] = out.hooks[event] ?? [];
     for (const entry of entries as any[]) {
       if (!out.hooks[event].some((e: any) => hookEntryMatches(e, entry))) {
@@ -125,7 +126,8 @@ function mergeHooks(dst: any, src: any): any {
 
 function unmergeHooks(dst: any, src: any): any {
   if (!dst?.hooks) return dst ?? {};
-  for (const [event, entries] of Object.entries(src.hooks ?? {})) {
+  const hooks = (src.hooks ?? {}) as Record<string, any[]>;
+  for (const [event, entries] of Object.entries(hooks)) {
     if (!dst.hooks[event]) continue;
     dst.hooks[event] = dst.hooks[event].filter(
       (e: any) => !entries.some((entry: any) => hookEntryMatches(e, entry)),
@@ -136,7 +138,8 @@ function unmergeHooks(dst: any, src: any): any {
 
 function hooksEnabled(dst: any, src: any): boolean {
   if (!dst?.hooks) return false;
-  for (const [event, entries] of Object.entries(src.hooks ?? {})) {
+  const hooks = (src.hooks ?? {}) as Record<string, any[]>;
+  for (const [event, entries] of Object.entries(hooks)) {
     const target = dst.hooks[event];
     if (!Array.isArray(target)) return false;
     for (const entry of entries as any[]) {
@@ -259,7 +262,14 @@ function integrationEnabled(integration: Integration): boolean {
   return integration.kind === "copilot" ? copilotEnabled(existing, template) : hooksEnabled(existing, template);
 }
 
-function normalizeGeminiInput(stdin: string): { toolName?: string; toolInput?: any } | null {
+type GeminiHookPayload = {
+  toolName?: string;
+  toolInput?: any;
+  tool_name?: string;
+  tool_input?: any;
+};
+
+function normalizeGeminiInput(stdin: string): GeminiHookPayload | null {
   try {
     return JSON.parse(stdin);
   } catch (err) {
