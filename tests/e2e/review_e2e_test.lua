@@ -28,18 +28,31 @@ local function spawn_review(neph_cli, nvim_socket, stdin_json, extra_env)
   local state = { stdout = {}, stderr = {}, exited = false, code = nil }
   local env = { NVIM = nvim_socket, PATH = os.getenv("PATH") }
   if extra_env then
-    for k, v in pairs(extra_env) do env[k] = v end
+    for k, v in pairs(extra_env) do
+      env[k] = v
+    end
   end
 
   local job_id = vim.fn.jobstart({ "node", neph_cli, "review" }, {
     env = env,
     on_stdout = function(_, data)
-      for _, l in ipairs(data) do if l ~= "" then table.insert(state.stdout, l) end end
+      for _, l in ipairs(data) do
+        if l ~= "" then
+          table.insert(state.stdout, l)
+        end
+      end
     end,
     on_stderr = function(_, data)
-      for _, l in ipairs(data) do if l ~= "" then table.insert(state.stderr, l) end end
+      for _, l in ipairs(data) do
+        if l ~= "" then
+          table.insert(state.stderr, l)
+        end
+      end
     end,
-    on_exit = function(_, c) state.code = c; state.exited = true end,
+    on_exit = function(_, c)
+      state.code = c
+      state.exited = true
+    end,
   })
   vim.fn.chansend(job_id, stdin_json)
   vim.fn.chanclose(job_id, "stdin")
@@ -65,9 +78,18 @@ return function(t)
   require("neph").setup({
     agents = {},
     backend = {
-      setup = function() end, open = function() return {} end,
-      focus = function() return true end, hide = function() end,
-      is_visible = function() return false end, kill = function() end,
+      setup = function() end,
+      open = function()
+        return {}
+      end,
+      focus = function()
+        return true
+      end,
+      hide = function() end,
+      is_visible = function()
+        return false
+      end,
+      kill = function() end,
       cleanup_all = function() end,
     },
   })
@@ -77,10 +99,11 @@ return function(t)
       local test_file = vim.fn.tempname() .. ".lua"
       vim.fn.writefile({ "same_content" }, test_file)
 
-      local state = spawn_review(neph_cli, nvim_socket,
-        vim.json.encode({ path = test_file, content = "same_content" }))
+      local state = spawn_review(neph_cli, nvim_socket, vim.json.encode({ path = test_file, content = "same_content" }))
 
-      t.wait_for(function() return state.exited end, 5000, "should auto-accept (no changes)")
+      t.wait_for(function()
+        return state.exited
+      end, 5000, "should auto-accept (no changes)")
       t.assert_eq(state.code, 0, "exit code should be 0")
 
       local parsed = vim.json.decode(table.concat(state.stdout, ""))
@@ -92,18 +115,27 @@ return function(t)
       local test_file = vim.fn.tempname() .. ".lua"
       vim.fn.writefile({ "line1", "line2", "line3" }, test_file)
 
-      local state = spawn_review(neph_cli, nvim_socket,
-        vim.json.encode({ path = test_file, content = "line1\nline2_CHANGED\nline3" }))
+      local state = spawn_review(
+        neph_cli,
+        nvim_socket,
+        vim.json.encode({ path = test_file, content = "line1\nline2_CHANGED\nline3" })
+      )
 
-      t.wait_for(function() return vim.fn.tabpagenr("$") > 1 end, 5000, "review tab should open")
+      t.wait_for(function()
+        return vim.fn.tabpagenr("$") > 1
+      end, 5000, "review tab should open")
 
       -- Accept all hunks then submit
       vim.schedule(function()
         call_review_keymap("gA")
-        vim.schedule(function() call_review_keymap("gs") end)
+        vim.schedule(function()
+          call_review_keymap("gs")
+        end)
       end)
 
-      t.wait_for(function() return state.exited end, 10000, "neph-cli should exit after accept")
+      t.wait_for(function()
+        return state.exited
+      end, 10000, "neph-cli should exit after accept")
       t.assert_eq(state.code, 0, "exit code should be 0 (accept)")
 
       local parsed = vim.json.decode(table.concat(state.stdout, ""))
@@ -118,15 +150,20 @@ return function(t)
       local test_file = vim.fn.tempname() .. ".lua"
       vim.fn.writefile({ "old_content" }, test_file)
 
-      local state = spawn_review(neph_cli, nvim_socket,
-        vim.json.encode({ path = test_file, content = "new_content" }))
+      local state = spawn_review(neph_cli, nvim_socket, vim.json.encode({ path = test_file, content = "new_content" }))
 
-      t.wait_for(function() return vim.fn.tabpagenr("$") > 1 end, 5000, "review tab should open")
+      t.wait_for(function()
+        return vim.fn.tabpagenr("$") > 1
+      end, 5000, "review tab should open")
 
       -- Quit = reject all undecided
-      vim.schedule(function() call_review_keymap("q") end)
+      vim.schedule(function()
+        call_review_keymap("q")
+      end)
 
-      t.wait_for(function() return state.exited end, 10000, "neph-cli should exit after reject")
+      t.wait_for(function()
+        return state.exited
+      end, 10000, "neph-cli should exit after reject")
       t.assert_eq(state.code, 2, "exit code should be 2 (reject)")
 
       local parsed = vim.json.decode(table.concat(state.stdout, ""))
@@ -136,11 +173,16 @@ return function(t)
     end)
 
     t.it("dry-run: auto-accepts without Neovim review", function()
-      local state = spawn_review(neph_cli, nvim_socket,
+      local state = spawn_review(
+        neph_cli,
+        nvim_socket,
         vim.json.encode({ path = "/tmp/doesnt_matter.lua", content = "anything" }),
-        { NEPH_DRY_RUN = "1" })
+        { NEPH_DRY_RUN = "1" }
+      )
 
-      t.wait_for(function() return state.exited end, 5000, "dry-run should complete quickly")
+      t.wait_for(function()
+        return state.exited
+      end, 5000, "dry-run should complete quickly")
       t.assert_eq(state.code, 0, "exit code should be 0")
 
       local parsed = vim.json.decode(table.concat(state.stdout, ""))
@@ -151,10 +193,11 @@ return function(t)
       local test_file = vim.fn.tempname() .. ".lua"
       vim.fn.writefile({ "hello" }, test_file)
 
-      local state = spawn_review(neph_cli, nvim_socket,
-        vim.json.encode({ path = test_file, content = "hello" }))
+      local state = spawn_review(neph_cli, nvim_socket, vim.json.encode({ path = test_file, content = "hello" }))
 
-      t.wait_for(function() return state.exited end, 5000, "should auto-accept")
+      t.wait_for(function()
+        return state.exited
+      end, 5000, "should auto-accept")
 
       local stdout = table.concat(state.stdout, "")
       local parsed = vim.json.decode(stdout)
