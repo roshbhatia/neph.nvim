@@ -114,7 +114,7 @@ return function(t)
       t.assert_eq(vim.fn.isdirectory(bad_link), 0, "tools/pi/dist/dist should not exist (recursive symlink)")
     end)
 
-    t.it("neph CLI uses disconnect not quit", function()
+    t.it("neph CLI uses close not quit", function()
       local plugin_root = vim.fn.getcwd()
       local src = plugin_root .. "/tools/neph-cli/src/transport.ts"
       if vim.fn.filereadable(src) ~= 1 then
@@ -122,26 +122,26 @@ return function(t)
         return
       end
       local content = table.concat(vim.fn.readfile(src), "\n")
-      t.assert_truthy(content:find("%.disconnect%(%)"), "transport.ts close() must use disconnect(), not quit()")
+      t.assert_truthy(content:find("%.close%(%)"), "transport.ts must use close(), not quit()")
       t.assert_eq(content:find("%.quit%(%)"), nil, "transport.ts must NOT contain .quit() — it kills neovim")
     end)
 
-    t.it("pi dist/pi.js is fresh (not stale)", function()
+    t.it("pi dist/cupcake-harness.js is fresh (not stale)", function()
       local plugin_root = vim.fn.getcwd()
-      local src = plugin_root .. "/tools/pi/pi.ts"
-      local dst = plugin_root .. "/tools/pi/dist/pi.js"
+      local src = plugin_root .. "/tools/pi/cupcake-harness.ts"
+      local dst = plugin_root .. "/tools/pi/dist/cupcake-harness.js"
       if vim.fn.filereadable(src) ~= 1 then
-        t.skip("pi freshness check", "tools/pi/pi.ts not found")
+        t.skip("pi freshness check", "tools/pi/cupcake-harness.ts not found")
         return
       end
       if vim.fn.filereadable(dst) ~= 1 then
-        error("tools/pi/dist/pi.js does not exist — pi bundle not built")
+        error("tools/pi/dist/cupcake-harness.js does not exist — pi bundle not built")
       end
       local src_mtime = vim.fn.getftime(src)
       local dst_mtime = vim.fn.getftime(dst)
       t.assert_truthy(
         dst_mtime >= src_mtime,
-        "dist/pi.js should be newer than or equal to pi.ts (stale bundle detected)"
+        "dist/cupcake-harness.js should be newer than or equal to cupcake-harness.ts (stale bundle detected)"
       )
     end)
   end)
@@ -225,9 +225,13 @@ return function(t)
   t.describe("tools.install_symlink / uninstall_symlink", function()
     t.it("creates and removes a symlink", function()
       local tools = require("neph.tools")
-      local tmp_src = vim.fn.tempname()
+      -- Source: create a temp file in project root (allowed by validation)
+      local plugin_root = vim.fn.getcwd()
+      local tmp_src = plugin_root .. "/tmp_symlink_test_src"
       vim.fn.writefile({ "test" }, tmp_src)
-      local tmp_dst = vim.fn.tempname() .. "_link"
+      -- Destination: must be under $HOME (validation rejects /tmp)
+      local home = vim.env.HOME
+      local tmp_dst = home .. "/.neph_symlink_test_link"
 
       local ok, err = tools.install_symlink(tmp_src, tmp_dst)
       t.assert_truthy(ok, "install_symlink should succeed: " .. (err or ""))
@@ -258,8 +262,10 @@ return function(t)
     t.it("per-agent stamps are independent", function()
       local tools = require("neph.tools")
 
-      -- Touch stamp for agent A, not B
-      tools._touch_stamp("test_agent_a")
+      -- touch_stamp(agent, name) — first arg is agent def (table), second is name string
+      local fake_agent_a = { name = "test_agent_a", tools = {} }
+      local fake_agent_b = { name = "test_agent_b", tools = {} }
+      tools._touch_stamp(fake_agent_a, "test_agent_a")
       tools._clear_stamp("test_agent_b")
 
       local stamp_a = tools._stamp_path("test_agent_a")
