@@ -8,15 +8,15 @@ describe("neph.contracts", function()
       end)
     end)
 
-    it("accepts a valid agent with type = extension", function()
+    it("accepts a valid agent with type = terminal", function()
       assert.has_no.errors(function()
         contracts.validate_agent({
-          name = "pi",
-          label = "Pi",
+          name = "amp",
+          label = "Amp",
           icon = " ",
-          cmd = "pi",
-          args = { "--continue" },
-          type = "extension",
+          cmd = "amp",
+          args = {},
+          type = "terminal",
         })
       end)
     end)

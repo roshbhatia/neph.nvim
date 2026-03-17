@@ -324,7 +324,6 @@ function M.open_manual(file_path)
   return { ok = true, msg = "Review enqueued" }
 end
 
-
 function M.write_result(path, channel_id, request_id, envelope)
   envelope.request_id = request_id
 

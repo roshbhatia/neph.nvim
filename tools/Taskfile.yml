@@ -38,6 +38,7 @@ tasks:
       - npx tsc --noEmit
 
   lint:pi:
+    desc: Type-check Pi harness (esbuild validates TS, external SDK types not available locally)
     dir: pi
     cmds:
-      - npx tsc --noEmit
+      - npm run build

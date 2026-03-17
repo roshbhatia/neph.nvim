@@ -22,9 +22,6 @@ local augroup = nil
 local pending_timers = {}
 ---@type table<string, {text:string, opts:table}[]>  termname → queued sends
 local ready_queue = {}
----@type table<string, boolean>  termname → true if fallback notification already shown
-local notified_fallback = {}
-
 -- ---------------------------------------------------------------------------
 -- Setup
 -- ---------------------------------------------------------------------------
@@ -184,7 +181,6 @@ function M.open(termname)
     if td.ready then
       td.on_ready()
     end
-
   end
 end
 
