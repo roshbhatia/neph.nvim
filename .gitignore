@@ -197,3 +197,9 @@ luac.out
 # Un-ignore openspec (tracked in repo)
 !openspec/
 .claude/
+luarocks-3.9.2
+env/
+squashfs-root/
+nvim-linux-x86_64.appimage
+nvim-linux64/
+opa
