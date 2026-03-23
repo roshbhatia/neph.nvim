@@ -26,7 +26,24 @@ local config = require("neph.config")
 local contracts = require("neph.internal.contracts")
 
 --- Setup neph.nvim.
----@param opts? neph.Config
+---
+--- Initializes the neph.nvim plugin with the provided configuration options. This function must be called
+--- before using any neph.nvim functionality. It validates the configuration, registers agents, sets up
+--- the backend, and establishes the necessary Neovim commands.
+---
+---@param opts? neph.Config Configuration options table. If not provided, uses default values.
+---                         Key fields:
+---                         - `agents` (neph.AgentDef[]): Array of agent definitions (required)
+---                         - `backend` (table): Backend module (required)
+---                         - `keymaps` (boolean): Register default keymaps (default: true)
+---                         - `env` (table<string,string>): Extra environment variables for agents
+---                         - `file_refresh` (neph.FileRefreshConfig): File refresh configuration
+---                         - `review_signs` (neph.ReviewSignsConfig): Review UI sign icons
+---                         - `review_keymaps` (neph.ReviewKeymapsConfig): Review UI keymaps
+---                         - `review` (neph.ReviewConfig): Review system configuration
+---                         - `integration_groups` (table<string,neph.IntegrationGroup>): Integration groups
+---                         - `integration_default_group` (string): Default integration group name
+---@return nil
 function M.setup(opts)
   opts = opts or {}
   config.current = vim.tbl_deep_extend("force", config.defaults, opts)
