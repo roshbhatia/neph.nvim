@@ -27,6 +27,9 @@ local active = nil
 ---@type fun(params: neph.ReviewRequest)|nil
 local open_fn = nil
 
+---@type boolean
+local processing = false
+
 ---@param fn fun(params: neph.ReviewRequest)
 function M.set_open_fn(fn)
   open_fn = fn
@@ -34,9 +37,18 @@ end
 
 ---@param params neph.ReviewRequest
 function M.enqueue(params)
+  if processing then
+    -- Schedule retry to prevent reentrancy
+    vim.schedule(function()
+      M.enqueue(params)
+    end)
+    return
+  end
+  processing = true
+  
   if not active then
     active = params
-    log.debug("review_queue", "opening immediately: %s", params.path)
+    log.debug("review_queue", "opening immediately: %s",  params.path)
     if open_fn then
       open_fn(params)
     end
@@ -53,10 +65,21 @@ function M.enqueue(params)
       vim.notify(string.format("Review queued: %s%s — %d pending", rel, agent_str, #queue), vim.log.levels.INFO)
     end
   end
+  
+  processing = false
 end
 
 ---@param request_id string
 function M.on_complete(request_id)
+  if processing then
+    -- Schedule retry to prevent reentrancy
+    vim.schedule(function()
+      M.on_complete(request_id)
+    end)
+    return
+  end
+  processing = true
+  
   if active and active.request_id == request_id then
     log.debug("review_queue", "completed: %s", active.path)
     active = nil
@@ -72,6 +95,8 @@ function M.on_complete(request_id)
       end)
     end
   end
+  
+  processing = false
 end
 
 ---@return integer
@@ -177,6 +202,17 @@ function M._reset()
   queue = {}
   active = nil
   open_fn = nil
+  processing = false
+end
+
+--- Testing helper: expose internal state
+---@return table
+function M._get_internal_state()
+  return {
+    queue = queue,
+    active = active,
+    processing = processing,
+  }
 end
 
 return M

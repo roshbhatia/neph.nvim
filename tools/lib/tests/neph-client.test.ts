@@ -124,7 +124,7 @@ describe("NephClient", () => {
 
     const result = await reviewPromise;
     expect(result.decision).toBe("reject");
-    expect(result.reason).toBe("Review failed or timed out");
+    expect(result.reason).toBe("Review timed out");
 
     client.disconnect();
     vi.useRealTimers();

@@ -141,9 +141,9 @@ describe('discoverNvimSocket', () => {
     expect(discoverNvimSocket()).toBeNull();
   });
 
-  it('returns null when two instances share the same git root (ambiguous)', () => {
+  it('picks best match when two instances share the same git root', () => {
     // Two Neovim instances with the same git root, different cwds,
-    // CLI cwd doesn't prefix-match either → should return null
+    // CLI cwd doesn't prefix-match either → heuristic scoring should pick one
     vi.mocked(globSync).mockImplementation((p: any) =>
       String(p).startsWith('/tmp') ? [sockFor(111), sockFor(222)] : [],
     );
@@ -156,7 +156,8 @@ describe('discoverNvimSocket', () => {
         '/project/a/tests': '/project/a',
       },
     );
-    expect(discoverNvimSocket()).toBeNull();
+    // Both have same git root, heuristic should pick one
+    expect(discoverNvimSocket()).toBe(sockFor(111)); // First one
   });
 
   it('returns null when multiple instances exist and git roots differ', () => {

@@ -1,6 +1,9 @@
 import { attach, type NeovimClient } from "neovim";
 import process from "node:process";
 import { randomUUID } from "node:crypto";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { debug as log } from "./log";
 
 export interface ReviewEnvelope {
@@ -149,14 +152,16 @@ export class NephClient {
     }
 
     const requestId = randomUUID();
-    // For review, we actually need a temp file path if we want to follow the neph-cli gate pattern,
-    // but the Lua review.open also supports writing to a result_path.
-    // However, NephClient is used by pi extension which might prefer a direct notification.
-    
-    const promise = new Promise<ReviewEnvelope>((resolve, reject) => {
+    const promise = new Promise<ReviewEnvelope>((resolve) => {
       const timer = setTimeout(() => {
         this.pendingRequests.delete(requestId);
-        reject(new Error("Review timed out (300s)"));
+        resolve({
+          schema: "review/v1",
+          decision: "reject",
+          content: "",
+          hunks: [],
+          reason: "Review timed out",
+        });
       }, NephClient.REVIEW_TIMEOUT_MS);
 
       this.pendingRequests.set(requestId, (data: any) => {
@@ -165,6 +170,10 @@ export class NephClient {
       });
     });
 
+    // Create temp directory for result file
+    const resultDir = fs.mkdtempSync(path.join(os.tmpdir(), 'neph-review-'));
+    const resultPath = path.join(resultDir, `${requestId}.json`);
+    
     try {
       await this.client.executeLua(RPC_CALL, [
         "review.open",
@@ -173,12 +182,37 @@ export class NephClient {
           content,
           request_id: requestId,
           channel_id: this.channelId,
+          result_path: resultPath,
         },
       ]);
-      return await promise;
+      
+      const result = await promise;
+      
+      // Clean up temp directory
+      try {
+        if (fs.existsSync(resultPath)) {
+          fs.unlinkSync(resultPath);
+        }
+        fs.rmdirSync(resultDir);
+      } catch (cleanupErr) {
+        log("neph-client", `cleanup error: ${cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr)}`);
+      }
+      
+      return result;
     } catch (e) {
       this.pendingRequests.delete(requestId);
       log("neph-client", `review error: ${e instanceof Error ? e.message : String(e)}`);
+      
+      // Clean up temp directory on error
+      try {
+        if (fs.existsSync(resultPath)) {
+          fs.unlinkSync(resultPath);
+        }
+        fs.rmdirSync(resultDir);
+      } catch (cleanupErr) {
+        log("neph-client", `cleanup error on failure: ${cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr)}`);
+      }
+      
       return {
         schema: "review/v1",
         decision: "reject",
@@ -187,7 +221,7 @@ export class NephClient {
         reason: "Review failed or timed out",
       };
     }
-  }
+}
 
   async checktime(): Promise<void> {
     if (!this.client) return;

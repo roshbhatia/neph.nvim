@@ -26,7 +26,7 @@ function M.open_diff_tab(path, old_lines, new_lines, opts)
   local tab = vim.api.nvim_get_current_tabpage()
 
   -- Set review-specific diffopt (global option, restored on cleanup)
-  vim.o.diffopt = "internal,filler,closeoff,indent-heuristic,inline:char,linematch:60,algorithm:histogram"
+  vim.o.diffopt = "internal,filler,closeoff,linematch:60,algorithm:histogram"
 
   -- Left: current (or buffer contents in post-write mode)
   local left_buf = vim.api.nvim_get_current_buf()

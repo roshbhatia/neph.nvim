@@ -94,21 +94,59 @@ export function discoverNvimSocket(): string | null {
 
   // Fallback: match by git root so that subdirectory invocations still resolve
   // to the right Neovim when the cwd prefix check above didn't match.
-  // Only return a socket if exactly one candidate shares the same git root.
   const myGitRoot = getGitRoot(cwd);
   if (myGitRoot) {
-    const gitMatches: typeof candidates = [];
+    const scoredCandidates: Array<{ candidate: typeof candidates[0]; score: number }> = [];
+    
     for (const candidate of candidates) {
       const nvimCwd = getPidCwd(candidate.pid);
       if (nvimCwd) {
         const nvimGitRoot = getGitRoot(nvimCwd);
+        
+        // Calculate heuristic score
+        let score = 0;
+        
+        // Base score for matching git root
         if (nvimGitRoot && nvimGitRoot === myGitRoot) {
-          gitMatches.push(candidate);
+          score += 100;
+          
+          // Bonus for directory depth matching (closer to CLI cwd)
+          if (cwd.startsWith(nvimCwd + '/')) {
+            // Calculate how close the match is by directory depth difference
+            const cliDepth = cwd.split('/').length;
+            const nvimDepth = nvimCwd.split('/').length;
+            const depthDiff = cliDepth - nvimDepth;
+            // Lower depth difference is better (closer match)
+            score += 50 - (depthDiff * 5); // 5 points penalty per extra directory level
+          } else if (nvimCwd.startsWith(cwd + '/')) {
+            // Neovim is in subdirectory of CLI cwd - still good match
+            score += 30;
+          }
+          
+          // Bonus for exact cwd match
+          if (nvimCwd === cwd) {
+            score += 200;
+          }
         }
+        
+        scoredCandidates.push({ candidate, score });
       }
     }
-    if (gitMatches.length === 1) {
-      return gitMatches[0].path;
+    
+    // Find best candidate with score above threshold
+    const threshold = 50; // Minimum score to consider
+    let bestCandidate = null;
+    let bestScore = 0;
+    
+    for (const { candidate, score } of scoredCandidates) {
+      if (score > threshold && score > bestScore) {
+        bestCandidate = candidate;
+        bestScore = score;
+      }
+    }
+    
+    if (bestCandidate) {
+      return bestCandidate.path;
     }
   }
 

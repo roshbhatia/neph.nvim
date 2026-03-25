@@ -15,11 +15,14 @@ describe('protocol.json contract', () => {
       'review.open',
       'status.set',
       'status.unset',
+      'status.get',
       'buffers.check',
       'tab.close',
       'ui.select',
       'ui.input',
       'ui.notify',
+      'bus.register',
+      'review.pending',
     ];
     for (const method of expectedMethods) {
       expect(protocol.methods[method]).toBeDefined();

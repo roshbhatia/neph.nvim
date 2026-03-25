@@ -93,6 +93,9 @@ function reconstructEdit(filePath: string, oldStr: string, newStr: string): stri
     // New file or unreadable — just return new content
     return newStr;
   }
+  if (oldStr === '') {
+    return null; // Empty old_str is invalid
+  }
   if (!current.includes(oldStr)) {
     return null; // old_str not found — let the agent handle the error
   }

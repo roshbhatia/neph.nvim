@@ -126,12 +126,18 @@ function M._ensure_health_timer()
     1000,
     1000,
     vim.schedule_wrap(function()
+      -- Collect dead channels first to avoid modifying table during iteration
+      local dead = {}
       for name, ch in pairs(channels) do
         local ok, err = pcall(vim.rpcnotify, ch, "neph:ping")
         if not ok then
           log.debug("bus", "health check: %s channel %d dead (%s), removing", name, ch, tostring(err))
-          M.unregister(name)
+          table.insert(dead, name)
         end
+      end
+      -- Unregister dead channels after iteration
+      for _, name in ipairs(dead) do
+        M.unregister(name)
       end
       -- Stop timer if no channels remain
       if next(channels) == nil and health_timer then

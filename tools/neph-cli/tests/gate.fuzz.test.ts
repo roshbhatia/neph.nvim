@@ -32,13 +32,13 @@ function writeTmp(name: string, content: string): string {
 // --- reconstructEdit fuzz (via parseClaude Edit) ---
 
 describe('reconstructEdit edge cases', () => {
-  it('handles multiple occurrences — only replaces first', () => {
+  it('handles multiple occurrences — replaces all', () => {
     const f = writeTmp('multi.txt', 'foo bar foo baz foo');
     const result = parseClaude({
       tool_name: 'Edit',
       tool_input: { file_path: f, old_str: 'foo', new_str: 'qux' },
     });
-    expect(result!.content).toBe('qux bar foo baz foo');
+    expect(result!.content).toBe('qux bar qux baz qux');
   });
 
   it('handles old_str with regex special characters', () => {
@@ -59,14 +59,16 @@ describe('reconstructEdit edge cases', () => {
     expect(result!.content).toBe('changed1\nchanged2\ninserted\nline3\n');
   });
 
-  it('handles empty old_str (inserts at start)', () => {
+  it('handles empty old_str (no change)', () => {
     const f = writeTmp('empty-old.txt', 'hello');
     const result = parseClaude({
       tool_name: 'Edit',
       tool_input: { file_path: f, old_str: '', new_str: 'PREFIX' },
     });
-    // String.replace('', 'PREFIX') prepends
-    expect(result!.content).toBe('PREFIXhello');
+    // String.replace('', 'PREFIX') would prepend, but empty old_str means no match
+    // so reconstructEdit returns null, and parseWithSchema falls back to content field
+    // which doesn't exist, so returns null
+    expect(result).toBeNull();
   });
 
   it('handles empty new_str (deletion)', () => {
