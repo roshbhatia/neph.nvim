@@ -174,27 +174,27 @@ describe("neph.internal.review_queue", function()
       for i = 1, 10 do
         requests[i] = make_request("r" .. i, "/tmp/test" .. i .. ".lua")
       end
-      
+
       -- Enqueue all quickly (simulating concurrent calls)
       for i = 1, 10 do
         review_queue.enqueue(requests[i])
       end
-      
+
       -- Should process them all without errors
-      assert.are.equal(9, review_queue.count())  -- first one active, 9 queued
-      assert.are.equal(1, #opened_params)  -- only first opened
+      assert.are.equal(9, review_queue.count()) -- first one active, 9 queued
+      assert.are.equal(1, #opened_params) -- only first opened
     end)
 
     it("maintains state consistency during concurrent operations", function()
       review_queue.enqueue(make_request("r1", "/tmp/a.lua"))
-      
+
       -- Simulate concurrent completion and new enqueue
       review_queue.on_complete("r1")
       review_queue.enqueue(make_request("r2", "/tmp/b.lua"))
-      
+
       -- Should handle transition correctly
       assert.are.equal(0, review_queue.count())
-      assert.are.equal(2, #opened_params)  -- r1 and r2 should both open
+      assert.are.equal(2, #opened_params) -- r1 and r2 should both open
     end)
 
     it("prevents reentrancy with processing flag", function()
@@ -203,10 +203,10 @@ describe("neph.internal.review_queue", function()
       if state then
         state.processing = true
       end
-      
+
       -- Try to enqueue while processing
       review_queue.enqueue(make_request("r1", "/tmp/a.lua"))
-      
+
       -- Should schedule retry instead of immediate processing
       -- We can't easily test vim.schedule, but should not crash
       assert.has_no.errors(function()

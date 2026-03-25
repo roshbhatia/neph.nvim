@@ -34,10 +34,10 @@ describe("bus health monitoring", function()
     it("timer stops when all channels are unregistered", function()
       bus.register({ name = "pi", channel = 5 })
       bus.register({ name = "amp", channel = 6 })
-      
+
       bus.unregister("pi")
       bus.unregister("amp")
-      
+
       -- Timer should stop after all channels removed
       -- Channels should be empty
       assert.is_false(bus.is_connected("pi"))
@@ -58,7 +58,7 @@ describe("bus health monitoring", function()
 
       bus.register({ name = "pi", channel = 5 })
       bus.register({ name = "amp", channel = 6 })
-      
+
       -- Manually test health check logic
       local state = bus._get_channels()
       local dead = {}
@@ -68,11 +68,11 @@ describe("bus health monitoring", function()
           table.insert(dead, name)
         end
       end
-      
+
       -- Should detect dead channel
       assert.are.equal(1, #dead)
       assert.are.equal("pi", dead[1])
-      
+
       vim.rpcnotify = orig_rpcnotify
     end)
 
@@ -89,7 +89,7 @@ describe("bus health monitoring", function()
       bus.register({ name = "pi", channel = 5 })
       bus.register({ name = "amp", channel = 6 })
       bus.register({ name = "opencode", channel = 7 })
-      
+
       -- Test collection-first approach
       local state = bus._get_channels()
       local dead = {}
@@ -99,12 +99,12 @@ describe("bus health monitoring", function()
           table.insert(dead, name)
         end
       end
-      
+
       -- Should collect both dead channels without modifying table during iteration
       assert.are.equal(2, #dead)
       assert.is_true((dead[1] == "pi" or dead[2] == "pi"))
       assert.is_true((dead[1] == "amp" or dead[2] == "amp"))
-      
+
       vim.rpcnotify = orig_rpcnotify
     end)
 
@@ -120,7 +120,7 @@ describe("bus health monitoring", function()
 
       bus.register({ name = "pi", channel = 5 })
       bus.register({ name = "amp", channel = 6 })
-      
+
       -- The actual implementation should collect dead channels first
       -- then unregister after iteration
       local state = bus._get_channels()
@@ -129,9 +129,9 @@ describe("bus health monitoring", function()
         iteration_count = iteration_count + 1
         -- Should not call unregister during iteration
       end
-      
+
       assert.are.equal(2, iteration_count)
-      
+
       vim.rpcnotify = orig_rpcnotify
     end)
   end)
@@ -155,7 +155,7 @@ describe("bus health monitoring", function()
           pcall(vim.rpcnotify, ch, "neph:ping")
         end
       end)
-      
+
       vim.rpcnotify = orig_rpcnotify
     end)
   end)

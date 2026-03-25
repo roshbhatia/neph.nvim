@@ -92,7 +92,7 @@ describe("neph.api.review", function()
               write_called = true
               return true
             end,
-            close = function() end
+            close = function() end,
           }
         end
         return nil
@@ -132,7 +132,7 @@ describe("neph.api.review", function()
         local envelope = session.finalize()
         on_done(envelope)
       end
-      
+
       local result = review._open_immediate({
         request_id = "test-fs",
         result_path = nil,
@@ -140,11 +140,11 @@ describe("neph.api.review", function()
         path = "/tmp/test-fs.lua",
         content = "test content",
       })
-      
+
       -- Restore mocks
       ui.open_diff_tab = orig_open
       ui.start_review = orig_start
-      
+
       assert.is_table(result)
       assert.is_true(result.ok)
     end)
@@ -162,7 +162,7 @@ describe("neph.api.review", function()
         local envelope = session.finalize()
         on_done(envelope)
       end
-      
+
       local result = review._open_immediate({
         request_id = "test-cli",
         result_path = "/tmp/test-cli-result.json",
@@ -170,11 +170,11 @@ describe("neph.api.review", function()
         path = "/tmp/test-cli.lua",
         content = "test content",
       })
-      
+
       -- Restore mocks
       ui.open_diff_tab = orig_open
       ui.start_review = orig_start
-      
+
       assert.is_table(result)
       assert.is_true(result.ok)
     end)
@@ -192,7 +192,7 @@ describe("neph.api.review", function()
         local envelope = session.finalize()
         on_done(envelope)
       end
-      
+
       local result = review._open_immediate({
         request_id = "test-ext",
         result_path = "/tmp/test-ext-result.json",
@@ -200,11 +200,11 @@ describe("neph.api.review", function()
         path = "/tmp/test-ext.lua",
         content = "test content",
       })
-      
+
       -- Restore mocks
       ui.open_diff_tab = orig_open
       ui.start_review = orig_start
-      
+
       assert.is_table(result)
       assert.is_true(result.ok)
     end)

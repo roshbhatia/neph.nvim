@@ -45,10 +45,10 @@ function M.enqueue(params)
     return
   end
   processing = true
-  
+
   if not active then
     active = params
-    log.debug("review_queue", "opening immediately: %s",  params.path)
+    log.debug("review_queue", "opening immediately: %s", params.path)
     if open_fn then
       open_fn(params)
     end
@@ -65,7 +65,7 @@ function M.enqueue(params)
       vim.notify(string.format("Review queued: %s%s — %d pending", rel, agent_str, #queue), vim.log.levels.INFO)
     end
   end
-  
+
   processing = false
 end
 
@@ -79,7 +79,7 @@ function M.on_complete(request_id)
     return
   end
   processing = true
-  
+
   if active and active.request_id == request_id then
     log.debug("review_queue", "completed: %s", active.path)
     active = nil
@@ -95,7 +95,7 @@ function M.on_complete(request_id)
       end)
     end
   end
-  
+
   processing = false
 end
 

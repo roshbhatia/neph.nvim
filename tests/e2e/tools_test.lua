@@ -228,7 +228,7 @@ return function(t)
       local root = tools.get_root()
       local tmp_src = root .. "/test_symlink_source.txt"
       local tmp_dst = root .. "/test_symlink_dest.txt"
-      
+
       vim.fn.writefile({ "test" }, tmp_src)
 
       local ok, err = tools.install_symlink(tmp_src, tmp_dst)

@@ -126,7 +126,7 @@ describe("neph.internal.bus", function()
 
       bus.register({ name = "pi", channel = 5 })
       bus.register({ name = "amp", channel = 6 })
-      
+
       -- Manually trigger health check logic
       local channels = bus._get_channels()
       local dead = {}
@@ -136,11 +136,11 @@ describe("neph.internal.bus", function()
           table.insert(dead, name)
         end
       end
-      
+
       -- Should detect dead channel but not modify table during iteration
       assert.are.equal(1, #dead)
       assert.are.equal("pi", dead[1])
-      
+
       vim.rpcnotify = orig_rpcnotify
     end)
 
@@ -157,7 +157,7 @@ describe("neph.internal.bus", function()
       bus.register({ name = "pi", channel = 5 })
       bus.register({ name = "amp", channel = 6 })
       bus.register({ name = "opencode", channel = 7 })
-      
+
       -- Test collection-first approach
       local channels = bus._get_channels()
       local dead = {}
@@ -167,12 +167,12 @@ describe("neph.internal.bus", function()
           table.insert(dead, name)
         end
       end
-      
+
       -- Should collect both dead channels
       assert.are.equal(2, #dead)
       assert.is_true((dead[1] == "pi" or dead[2] == "pi"))
       assert.is_true((dead[1] == "amp" or dead[2] == "amp"))
-      
+
       vim.rpcnotify = orig_rpcnotify
     end)
   end)
