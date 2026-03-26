@@ -117,7 +117,8 @@ return function(t)
       local test_file = vim.fn.tempname() .. ".lua"
       vim.fn.writefile({ "same_content" }, test_file)
 
-      local state = spawn_review(review_cmd, nvim_socket, vim.json.encode({ path = test_file, content = "same_content" }))
+      local state =
+        spawn_review(review_cmd, nvim_socket, vim.json.encode({ path = test_file, content = "same_content" }))
 
       t.wait_for(function()
         return state.exited
@@ -168,7 +169,8 @@ return function(t)
       local test_file = vim.fn.tempname() .. ".lua"
       vim.fn.writefile({ "old_content" }, test_file)
 
-      local state = spawn_review(review_cmd, nvim_socket, vim.json.encode({ path = test_file, content = "new_content" }))
+      local state =
+        spawn_review(review_cmd, nvim_socket, vim.json.encode({ path = test_file, content = "new_content" }))
 
       t.wait_for(function()
         return vim.fn.tabpagenr("$") > 1
