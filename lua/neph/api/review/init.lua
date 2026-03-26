@@ -40,8 +40,10 @@ vim.api.nvim_create_autocmd("VimLeavePre", {
     end
     local ar = active_review
     pcall(ar.session.reject_all_remaining, "Neovim exiting")
-    local ok, envelope = pcall(ar.session.finalize)
-    if ok then
+    local ok, envelope = pcall(function()
+      return ar.session.finalize()
+    end)
+    if ok and envelope then
       if ar.mode == "post_write" then
         pcall(M._apply_post_write, ar.file_path, envelope, ar.old_lines)
       end

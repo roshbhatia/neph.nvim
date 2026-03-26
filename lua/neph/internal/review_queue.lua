@@ -77,12 +77,17 @@ function M.on_complete(request_id)
 
   -- Pop next from queue
   if #queue > 0 then
-    active = table.remove(queue, 1)
-    log.debug("review_queue", "opening next: %s (remaining=%d)", active.path, #queue)
-    if open_fn then
-      vim.schedule(function()
-        open_fn(active)
-      end)
+    local next_review = table.remove(queue, 1)
+    if next_review then
+      active = next_review
+      log.debug("review_queue", "opening next: %s (remaining=%d)", active.path, #queue)
+      if open_fn then
+        vim.schedule(function()
+          if active then
+            open_fn(active)
+          end
+        end)
+      end
     end
   end
 end

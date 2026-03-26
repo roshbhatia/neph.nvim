@@ -461,6 +461,85 @@ describe("neph.session boundary", function()
     end)
   end)
 
+  describe("ready queue drain pcall protection", function()
+    it("continues draining even if one send errors", function()
+      local send_calls = {}
+      local call_num = 0
+      fresh_session({
+        open = function(_, cfg, _)
+          return { pane_id = 1, cmd = cfg.cmd, cwd = "/tmp", ready = false }
+        end,
+        send = function(_, text, _)
+          call_num = call_num + 1
+          if call_num == 1 then
+            error("first send exploded")
+          end
+          table.insert(send_calls, text)
+        end,
+      })
+      register_agent("drain_pcall")
+
+      -- Manually wire up internal state via session.open + captured td
+      local captured_td = nil
+      local be2 = helpers.make_stub_backend({
+        open = function(_, cfg, _)
+          captured_td = { pane_id = 1, cmd = cfg.cmd, cwd = "/tmp", ready = false }
+          return captured_td
+        end,
+        send = function(_, text, _)
+          call_num = call_num + 1
+          if call_num == 1 then
+            error("first send exploded")
+          end
+          table.insert(send_calls, text)
+        end,
+      })
+
+      package.loaded["neph.session"] = nil
+      package.loaded["neph.internal.session"] = nil
+      session = require("neph.internal.session")
+      session.setup({ env = {} }, be2)
+      register_agent("drain_pcall2")
+
+      session.open("drain_pcall2")
+
+      -- Queue two items while not ready
+      session.ensure_active_and_send("first")
+      session.ensure_active_and_send("second")
+
+      -- Fire on_ready — first send will error, second should still be attempted
+      assert.is_not_nil(captured_td)
+      captured_td.ready = true
+      assert.has_no_errors(function()
+        captured_td.on_ready()
+      end)
+      -- second item should have been sent (call_num == 2, first errored, second succeeded)
+      assert.are.equal(1, #send_calls)
+      assert.are.equal("second", send_calls[1])
+    end)
+  end)
+
+  describe("send() with stale td (pane_id and win both nil)", function()
+    it("returns without crashing when both handles are nil", function()
+      local send_called = false
+      fresh_session({
+        open = function(_, cfg, _)
+          return { pane_id = nil, win = nil, cmd = cfg.cmd, cwd = "/tmp", ready = true }
+        end,
+        send = function()
+          send_called = true
+        end,
+      })
+      register_agent("no_handles")
+
+      session.open("no_handles")
+      assert.has_no_errors(function()
+        session.send("no_handles", "hello", { submit = true })
+      end)
+      assert.is_false(send_called)
+    end)
+  end)
+
   describe("contract violations", function()
     it("send() with unknown termname returns silently (no crash, no error)", function()
       fresh_session()

@@ -42,17 +42,21 @@ function M.setup(opts, backend_mod)
     vim.api.nvim_create_autocmd({ "CursorHold", "FocusGained" }, {
       group = augroup,
       callback = function()
-        for name, td in pairs(terminals) do
-          if not backend.is_visible(td) then
-            td.pane_id = nil
-            td.win = nil
-            td.stale_since = os.time()
-            vim.g[name .. "_active"] = nil
-            if active_terminal == name then
-              active_terminal = nil
+        local keys = vim.tbl_keys(terminals)
+        for _, name in ipairs(keys) do
+          local td = terminals[name]
+          if td then
+            if not backend.is_visible(td) then
+              td.pane_id = nil
+              td.win = nil
+              td.stale_since = os.time()
+              vim.g[name .. "_active"] = nil
+              if active_terminal == name then
+                active_terminal = nil
+              end
+            elseif td.stale_since then
+              td.stale_since = nil
             end
-          elseif td.stale_since then
-            td.stale_since = nil
           end
         end
       end,
@@ -171,7 +175,7 @@ function M.open(termname)
       local queue = ready_queue[termname]
       if queue then
         for _, entry in ipairs(queue) do
-          M.send(termname, entry.text, entry.opts)
+          pcall(M.send, termname, entry.text, entry.opts)
         end
         ready_queue[termname] = nil
       end
@@ -292,6 +296,9 @@ function M.send(termname, text, opts)
   -- Default send: backend.send (WezTerm, Zellij) or native terminal via chansend
   if td.stale_since then
     log.debug("session", "send: %s skipped — terminal marked stale", termname)
+    return
+  end
+  if not td.pane_id and not td.win then
     return
   end
   if backend.send then
