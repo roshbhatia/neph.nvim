@@ -21,19 +21,54 @@ function M.is_file(buf)
 end
 
 -- ---------------------------------------------------------------------------
--- Git root (cached, invalidated on DirChanged)
+-- Git root (cached, invalidated on DirChanged, pre-warmed in background)
 -- ---------------------------------------------------------------------------
 
 ---@type table<string,string|false>
 local git_root_cache = {}
 
+--- Populate the git root cache for *cwd* without blocking the event loop.
+---@param cwd string
+local function prewarm_git_root(cwd)
+  if git_root_cache[cwd] ~= nil then
+    return
+  end
+  vim.system(
+    { "git", "rev-parse", "--show-toplevel" },
+    { cwd = cwd, text = true },
+    vim.schedule_wrap(function(obj)
+      -- Only store if still uncached (avoid racing with a synchronous call)
+      if git_root_cache[cwd] == nil then
+        if obj.code == 0 then
+          local root = vim.trim(obj.stdout or "")
+          git_root_cache[cwd] = (root ~= "") and root or false
+        else
+          git_root_cache[cwd] = false
+        end
+      end
+    end)
+  )
+end
+
 vim.api.nvim_create_autocmd("DirChanged", {
   callback = function()
     git_root_cache = {}
+    prewarm_git_root(vim.fn.getcwd())
+  end,
+})
+
+vim.api.nvim_create_autocmd("BufEnter", {
+  callback = function()
+    local ok, cwd = pcall(vim.fn.getcwd)
+    if ok and cwd and cwd ~= "" then
+      prewarm_git_root(cwd)
+    end
   end,
 })
 
 --- Get the git root for the current working directory (cached).
+--- The first call per directory may block briefly while git runs; subsequent
+--- calls are instant (cache hit) because BufEnter pre-warms the cache.
 ---@return string|nil
 function M.get_git_root()
   local cwd = vim.fn.getcwd()
@@ -41,16 +76,28 @@ function M.get_git_root()
     return git_root_cache[cwd] or nil
   end
 
-  local root = vim.fn.system("git rev-parse --show-toplevel 2>/dev/null")
-  if vim.v.shell_error ~= 0 then
+  -- Cache miss – run synchronously so the caller gets an immediate result.
+  -- This path is rarely hit in practice because BufEnter pre-warms the cache.
+  local obj = vim.system({ "git", "rev-parse", "--show-toplevel" }, { cwd = cwd, text = true }):wait()
+  if obj.code ~= 0 then
     git_root_cache[cwd] = false
     return nil
   end
 
-  root = vim.trim(root)
-
-  git_root_cache[cwd] = (root and root ~= "") and root or false
+  local root = vim.trim(obj.stdout or "")
+  git_root_cache[cwd] = (root ~= "") and root or false
   return git_root_cache[cwd] or nil
+end
+
+--- Exposed for testing: return a reference to the internal cache table.
+---@return table<string,string|false>
+function M._git_root_cache()
+  return git_root_cache
+end
+
+--- Exposed for testing: clear the internal cache.
+function M._clear_git_root_cache()
+  git_root_cache = {}
 end
 
 --- Make *path* relative to the git root (if inside one).
