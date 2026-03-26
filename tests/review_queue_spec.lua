@@ -253,4 +253,61 @@ describe("neph.internal.review_queue", function()
       assert.is_nil(review_queue.get_active())
     end)
   end)
+
+  describe("rapid review queue burst", function()
+    it("first enqueue triggers open immediately (active review set)", function()
+      for i = 1, 10 do
+        review_queue.enqueue(make_request("burst-" .. i, "/tmp/burst" .. i .. ".lua", "claude"))
+      end
+
+      -- First opened immediately
+      assert.is_not_nil(review_queue.get_active())
+      assert.are.equal("burst-1", review_queue.get_active().request_id)
+      assert.are.equal(1, #opened_params)
+    end)
+
+    it("remaining 9 are queued after burst of 10", function()
+      for i = 1, 10 do
+        review_queue.enqueue(make_request("bq-" .. i, "/tmp/bq" .. i .. ".lua", "claude"))
+      end
+
+      assert.are.equal(9, review_queue.count())
+    end)
+
+    it("total never exceeds 10 during burst of 10", function()
+      local max_seen = 0
+      for i = 1, 10 do
+        review_queue.enqueue(make_request("bt-" .. i, "/tmp/bt" .. i .. ".lua", "claude"))
+        local t = review_queue.total()
+        if t > max_seen then
+          max_seen = t
+        end
+      end
+
+      assert.is_true(max_seen <= 10)
+    end)
+
+    it("completing active review decrements total", function()
+      for i = 1, 10 do
+        review_queue.enqueue(make_request("bc-" .. i, "/tmp/bc" .. i .. ".lua", "claude"))
+      end
+
+      assert.are.equal(10, review_queue.total())
+      local active = review_queue.get_active()
+      review_queue.on_complete(active.request_id)
+      -- total decreased (next may be promoted via vim.schedule, but pending list shrinks)
+      assert.is_true(review_queue.total() <= 9)
+    end)
+
+    it("clearing all 10 for the agent results in count 0 and active nil", function()
+      for i = 1, 10 do
+        review_queue.enqueue(make_request("ba-" .. i, "/tmp/ba" .. i .. ".lua", "claude"))
+      end
+
+      review_queue.clear_agent("claude")
+
+      assert.are.equal(0, review_queue.count())
+      assert.is_nil(review_queue.get_active())
+    end)
+  end)
 end)

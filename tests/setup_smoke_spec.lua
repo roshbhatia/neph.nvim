@@ -137,6 +137,76 @@ describe("socket auto-creation", function()
   end)
 end)
 
+describe("setup idempotency with active sessions", function()
+  local neph, session_mod
+
+  before_each(function()
+    package.loaded["neph"] = nil
+    package.loaded["neph.init"] = nil
+    package.loaded["neph.internal.agents"] = nil
+    package.loaded["neph.internal.session"] = nil
+    neph = require("neph")
+  end)
+
+  it("second setup with different config does not crash", function()
+    local agent_a = make_valid_agent("idem_a")
+    local stub = make_stub_backend()
+
+    neph.setup({ agents = { agent_a }, backend = stub })
+
+    assert.has_no.errors(function()
+      neph.setup({ agents = { agent_a }, backend = stub, env = { FOO = "bar" } })
+    end)
+  end)
+
+  it("after second setup old sessions table is empty (no open sessions were created)", function()
+    local agent_a = make_valid_agent("idem_b")
+    local stub = make_stub_backend()
+
+    neph.setup({ agents = { agent_a }, backend = stub })
+
+    -- Re-setup with a fresh session module reload
+    package.loaded["neph.internal.session"] = nil
+    neph.setup({ agents = { agent_a }, backend = stub })
+
+    session_mod = require("neph.internal.session")
+    local all = session_mod.get_all()
+    assert.are.equal(0, vim.tbl_count(all))
+  end)
+
+  it("after second setup new sessions can be opened", function()
+    local agent_a = make_valid_agent("idem_c")
+    local open_count = 0
+    local stub = make_stub_backend({
+      open = function(_, cfg, _)
+        open_count = open_count + 1
+        return { pane_id = open_count, cmd = cfg.cmd, cwd = "/tmp", ready = true }
+      end,
+    })
+
+    neph.setup({ agents = { agent_a }, backend = stub })
+    neph.setup({ agents = { agent_a }, backend = stub })
+
+    session_mod = require("neph.internal.session")
+    assert.has_no.errors(function()
+      session_mod.open("idem_c")
+    end)
+    assert.are.equal("idem_c", session_mod.get_active())
+  end)
+
+  it("config is updated to new values after second setup", function()
+    local agent_a = make_valid_agent("idem_d")
+    local stub = make_stub_backend()
+
+    neph.setup({ agents = { agent_a }, backend = stub, env = { FIRST = "yes" } })
+    neph.setup({ agents = { agent_a }, backend = stub, env = { SECOND = "yes" } })
+
+    local cfg = require("neph.config").current
+    assert.are.equal("yes", cfg.env and cfg.env.SECOND)
+    assert.is_nil(cfg.env and cfg.env.FIRST)
+  end)
+end)
+
 describe("setup negative paths", function()
   local neph
 

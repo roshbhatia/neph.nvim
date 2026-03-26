@@ -240,6 +240,114 @@ describe("neph.session boundary", function()
     end)
   end)
 
+  describe("kill agent during active review", function()
+    it("clears review queue for the killed agent", function()
+      fresh_session({
+        open = function(_, cfg, _)
+          return { pane_id = 1, cmd = cfg.cmd, cwd = "/tmp", ready = true }
+        end,
+      })
+      register_agent("review_kill")
+
+      -- Reset and wire review_queue with a stub open_fn
+      package.loaded["neph.internal.review_queue"] = nil
+      local rq = require("neph.internal.review_queue")
+      rq.set_open_fn(function(_) end)
+
+      -- Seed queue state: one active, one queued for the same agent
+      rq.enqueue({
+        request_id = "active-1",
+        path = "/tmp/a.lua",
+        agent = "review_kill",
+        result_path = nil,
+        channel_id = 0,
+        content = "",
+      })
+      rq.enqueue({
+        request_id = "queued-1",
+        path = "/tmp/b.lua",
+        agent = "review_kill",
+        result_path = nil,
+        channel_id = 0,
+        content = "",
+      })
+      assert.are.equal(1, rq.count())
+      assert.is_not_nil(rq.get_active())
+
+      session.open("review_kill")
+      session.kill_session("review_kill")
+
+      -- Queue should be cleared for this agent
+      assert.are.equal(0, rq.count())
+      assert.is_nil(rq.get_active())
+    end)
+
+    it("kill with no pending reviews does not crash", function()
+      fresh_session({
+        open = function(_, cfg, _)
+          return { pane_id = 1, cmd = cfg.cmd, cwd = "/tmp", ready = true }
+        end,
+      })
+      register_agent("no_review_kill")
+
+      package.loaded["neph.internal.review_queue"] = nil
+      local rq = require("neph.internal.review_queue")
+      rq.set_open_fn(function(_) end)
+
+      session.open("no_review_kill")
+      assert.has_no_errors(function()
+        session.kill_session("no_review_kill")
+      end)
+    end)
+
+    it("session.exists returns false after kill", function()
+      fresh_session({
+        open = function(_, cfg, _)
+          return { pane_id = 1, cmd = cfg.cmd, cwd = "/tmp", ready = true }
+        end,
+      })
+      register_agent("exists_kill")
+
+      session.open("exists_kill")
+      assert.is_true(session.exists("exists_kill"))
+      session.kill_session("exists_kill")
+      assert.is_false(session.exists("exists_kill"))
+    end)
+
+    it("get_active returns nil after killing the active session", function()
+      fresh_session({
+        open = function(_, cfg, _)
+          return { pane_id = 1, cmd = cfg.cmd, cwd = "/tmp", ready = true }
+        end,
+      })
+      register_agent("active_kill")
+
+      session.open("active_kill")
+      assert.are.equal("active_kill", session.get_active())
+      session.kill_session("active_kill")
+      assert.is_nil(session.get_active())
+    end)
+
+    it("re-opening the same agent after kill succeeds", function()
+      local open_count = 0
+      fresh_session({
+        open = function(_, cfg, _)
+          open_count = open_count + 1
+          return { pane_id = open_count, cmd = cfg.cmd, cwd = "/tmp", ready = true }
+        end,
+      })
+      register_agent("reopen_kill")
+
+      session.open("reopen_kill")
+      session.kill_session("reopen_kill")
+      session.open("reopen_kill")
+
+      assert.are.equal(2, open_count)
+      assert.is_true(session.exists("reopen_kill"))
+      assert.are.equal("reopen_kill", session.get_active())
+    end)
+  end)
+
   describe("fault injection", function()
     it("handles backend.send() that throws an error", function()
       fresh_session({
