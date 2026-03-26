@@ -359,7 +359,9 @@ function M.open_manual(file_path)
     return M._open_immediate(params)
   end
 
-  review_queue.enqueue(params)
+  -- Manual reviews jump to the front so user-initiated requests aren't
+  -- buried behind pending agent reviews.
+  review_queue.enqueue_front(params)
   return { ok = true, msg = "Review enqueued" }
 end
 

@@ -206,6 +206,49 @@ function M.cancel_path(path)
   end
 end
 
+--- Enqueue a review at the front of the queue (user-initiated reviews).
+--- If nothing is active, opens immediately. Otherwise jumps ahead of any
+--- pending agent reviews so the user sees their file next.
+---@param params neph.ReviewRequest
+function M.enqueue_front(params)
+  if not open_fn then
+    vim.notify("Neph: review UI not initialised (set_open_fn not called)", vim.log.levels.WARN)
+    return
+  end
+
+  local gate = require("neph.internal.gate")
+  local gate_state = gate.get()
+
+  if gate_state == "hold" then
+    table.insert(queue, 1, params)
+    vim.notify(string.format("Neph: review held — %d pending", #queue), vim.log.levels.INFO)
+    return
+  elseif gate_state == "bypass" then
+    local ok, review = pcall(require, "neph.api.review")
+    if ok and review._bypass_accept then
+      review._bypass_accept(params)
+    end
+    return
+  end
+
+  if not active then
+    active = params
+    log.debug("review_queue", "opening immediately (front): %s", params.path)
+    open_fn(params)
+  else
+    table.insert(queue, 1, params)
+    log.debug("review_queue", "queued at front: %s (pending=%d)", params.path, #queue)
+    local config = require("neph.config").current
+    local review_cfg = type(config.review) == "table" and config.review or {}
+    if review_cfg.pending_notify ~= false then
+      vim.notify(
+        string.format("Review queued (next): %s — %d pending", vim.fn.fnamemodify(params.path, ":."), #queue),
+        vim.log.levels.INFO
+      )
+    end
+  end
+end
+
 --- Drain the held queue after a gate release.
 --- Triggers open_fn for the head item if nothing is currently active.
 function M.drain()

@@ -97,22 +97,15 @@ function M.setup(opts)
     end,
   })
 
-  -- Register :NephReview command only when review provider is enabled
-  if require("neph.internal.review_provider").is_enabled() then
-    vim.api.nvim_create_user_command("NephReview", function(cmd_opts)
-      local path = cmd_opts.fargs[1]
-      require("neph.api").review(path)
-    end, {
-      nargs = "?",
-      complete = "file",
-      desc = "Open interactive review of buffer vs disk changes",
-    })
-  end
-
-  -- Register :NephTools stub (moved to neph CLI)
-  vim.api.nvim_create_user_command("NephTools", function()
-    vim.notify("NephTools has moved to the neph CLI. Use `neph integration` instead.", vim.log.levels.WARN)
-  end, { nargs = "*" })
+  -- :NephReview — always register; open_manual checks per-agent provider at call time
+  vim.api.nvim_create_user_command("NephReview", function(cmd_opts)
+    local path = cmd_opts.fargs[1]
+    require("neph.api").review(path)
+  end, {
+    nargs = "?",
+    complete = "file",
+    desc = "Open interactive review of buffer vs disk changes",
+  })
 
   -- Register :NephInstall command
   vim.api.nvim_create_user_command("NephInstall", function(cmd_opts)
