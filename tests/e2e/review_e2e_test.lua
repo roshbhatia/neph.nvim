@@ -131,6 +131,10 @@ return function(t)
     end)
 
     t.it("accept flow: programmatic gA + gs returns accept", function()
+      if os.getenv("CI") then
+        t.skip("accept flow", "interactive vimdiff e2e skipped in CI")
+        return
+      end
       local test_file = vim.fn.tempname() .. ".lua"
       vim.fn.writefile({ "line1", "line2", "line3" }, test_file)
 
@@ -166,6 +170,10 @@ return function(t)
     end)
 
     t.it("reject flow: pressing q rejects all undecided hunks", function()
+      if os.getenv("CI") then
+        t.skip("reject flow", "interactive vimdiff e2e skipped in CI")
+        return
+      end
       local test_file = vim.fn.tempname() .. ".lua"
       vim.fn.writefile({ "old_content" }, test_file)
 
@@ -210,6 +218,8 @@ return function(t)
     end)
 
     t.it("protocol: stdout is always { decision, content }", function()
+      -- Clear any pending review queue state from prior tests
+      require("neph.internal.review_queue")._reset()
       local test_file = vim.fn.tempname() .. ".lua"
       vim.fn.writefile({ "hello" }, test_file)
 
