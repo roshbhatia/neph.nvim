@@ -8,8 +8,6 @@ return {
   type = "hook",
   integration_group = "harness",
   tools = {
-    symlinks = {
-      { src = "cursor/hooks.json", dst = "~/.cursor/hooks.json" },
-    },
+    { type = "symlink", src = "tools/cursor/hooks.json", dst = "~/.cursor/hooks.json" },
   },
 }

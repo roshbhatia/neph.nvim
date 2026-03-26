@@ -37,6 +37,52 @@ local dispatch = {
   ["ui.notify"] = function(p)
     return require("neph.api.ui").notify(p)
   end,
+  ["tools.status"] = function(_)
+    local agents = require("neph.internal.agents").get_all()
+    local root = require("neph.internal.tools")._plugin_root()
+    return require("neph.internal.tools").status(root, agents)
+  end,
+  ["tools.install"] = function(p)
+    local agents = require("neph.internal.agents").get_all()
+    local root = require("neph.internal.tools")._plugin_root()
+    for _, agent in ipairs(agents) do
+      if agent.name == p.name then
+        require("neph.internal.tools").install_agent(root, agent)
+        return { ok = true }
+      end
+    end
+    return { ok = false, error = { code = "NOT_FOUND", message = p.name } }
+  end,
+  ["tools.install_all"] = function(_)
+    local agents = require("neph.internal.agents").get_all()
+    local root = require("neph.internal.tools")._plugin_root()
+    for _, agent in ipairs(agents) do
+      require("neph.internal.tools").install_agent(root, agent)
+    end
+    return { ok = true }
+  end,
+  ["tools.uninstall"] = function(p)
+    local agents = require("neph.internal.agents").get_all()
+    local root = require("neph.internal.tools")._plugin_root()
+    for _, agent in ipairs(agents) do
+      if agent.name == p.name and agent.tools then
+        for _, spec in ipairs(agent.tools) do
+          if spec.type == "symlink" then
+            local dst = vim.fn.expand(spec.dst)
+            local stat = vim.uv.fs_lstat(dst)
+            if stat then os.remove(dst) end
+          end
+        end
+        return { ok = true }
+      end
+    end
+    return { ok = false, error = { code = "NOT_FOUND", message = p.name } }
+  end,
+  ["tools.preview"] = function(_)
+    local agents = require("neph.internal.agents").get_all()
+    local root = require("neph.internal.tools")._plugin_root()
+    return require("neph.internal.tools").preview(root, agents)
+  end,
 }
 
 function M.request(method, params)
