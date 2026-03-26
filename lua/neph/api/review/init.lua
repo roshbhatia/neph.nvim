@@ -170,6 +170,7 @@ function M._open_immediate(params)
   local ui_state = ui.open_diff_tab(file_path, old_lines, new_lines, { mode = mode, request_id = request_id })
 
   local result_written = false
+  local augroup_name = "NephReview_" .. request_id
 
   local function finish_review(envelope)
     if result_written then
@@ -177,6 +178,7 @@ function M._open_immediate(params)
     end
     result_written = true
     active_review = nil
+    pcall(vim.api.nvim_del_augroup_by_name, augroup_name)
 
     if mode == "post_write" or mode == "manual" then
       M._apply_post_write(file_path, envelope, old_lines)
@@ -204,12 +206,15 @@ function M._open_immediate(params)
     finish_review(envelope)
   end)
 
-  -- Handle manual tab close
+  -- Handle manual tab close; use a one-shot augroup so it doesn't accumulate
+  local aug = vim.api.nvim_create_augroup(augroup_name, { clear = true })
   vim.api.nvim_create_autocmd("TabClosed", {
+    group = aug,
     callback = function()
       if vim.api.nvim_tabpage_is_valid(ui_state.tab) then
         return -- not our tab; keep listening
       end
+      vim.api.nvim_del_augroup_by_name(augroup_name)
       if result_written then
         return
       end
@@ -373,6 +378,9 @@ function M._bypass_accept(params)
 end
 
 function M.write_result(path, channel_id, request_id, envelope)
+  if not envelope then
+    return
+  end
   envelope.request_id = request_id
 
   if path then
