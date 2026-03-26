@@ -1,3 +1,4 @@
+---@diagnostic disable: undefined-global
 local engine = require("neph.api.review.engine")
 
 describe("neph.api.review.engine", function()
@@ -535,6 +536,153 @@ describe("neph.api.review.engine", function()
         end
       end
       assert.are.equal(1, found_reasons)
+    end)
+  end)
+end)
+
+describe("neph.api.review.engine boundary tests", function()
+  describe("empty file boundaries", function()
+    it("pure insertion at BOF: compute_hunks({}, new_lines) yields 1 hunk", function()
+      local hunks = engine.compute_hunks({}, { "line1", "line2" })
+      assert.are.equal(1, #hunks)
+    end)
+
+    it("pure deletion: compute_hunks(old_lines, {}) yields 1 hunk", function()
+      local hunks = engine.compute_hunks({ "line1", "line2" }, {})
+      assert.are.equal(1, #hunks)
+    end)
+
+    it("both empty: compute_hunks({}, {}) yields 0 hunks", function()
+      local hunks = engine.compute_hunks({}, {})
+      assert.are.equal(0, #hunks)
+    end)
+
+    it("apply_decisions with all-empty inputs returns empty string without crash", function()
+      local result = engine.apply_decisions({}, {}, {})
+      assert.are.equal("", result)
+    end)
+
+    it("create_session with empty old lines does not crash", function()
+      local session = engine.create_session({}, { "line1" })
+      assert.is_not_nil(session)
+      assert.are.equal(1, session.get_total_hunks())
+    end)
+
+    it("accept() on session with 0 hunks returns false", function()
+      local session = engine.create_session({}, {})
+      assert.are.equal(0, session.get_total_hunks())
+      assert.is_true(session.is_done())
+      assert.is_false(session.accept())
+    end)
+  end)
+
+  describe("whitespace-only diffs", function()
+    it("trailing space added is detected as a hunk", function()
+      local hunks = engine.compute_hunks({ "a" }, { "a " })
+      assert.are.equal(1, #hunks)
+    end)
+
+    it("leading space removed is detected as a hunk", function()
+      local hunks = engine.compute_hunks({ "  a" }, { "a" })
+      assert.are.equal(1, #hunks)
+    end)
+
+    it("tab removal is detected as a hunk", function()
+      local hunks = engine.compute_hunks({ "a\t" }, { "a" })
+      assert.are.equal(1, #hunks)
+    end)
+  end)
+
+  describe("single line files", function()
+    it("single line change yields 1 hunk", function()
+      local hunks = engine.compute_hunks({ "x" }, { "y" })
+      assert.are.equal(1, #hunks)
+    end)
+
+    it("identical single line yields 0 hunks", function()
+      local hunks = engine.compute_hunks({ "x" }, { "x" })
+      assert.are.equal(0, #hunks)
+    end)
+
+    it("apply_decisions single accept produces the new line", function()
+      local result = engine.apply_decisions({ "x" }, { "y" }, { { index = 1, decision = "accept" } })
+      assert.are.equal("y", result)
+    end)
+
+    it("apply_decisions single reject keeps the old line", function()
+      local result = engine.apply_decisions({ "x" }, { "y" }, { { index = 1, decision = "reject" } })
+      assert.are.equal("x", result)
+    end)
+  end)
+
+  describe("index bounds", function()
+    it("create_session with 1000-line file does not crash", function()
+      local old = {}
+      local new = {}
+      for i = 1, 1000 do
+        old[i] = "line_" .. i
+        new[i] = "line_" .. i
+      end
+      -- Mutate one line to have at least 1 hunk
+      new[500] = "changed_500"
+      local session = engine.create_session(old, new)
+      assert.is_not_nil(session)
+      assert.are.equal(1, session.get_total_hunks())
+    end)
+
+    it("accept_at beyond hunk count returns false without crash", function()
+      local old = { "a", "sep", "b", "sep", "c", "sep", "d", "sep", "e" }
+      local new = { "A", "sep", "B", "sep", "C", "sep", "D", "sep", "E" }
+      local session = engine.create_session(old, new)
+      assert.are.equal(5, session.get_total_hunks())
+      assert.is_false(session.accept_at(999))
+    end)
+
+    it("reject_at index 0 returns false without crash", function()
+      local session = engine.create_session({ "A" }, { "B" })
+      assert.is_false(session.reject_at(0))
+    end)
+
+    it("accept_at negative index returns false without crash", function()
+      local session = engine.create_session({ "A" }, { "B" })
+      assert.is_false(session.accept_at(-1))
+    end)
+  end)
+
+  describe("build_envelope boundaries", function()
+    it("all hunks accepted → envelope.decision = 'accept'", function()
+      local decisions = {
+        { index = 1, decision = "accept" },
+        { index = 2, decision = "accept" },
+        { index = 3, decision = "accept" },
+      }
+      local envelope = engine.build_envelope(decisions, "content")
+      assert.are.equal("accept", envelope.decision)
+    end)
+
+    it("all hunks rejected → envelope.decision = 'reject'", function()
+      local decisions = {
+        { index = 1, decision = "reject" },
+        { index = 2, decision = "reject" },
+      }
+      local envelope = engine.build_envelope(decisions, "content")
+      assert.are.equal("reject", envelope.decision)
+    end)
+
+    it("mixed decisions → envelope.decision = 'partial'", function()
+      local decisions = {
+        { index = 1, decision = "accept" },
+        { index = 2, decision = "reject" },
+      }
+      local envelope = engine.build_envelope(decisions, "content")
+      assert.are.equal("partial", envelope.decision)
+    end)
+
+    it("zero decisions → envelope.decision = 'accept'", function()
+      local envelope = engine.build_envelope({}, "some content")
+      assert.are.equal("accept", envelope.decision)
+      assert.are.equal("some content", envelope.content)
+      assert.are.equal("review/v1", envelope.schema)
     end)
   end)
 end)

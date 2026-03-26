@@ -398,3 +398,113 @@ describe("neph.api.review.force_cleanup", function()
     review.force_cleanup("wrong-agent")
   end)
 end)
+
+describe("neph.api.review._open_immediate large file handling", function()
+  local review
+
+  before_each(function()
+    reset_modules()
+    package.loaded["neph.internal.review_queue"] = make_stub_queue()
+    package.loaded["neph.internal.review_provider"] = make_stub_provider(true)
+    package.loaded["neph.api.review.ui"] = make_stub_ui()
+    package.loaded["neph.config"] = { current = { review = { queue = { enable = false } } } }
+  end)
+
+  it("_open_immediate with 10,000-line file does not crash and returns a result", function()
+    -- Build a 10,000-line stub engine that reports 0 hunks (so we avoid the UI path)
+    local lines = {}
+    for i = 1, 10000 do
+      lines[i] = "line_" .. i
+    end
+
+    local called_with_old = nil
+    local called_with_new = nil
+    local stub_eng = {
+      build_envelope = function(_, content)
+        return { schema = "review/v1", decision = "accept", content = content or "" }
+      end,
+      create_session = function(old, new)
+        called_with_old = old
+        called_with_new = new
+        local session = {}
+        session.get_total_hunks = function()
+          return 0
+        end
+        session.finalize = function()
+          return { schema = "review/v1", decision = "accept", content = "" }
+        end
+        session.reject_all_remaining = function() end
+        return session
+      end,
+    }
+    package.loaded["neph.api.review.engine"] = stub_eng
+    local stub_queue = make_stub_queue()
+    package.loaded["neph.internal.review_queue"] = stub_queue
+    review = require("neph.api.review")
+
+    -- Write a 10,000-line temp file
+    local tmp = os.tmpname()
+    local f = io.open(tmp, "w")
+    for i = 1, 10000 do
+      f:write("line_" .. i .. "\n")
+    end
+    f:close()
+
+    local result = review._open_immediate({
+      request_id = "large-file-req",
+      result_path = nil,
+      channel_id = nil,
+      path = tmp,
+      content = table.concat(lines, "\n"),
+    })
+    os.remove(tmp)
+
+    assert.is_not_nil(result)
+    assert.is_true(result.ok)
+    -- Session was created (engine was called)
+    assert.is_not_nil(called_with_old)
+    assert.is_not_nil(called_with_new)
+    assert.are.equal(10000, #called_with_old)
+  end)
+end)
+
+describe("neph.api.review._open_immediate path edge cases", function()
+  local review
+
+  before_each(function()
+    reset_modules()
+    package.loaded["neph.internal.review_queue"] = make_stub_queue()
+    package.loaded["neph.internal.review_provider"] = make_stub_provider(true)
+    package.loaded["neph.api.review.ui"] = make_stub_ui()
+    package.loaded["neph.config"] = { current = { review = { queue = { enable = false } } } }
+    package.loaded["neph.api.review.engine"] = make_stub_engine()
+    review = require("neph.api.review")
+  end)
+
+  it("path with spaces is handled without error", function()
+    -- The path does not exist on disk; _open_immediate will use empty old_lines.
+    -- With stub engine returning 0 hunks, it should return ok=true / "No changes".
+    local result = review._open_immediate({
+      request_id = "spaces-req",
+      result_path = nil,
+      channel_id = nil,
+      path = "/tmp/path with spaces/file.lua",
+      content = "",
+    })
+    assert.is_not_nil(result)
+    -- Either ok=true (no changes path) or ok=false with an engine error — must not crash
+    assert.is_boolean(result.ok)
+  end)
+
+  it("path with unicode characters is handled without error", function()
+    local result = review._open_immediate({
+      request_id = "unicode-req",
+      result_path = nil,
+      channel_id = nil,
+      path = "/tmp/café/file.lua",
+      content = "",
+    })
+    assert.is_not_nil(result)
+    assert.is_boolean(result.ok)
+  end)
+end)
