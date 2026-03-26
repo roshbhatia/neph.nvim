@@ -99,7 +99,10 @@ export async function review(
   content: string,
 ): Promise<ReviewEnvelope> {
   try {
-    const json = await nephRun(["review", filePath], content);
+    const json = await nephRun(
+      ["review"],
+      JSON.stringify({ path: filePath, content }),
+    );
     return JSON.parse(json) as ReviewEnvelope;
   } catch {
     return {
