@@ -112,6 +112,31 @@ describe("neph.config boundary", function()
     end)
   end)
 
+  describe("socket config", function()
+    it("socket.enable defaults to true", function()
+      assert.is_true(config.defaults.socket.enable)
+    end)
+
+    it("socket.path defaults to nil", function()
+      assert.is_nil(config.defaults.socket.path)
+    end)
+
+    it("socket partial override keeps enable default", function()
+      local merged = vim.tbl_deep_extend("force", config.defaults, {
+        socket = { path = "/tmp/custom.sock" },
+      })
+      assert.is_true(merged.socket.enable)
+      assert.equals("/tmp/custom.sock", merged.socket.path)
+    end)
+
+    it("socket.enable = false is preserved through merge", function()
+      local merged = vim.tbl_deep_extend("force", config.defaults, {
+        socket = { enable = false },
+      })
+      assert.is_false(merged.socket.enable)
+    end)
+  end)
+
   describe("type stability of defaults", function()
     it("file_refresh.interval is a number", function()
       assert.equals("number", type(config.defaults.file_refresh.interval))

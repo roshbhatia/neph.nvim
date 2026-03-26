@@ -65,6 +65,78 @@ describe("setup smoke tests", function()
   end)
 end)
 
+describe("socket auto-creation", function()
+  local neph
+
+  before_each(function()
+    package.loaded["neph"] = nil
+    package.loaded["neph.init"] = nil
+    package.loaded["neph.internal.agents"] = nil
+    package.loaded["neph.internal.session"] = nil
+    neph = require("neph")
+  end)
+
+  it("socket.enable = false skips serverstart", function()
+    local called = false
+    local orig = vim.fn.serverstart
+    vim.fn.serverstart = function(_)
+      called = true
+      return orig(_)
+    end
+
+    neph.setup({
+      agents = {},
+      backend = make_stub_backend(),
+      socket = { enable = false },
+    })
+
+    vim.fn.serverstart = orig
+    assert.is_false(called)
+  end)
+
+  it("socket.enable = true with existing servername skips serverstart", function()
+    if vim.v.servername == nil or vim.v.servername == "" then
+      return -- nothing to test if no socket exists
+    end
+    local called = false
+    local orig = vim.fn.serverstart
+    vim.fn.serverstart = function(_)
+      called = true
+      return orig(_)
+    end
+
+    neph.setup({
+      agents = {},
+      backend = make_stub_backend(),
+      socket = { enable = true },
+    })
+
+    vim.fn.serverstart = orig
+    assert.is_false(called)
+  end)
+
+  it("socket.path is forwarded to serverstart when provided", function()
+    if vim.v.servername ~= nil and vim.v.servername ~= "" then
+      return -- skip: socket already exists
+    end
+    local got_path
+    local orig = vim.fn.serverstart
+    vim.fn.serverstart = function(p)
+      got_path = p
+      return p
+    end
+
+    neph.setup({
+      agents = {},
+      backend = make_stub_backend(),
+      socket = { enable = true, path = "/tmp/neph_test.sock" },
+    })
+
+    vim.fn.serverstart = orig
+    assert.equals("/tmp/neph_test.sock", got_path)
+  end)
+end)
+
 describe("setup negative paths", function()
   local neph
 

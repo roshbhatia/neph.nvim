@@ -50,6 +50,13 @@ function M.setup(opts)
     contracts.validate_agent(agent)
   end
 
+  -- Auto-create RPC socket if not already listening
+  local socket_cfg = config.current.socket or {}
+  if socket_cfg.enable ~= false and (vim.v.servername == nil or vim.v.servername == "") then
+    local path = socket_cfg.path or vim.fn.tempname()
+    vim.fn.serverstart(path)
+  end
+
   require("neph.internal.agents").init(agents)
   require("neph.internal.session").setup(config.current, backend)
   require("neph.internal.file_refresh").setup(config.current)

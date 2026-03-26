@@ -45,6 +45,7 @@ local M = {}
 ---@field keymaps?        boolean              Register default keymaps (default: true)
 ---@field env?            table<string,string> Extra environment variables forwarded to every agent
 ---@field file_refresh?   neph.FileRefreshConfig
+---@field socket?         neph.SocketConfig
 ---@field agents?         neph.AgentDef[]      Injected agent definitions (required)
 ---@field backend?        table                Injected backend module (required)
 ---@field review_signs?   neph.ReviewSignsConfig  Sign icons for diff review UI
@@ -53,6 +54,10 @@ local M = {}
 ---@field review_provider? neph.ReviewProvider  Explicit review provider (default: noop)
 ---@field integration_groups? table<string, neph.IntegrationGroup>  Integration group defaults
 ---@field integration_default_group? string    Default integration group name
+
+---@class neph.SocketConfig
+---@field enable?  boolean  Auto-create a Neovim RPC socket if none exists (default: true)
+---@field path?    string   Custom socket path; defaults to a temp-dir path per-session
 
 ---@class neph.FileRefreshConfig
 ---@field enable?         boolean  Periodically call :checktime (default: true)
@@ -91,6 +96,10 @@ local M = {}
 M.defaults = {
   keymaps = true,
   env = {},
+  socket = {
+    enable = true,
+    path = nil,
+  },
   file_refresh = {
     enable = true,
     interval = 1000,
