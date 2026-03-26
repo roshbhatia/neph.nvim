@@ -1,28 +1,12 @@
 ---@diagnostic disable: undefined-global
+local helpers = require("tests.test_helpers")
+
 local function make_stub_backend()
-  return {
-    setup = function() end,
-    open = function(_, agent_cfg, _)
-      return { pane_id = 999, cmd = agent_cfg.cmd, cwd = "/tmp", name = "stub" }
-    end,
-    focus = function()
-      return true
-    end,
-    hide = function(td)
-      td.pane_id = nil
-    end,
-    is_visible = function(td)
-      return td ~= nil and td.pane_id ~= nil
-    end,
-    kill = function(td)
-      td.pane_id = nil
-    end,
-    cleanup_all = function() end,
-  }
+  return helpers.make_stub_backend()
 end
 
 local function make_valid_agent(name)
-  return { name = name or "test", label = "Test", icon = " ", cmd = "ls", args = {} }
+  return helpers.make_valid_agent({ name = name or "test" })
 end
 
 describe("setup smoke tests", function()

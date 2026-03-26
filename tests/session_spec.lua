@@ -3,28 +3,15 @@
 --
 -- We pass a stub backend directly via constructor injection.
 
+local helpers = require("tests.test_helpers")
 local session
 
 local function make_stub_backend(visible)
-  return {
-    setup = function() end,
-    open = function(_, agent_cfg, _)
-      return { pane_id = 999, cmd = agent_cfg.cmd, cwd = "/tmp", name = "stub", ready = true }
-    end,
-    focus = function()
-      return true
-    end,
-    hide = function(td)
-      td.pane_id = nil
-    end,
+  return helpers.make_stub_backend({
     is_visible = function(td)
       return visible and td ~= nil and td.pane_id ~= nil
     end,
-    kill = function(td)
-      td.pane_id = nil
-    end,
-    cleanup_all = function() end,
-  }
+  })
 end
 
 describe("neph.session", function()

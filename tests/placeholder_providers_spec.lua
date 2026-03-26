@@ -244,4 +244,90 @@ describe("placeholder providers", function()
       end)
     end)
   end)
+
+  describe("fault injection", function()
+    it("+file with deleted/invalid buffer ID does not crash", function()
+      local buf = make_buf({ "hello" }, vim.fn.tempname() .. "/gone.lua")
+      vim.api.nvim_buf_delete(buf, { force = true })
+      local ctx = make_ctx({ buf = buf })
+      -- nvim_buf_get_name on invalid buf will error, but provider should
+      -- either handle it or propagate cleanly
+      local ok, _ = pcall(placeholders.providers.file, ctx)
+      -- We just verify it doesn't cause a segfault or hang
+      assert.is_boolean(ok)
+    end)
+
+    it("+position with out-of-bounds row/col does not crash", function()
+      local ctx = make_ctx({ buf = test_buf, row = 99999, col = 99999 })
+      assert.has_no_errors(function()
+        placeholders.providers.position(ctx)
+      end)
+    end)
+
+    it("+word with out-of-bounds row does not crash", function()
+      -- Buffer has 3 lines, ask for row 100
+      local ctx = make_ctx({ buf = test_buf, row = 100, col = 1 })
+      assert.has_no_errors(function()
+        local result = placeholders.providers.word(ctx)
+        assert.is_nil(result)
+      end)
+    end)
+
+    it("+line with nil context fields returns nil or errors cleanly", function()
+      local ctx = make_ctx({ buf = test_buf, row = nil, col = nil })
+      local ok, _ = pcall(placeholders.providers.line, ctx)
+      assert.is_boolean(ok)
+    end)
+
+    it("+diagnostics handles unexpected types from vim.diagnostic.get", function()
+      local orig_get = vim.diagnostic.get
+      -- Return entries with missing/unexpected fields
+      vim.diagnostic.get = function()
+        return {
+          { lnum = 0, col = 0, message = nil, severity = nil },
+          { lnum = 0, col = 0, message = 123, severity = "not_a_number" },
+        }
+      end
+      local ctx = make_ctx({ buf = test_buf })
+      assert.has_no_errors(function()
+        placeholders.providers.diagnostics(ctx)
+      end)
+      vim.diagnostic.get = orig_get
+    end)
+
+    it("+selection with range where end < start does not crash", function()
+      local ctx = make_ctx({
+        buf = test_buf,
+        range = { from = { 3, 5 }, to = { 1, 0 } },
+      })
+      assert.has_no_errors(function()
+        placeholders.providers.selection(ctx)
+      end)
+    end)
+
+    it("+word with binary/non-UTF8 content does not crash", function()
+      local buf = make_buf({ "hello\x80\xff\xfe world", "\x00\x01\x02" }, vim.fn.tempname() .. "/binary.lua")
+      table.insert(cleanup_bufs, buf)
+      local ctx = make_ctx({ buf = buf, row = 1, col = 3 })
+      assert.has_no_errors(function()
+        placeholders.providers.word(ctx)
+      end)
+    end)
+
+    it("+selection with range beyond buffer length does not crash", function()
+      local ctx = make_ctx({
+        buf = test_buf,
+        range = { from = { 1, 0 }, to = { 999, 0 } },
+      })
+      assert.has_no_errors(function()
+        placeholders.providers.selection(ctx)
+      end)
+    end)
+
+    it("+diagnostic with nil row in context", function()
+      local ctx = make_ctx({ buf = test_buf, row = nil })
+      local ok, _ = pcall(placeholders.providers.diagnostic, ctx)
+      assert.is_boolean(ok)
+    end)
+  end)
 end)

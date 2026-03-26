@@ -126,4 +126,90 @@ describe("neph.config boundary", function()
       assert.equals("string", type(config.defaults.integration_default_group))
     end)
   end)
+
+  describe("negative config inputs", function()
+    it("merge with nil nested value falls back to default", function()
+      -- vim.tbl_deep_extend ignores nil values, so defaults are preserved
+      local merged = vim.tbl_deep_extend("force", config.defaults, {
+        file_refresh = { enable = nil },
+      })
+      -- nil override is ignored; default (true) is preserved
+      assert.is_true(merged.file_refresh.enable)
+    end)
+
+    it("merge with wrong type (string where boolean expected)", function()
+      local merged = vim.tbl_deep_extend("force", config.defaults, {
+        keymaps = "yes",
+      })
+      -- tbl_deep_extend allows type mismatch; it just overwrites
+      assert.are.equal("yes", merged.keymaps)
+    end)
+
+    it("merge with empty string values", function()
+      local merged = vim.tbl_deep_extend("force", config.defaults, {
+        review_signs = { accept = "", reject = "", current = "" },
+      })
+      assert.are.equal("", merged.review_signs.accept)
+      assert.are.equal("", merged.review_signs.reject)
+      assert.are.equal("", merged.review_signs.current)
+    end)
+
+    it("merge with numeric keys mixed with string keys", function()
+      -- vim.tbl_deep_extend treats list-like tables differently
+      local merged = vim.tbl_deep_extend("force", config.defaults, {
+        env = { [1] = "numeric_key", named = "string_key" },
+      })
+      assert.are.equal("numeric_key", merged.env[1])
+      assert.are.equal("string_key", merged.env.named)
+    end)
+  end)
+end)
+
+describe("config fault injection", function()
+  local config
+
+  before_each(function()
+    package.loaded["neph.config"] = nil
+    config = require("neph.config")
+  end)
+
+  it("merge with file_refresh.enable = nil does not crash and falls back to default", function()
+    -- vim.tbl_deep_extend skips nil values, so default (true) is preserved
+    local merged
+    assert.has_no.errors(function()
+      merged = vim.tbl_deep_extend("force", config.defaults, {
+        file_refresh = { enable = nil },
+      })
+    end)
+    -- nil is ignored: default (true) should be preserved, or nil is acceptable — must not crash
+    assert.is_not_nil(merged)
+    assert.is_not_nil(merged.file_refresh)
+    -- The key must either retain true (default) or be nil — it must not be a bad type
+    local t = type(merged.file_refresh.enable)
+    assert.is_true(t == "boolean" or t == "nil")
+  end)
+
+  it("merge with wrong type for keymaps (string instead of boolean) passes through unchanged", function()
+    local merged
+    assert.has_no.errors(function()
+      merged = vim.tbl_deep_extend("force", config.defaults, {
+        keymaps = "yes",
+      })
+    end)
+    -- tbl_deep_extend allows type mismatch; the string is preserved as-is
+    assert.are.equal("yes", merged.keymaps)
+  end)
+
+  it("merge with numeric keys in a subtable does not crash", function()
+    local merged
+    assert.has_no.errors(function()
+      merged = vim.tbl_deep_extend("force", config.defaults, {
+        env = { [1] = "first", [2] = "second", named = "val" },
+      })
+    end)
+    assert.is_not_nil(merged)
+    assert.are.equal("first", merged.env[1])
+    assert.are.equal("second", merged.env[2])
+    assert.are.equal("val", merged.env.named)
+  end)
 end)

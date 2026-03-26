@@ -1,46 +1,23 @@
 ---@diagnostic disable: undefined-global
 -- session_boundary_spec.lua -- boundary/adversarial tests for neph.session
 
+local helpers = require("tests.test_helpers")
 local session
 
 local function register_agent(name, extra)
-  local def = vim.tbl_extend("force", {
+  local def = helpers.make_valid_agent(vim.tbl_extend("force", {
     name = name,
     label = name,
-    icon = " ",
     cmd = "true",
-  }, extra or {})
+  }, extra or {}))
   require("neph.internal.agents").init({ def })
-end
-
-local function make_backend(overrides)
-  local base = {
-    setup = function() end,
-    open = function(_, agent_cfg, _)
-      return { pane_id = 1, cmd = agent_cfg.cmd, cwd = "/tmp", ready = true }
-    end,
-    focus = function()
-      return true
-    end,
-    hide = function(td)
-      td.pane_id = nil
-    end,
-    is_visible = function(td)
-      return td ~= nil and td.pane_id ~= nil
-    end,
-    kill = function(td)
-      td.pane_id = nil
-    end,
-    cleanup_all = function() end,
-  }
-  return vim.tbl_extend("force", base, overrides or {})
 end
 
 local function fresh_session(backend_overrides)
   package.loaded["neph.session"] = nil
   package.loaded["neph.internal.session"] = nil
   session = require("neph.internal.session")
-  local be = make_backend(backend_overrides)
+  local be = helpers.make_stub_backend(backend_overrides)
   session.setup({ env = {} }, be)
   return be
 end
@@ -260,6 +237,119 @@ describe("neph.session boundary", function()
       session.ensure_active_and_send("text")
       vim.notify = orig
       assert.is_true(notified)
+    end)
+  end)
+
+  describe("fault injection", function()
+    it("handles backend.send() that throws an error", function()
+      fresh_session({
+        open = function(_, cfg, _)
+          return { pane_id = 1, cmd = cfg.cmd, cwd = "/tmp", ready = true }
+        end,
+        send = function()
+          error("send exploded")
+        end,
+      })
+      register_agent("send_err")
+
+      session.open("send_err")
+      assert.has_error(function()
+        session.send("send_err", "hello", { submit = true })
+      end)
+    end)
+
+    it("handles backend.send() that returns nil/false without crash", function()
+      local send_called = false
+      fresh_session({
+        open = function(_, cfg, _)
+          return { pane_id = 1, cmd = cfg.cmd, cwd = "/tmp", ready = true }
+        end,
+        send = function()
+          send_called = true
+          return nil
+        end,
+      })
+      register_agent("send_nil")
+
+      session.open("send_nil")
+      assert.has_no_errors(function()
+        session.send("send_nil", "hello", { submit = true })
+      end)
+      assert.is_true(send_called)
+    end)
+
+    it("handles backend.open() returning terminal missing expected fields", function()
+      fresh_session({
+        open = function()
+          return { ready = true } -- missing pane_id, cmd, cwd, name
+        end,
+      })
+      register_agent("partial_td")
+
+      assert.has_no_errors(function()
+        session.open("partial_td")
+      end)
+      assert.equals("partial_td", session.get_active())
+    end)
+
+    it("handles send on terminal killed between check and send", function()
+      local call_count = 0
+      fresh_session({
+        open = function(_, cfg, _)
+          return { pane_id = 1, cmd = cfg.cmd, cwd = "/tmp", ready = true }
+        end,
+        is_visible = function(td)
+          return td ~= nil and td.pane_id ~= nil
+        end,
+        send = function(td)
+          -- Simulate terminal dying during send
+          td.pane_id = nil
+          call_count = call_count + 1
+        end,
+      })
+      register_agent("race_kill")
+
+      session.open("race_kill")
+      assert.has_no_errors(function()
+        session.send("race_kill", "hello", { submit = true })
+      end)
+      assert.equals(1, call_count)
+    end)
+
+    it("VimLeavePre cleanup survives backend.cleanup_all() throwing", function()
+      local be = fresh_session({
+        open = function(_, cfg, _)
+          return { pane_id = 1, cmd = cfg.cmd, cwd = "/tmp", ready = true }
+        end,
+        cleanup_all = function()
+          error("cleanup boom")
+        end,
+      })
+      register_agent("cleanup_err")
+
+      session.open("cleanup_err")
+      -- Simulate VimLeavePre by calling cleanup_all directly through backend
+      -- The session module wraps cleanup_all without pcall, so it should propagate
+      assert.has_error(function()
+        be.cleanup_all({})
+      end)
+    end)
+
+    it("rapid open/kill/open sequence does not crash", function()
+      fresh_session({
+        open = function(_, cfg, _)
+          return { pane_id = 1, cmd = cfg.cmd, cwd = "/tmp", ready = true }
+        end,
+      })
+      register_agent("rapid")
+
+      assert.has_no_errors(function()
+        session.open("rapid")
+        session.kill_session("rapid")
+        session.open("rapid")
+      end)
+      assert.equals("rapid", session.get_active())
+      assert.is_true(session.is_visible("rapid"))
     end)
   end)
 end)

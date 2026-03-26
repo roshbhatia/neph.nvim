@@ -94,4 +94,89 @@ describe("neph.internal.file_refresh", function()
       end)
     end)
   end)
+
+  describe("fault injection", function()
+    it("handles vim.uv.new_timer() returning nil", function()
+      local orig_new_timer = vim.uv.new_timer
+      vim.uv.new_timer = function()
+        return nil
+      end
+      assert.has_no_errors(function()
+        file_refresh.setup({ file_refresh = { enable = true, interval = 1000 } })
+      end)
+      vim.uv.new_timer = orig_new_timer
+      file_refresh.teardown()
+    end)
+
+    it("handles negative interval value", function()
+      -- libuv may reject negative intervals; the module should not crash
+      assert.has_no_errors(function()
+        file_refresh.setup({ file_refresh = { enable = true, interval = -1 } })
+      end)
+      file_refresh.teardown()
+    end)
+
+    it("handles very large interval (maxint)", function()
+      assert.has_no_errors(function()
+        file_refresh.setup({ file_refresh = { enable = true, interval = 2147483647 } })
+      end)
+      file_refresh.teardown()
+    end)
+
+    it("handles setup called during active teardown sequence", function()
+      file_refresh.setup({ file_refresh = { enable = true, interval = 1000 } })
+      -- Simulate calling setup (which internally calls teardown) immediately
+      assert.has_no_errors(function()
+        file_refresh.setup({ file_refresh = { enable = true, interval = 500 } })
+      end)
+      file_refresh.teardown()
+    end)
+
+    it("handles autocmd group already existing", function()
+      -- Pre-create the augroup
+      vim.api.nvim_create_augroup("NephFileRefresh", { clear = true })
+      assert.has_no_errors(function()
+        file_refresh.setup({ file_refresh = { enable = true, interval = 1000 } })
+      end)
+      file_refresh.teardown()
+    end)
+  end)
+end)
+
+describe("file_refresh fault injection", function()
+  before_each(function()
+    package.loaded["neph.internal.file_refresh"] = nil
+    file_refresh = require("neph.internal.file_refresh")
+  end)
+
+  after_each(function()
+    file_refresh.teardown()
+  end)
+
+  it("vim.uv.new_timer returning nil does not crash setup", function()
+    local orig_new_timer = vim.uv.new_timer
+    vim.uv.new_timer = function()
+      return nil
+    end
+    assert.has_no_errors(function()
+      file_refresh.setup({ file_refresh = { enable = true, interval = 1000 } })
+    end)
+    vim.uv.new_timer = orig_new_timer
+    file_refresh.teardown()
+  end)
+
+  it("negative interval value does not crash setup", function()
+    -- The module guards with pcall on timer:start; negative values may be rejected by libuv
+    assert.has_no_errors(function()
+      file_refresh.setup({ file_refresh = { enable = true, interval = -100 } })
+    end)
+    file_refresh.teardown()
+  end)
+
+  it("very large interval (2147483647) does not crash setup", function()
+    assert.has_no_errors(function()
+      file_refresh.setup({ file_refresh = { enable = true, interval = 2147483647 } })
+    end)
+    file_refresh.teardown()
+  end)
 end)

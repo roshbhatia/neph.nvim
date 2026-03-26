@@ -1,54 +1,28 @@
 ---@diagnostic disable: undefined-global
 -- backend_integration_spec.lua – integration tests for each backend with mocked system calls
 
+local helpers = require("tests.test_helpers")
+
 local snacks_backend
 local wezterm_backend
 local zellij_backend
 
--- Helpers to save/restore globals
-local _saved = {}
+local save_globals, restore_globals = helpers.save_and_restore_globals()
+local make_agent_config = helpers.make_agent_config
+local _real_shellescape = vim.fn.shellescape
 
-local function save_globals()
-  _saved.system = vim.fn.system
-  _saved.jobstart = vim.fn.jobstart
-  _saved.chansend = vim.fn.chansend
-  _saved.chanclose = vim.fn.chanclose
-  _saved.executable = vim.fn.executable
-  _saved.shellescape = vim.fn.shellescape
-  _saved.shell_error = vim.v.shell_error
-  _saved.servername = vim.v.servername
-  _saved.WEZTERM_PANE = vim.env.WEZTERM_PANE
-  _saved.ZELLIJ = vim.env.ZELLIJ
-  _saved.ZELLIJ_SESSION_NAME = vim.env.ZELLIJ_SESSION_NAME
-  _saved.Snacks = rawget(_G, "Snacks")
-end
-
-local function restore_globals()
-  vim.fn.system = _saved.system
-  vim.fn.jobstart = _saved.jobstart
-  vim.fn.chansend = _saved.chansend
-  vim.fn.chanclose = _saved.chanclose
-  vim.fn.executable = _saved.executable
-  vim.fn.shellescape = _saved.shellescape
-  vim.v.shell_error = _saved.shell_error
-  vim.env.WEZTERM_PANE = _saved.WEZTERM_PANE
-  vim.env.ZELLIJ = _saved.ZELLIJ
-  vim.env.ZELLIJ_SESSION_NAME = _saved.ZELLIJ_SESSION_NAME
-  if _saved.Snacks then
-    _G.Snacks = _saved.Snacks
-  else
-    _G.Snacks = nil
-  end
-end
-
-local function make_agent_config(overrides)
-  return vim.tbl_extend("force", {
-    cmd = "echo",
-    args = {},
-    full_cmd = "echo hello",
-    env = { MY_VAR = "test" },
-  }, overrides or {})
-end
+-- vim.v.shell_error is read-only; replace vim.v with a writable proxy for tests
+local _real_vim_v = vim.v
+local _mock_vim_v = setmetatable({}, {
+  __index = _real_vim_v,
+  __newindex = function(t, k, v)
+    rawset(t, k, v)
+  end,
+})
+-- Copy current read-only values we need
+_mock_vim_v.shell_error = _real_vim_v.shell_error
+_mock_vim_v.servername = _real_vim_v.servername
+vim.v = _mock_vim_v
 
 -- =========================================================================
 -- Snacks backend
@@ -202,6 +176,54 @@ describe("snacks backend integration", function()
       -- Windows should be closed (no error)
     end)
   end)
+
+  describe("fault injection", function()
+    it("handles Snacks.terminal.open returning nil", function()
+      _G.Snacks.terminal.open = function()
+        return nil
+      end
+      assert.has_error(function()
+        snacks_backend.open("t", make_agent_config(), "/tmp")
+      end)
+    end)
+
+    it("handles Snacks.terminal.open throwing an error", function()
+      _G.Snacks.terminal.open = function()
+        error("snacks exploded")
+      end
+      assert.has_error(function()
+        snacks_backend.open("t", make_agent_config(), "/tmp")
+      end)
+    end)
+
+    it("handles Snacks.terminal.open returning object with nil buf/win", function()
+      _G.Snacks.terminal.open = function()
+        return { buf = nil, win = nil }
+      end
+      assert.has_no_errors(function()
+        local td = snacks_backend.open("t", make_agent_config(), "/tmp")
+        assert.is_not_nil(td)
+        assert.is_false(snacks_backend.is_visible(td))
+      end)
+    end)
+
+    it("env vars with special characters do not crash open", function()
+      assert.has_no_errors(function()
+        snacks_backend.open(
+          "t",
+          make_agent_config({
+            env = {
+              SPECIAL = 'hello "world"',
+              DOLLAR = "price$100",
+              PERCENT = "100%done",
+              SPACES = "has spaces in it",
+            },
+          }),
+          "/tmp"
+        )
+      end)
+    end)
+  end)
 end)
 
 -- =========================================================================
@@ -224,7 +246,7 @@ describe("wezterm backend integration", function()
       return 0
     end
 
-    vim.fn.shellescape = _saved.shellescape
+    vim.fn.shellescape = _real_shellescape
 
     -- Track system calls and return pane ID for split-pane
     vim.fn.system = function(cmd)
@@ -433,6 +455,96 @@ describe("wezterm backend integration", function()
       assert.is_nil(wezterm_backend.show({}))
     end)
   end)
+
+  describe("fault injection", function()
+    it("handles vim.fn.system returning error string on split-pane", function()
+      local orig_system = vim.fn.system
+      vim.fn.system = function(cmd)
+        local cmd_str = type(cmd) == "table" and table.concat(cmd, " ") or cmd
+        if cmd_str:find("split%-pane") then
+          vim.v.shell_error = 1
+          return "error: connection refused"
+        end
+        return orig_system(cmd)
+      end
+      local td = wezterm_backend.open("t", make_agent_config(), "/tmp")
+      assert.is_nil(td)
+    end)
+
+    it("handles vim.fn.system returning empty string on split-pane", function()
+      vim.fn.system = function(cmd)
+        local cmd_str = type(cmd) == "table" and table.concat(cmd, " ") or cmd
+        if cmd_str:find("split%-pane") then
+          vim.v.shell_error = 0
+          return ""
+        elseif cmd_str:find("list") then
+          vim.v.shell_error = 0
+          return "[]"
+        end
+        vim.v.shell_error = 0
+        return ""
+      end
+      local td = wezterm_backend.open("t", make_agent_config(), "/tmp")
+      assert.is_nil(td)
+    end)
+
+    it("handles vim.fn.system throwing an error", function()
+      vim.fn.system = function()
+        error("system call exploded")
+      end
+      assert.has_error(function()
+        wezterm_backend.open("t", make_agent_config(), "/tmp")
+      end)
+    end)
+
+    it("handles malformed JSON from list --format json", function()
+      vim.fn.system = function(cmd)
+        local cmd_str = type(cmd) == "table" and table.concat(cmd, " ") or cmd
+        if cmd_str:find("split%-pane") then
+          vim.v.shell_error = 0
+          return "99\n"
+        elseif cmd_str:find("list %-%-format json") then
+          vim.v.shell_error = 0
+          return "not valid json {{{["
+        end
+        vim.v.shell_error = 0
+        return ""
+      end
+      local td = wezterm_backend.open("t", make_agent_config(), "/tmp")
+      assert.is_not_nil(td)
+      -- is_visible should handle the JSON parse failure gracefully
+      assert.has_no_errors(function()
+        assert.is_false(wezterm_backend.is_visible(td))
+      end)
+    end)
+
+    it("env vars with special characters do not crash open", function()
+      assert.has_no_errors(function()
+        wezterm_backend.open(
+          "t",
+          make_agent_config({
+            env = {
+              SPECIAL = 'hello "world"',
+              DOLLAR = "price$100",
+              PERCENT = "100%done",
+              SPACES = "has spaces in it",
+            },
+          }),
+          "/tmp"
+        )
+      end)
+    end)
+
+    it("send when jobstart returns -1 does not crash", function()
+      local td = wezterm_backend.open("t", make_agent_config(), "/tmp")
+      vim.fn.jobstart = function()
+        return -1
+      end
+      assert.has_no_errors(function()
+        wezterm_backend.send(td, "hello", { submit = true })
+      end)
+    end)
+  end)
 end)
 
 -- =========================================================================
@@ -458,7 +570,7 @@ describe("zellij backend integration", function()
       return 0
     end
 
-    vim.fn.shellescape = _saved.shellescape
+    vim.fn.shellescape = _real_shellescape
 
     vim.fn.system = function(cmd)
       local cmd_str = type(cmd) == "table" and table.concat(cmd, " ") or cmd
@@ -682,6 +794,99 @@ describe("zellij backend integration", function()
       zellij_backend.cleanup_all({ td1, td2 })
       assert.is_nil(td1.pane_id)
       assert.is_nil(td2.pane_id)
+    end)
+  end)
+
+  describe("fault injection", function()
+    it("handles mkfifo failure gracefully", function()
+      vim.fn.system = function(cmd)
+        local cmd_str = type(cmd) == "table" and table.concat(cmd, " ") or cmd
+        if cmd_str:find("mkfifo") then
+          vim.v.shell_error = 1
+          return "mkfifo: cannot create fifo"
+        end
+        vim.v.shell_error = 0
+        return ""
+      end
+      local td = zellij_backend.open("t", make_agent_config(), "/tmp")
+      assert.is_nil(td)
+    end)
+
+    it("handles vim.fn.system throwing an error on zellij action", function()
+      -- is_visible calls zellij_action which calls vim.fn.system
+      local orig_system = vim.fn.system
+      vim.fn.system = function(cmd)
+        local cmd_str = type(cmd) == "table" and table.concat(cmd, " ") or cmd
+        if cmd_str:find("list%-clients") then
+          error("system call exploded")
+        end
+        return orig_system(cmd)
+      end
+      assert.has_error(function()
+        zellij_backend.is_visible({ pane_id = "terminal_10" })
+      end)
+    end)
+
+    it("handles list-clients returning empty string", function()
+      vim.fn.system = function(cmd)
+        local cmd_str = type(cmd) == "table" and table.concat(cmd, " ") or cmd
+        if cmd_str:find("list%-clients") then
+          vim.v.shell_error = 0
+          return ""
+        elseif cmd_str:find("mkfifo") then
+          vim.v.shell_error = 0
+          return ""
+        end
+        vim.v.shell_error = 0
+        return ""
+      end
+      assert.has_no_errors(function()
+        assert.is_false(zellij_backend.is_visible({ pane_id = "terminal_10" }))
+      end)
+    end)
+
+    it("handles list-clients returning error", function()
+      vim.fn.system = function(cmd)
+        local cmd_str = type(cmd) == "table" and table.concat(cmd, " ") or cmd
+        if cmd_str:find("list%-clients") then
+          vim.v.shell_error = 1
+          return "error: not connected"
+        elseif cmd_str:find("mkfifo") then
+          vim.v.shell_error = 0
+          return ""
+        end
+        vim.v.shell_error = 0
+        return ""
+      end
+      assert.has_no_errors(function()
+        assert.is_false(zellij_backend.is_visible({ pane_id = "terminal_10" }))
+      end)
+    end)
+
+    it("env vars with special characters do not crash open", function()
+      assert.has_no_errors(function()
+        zellij_backend.open(
+          "t",
+          make_agent_config({
+            env = {
+              SPECIAL = 'hello "world"',
+              DOLLAR = "price$100",
+              PERCENT = "100%done",
+              SPACES = "has spaces in it",
+            },
+          }),
+          "/tmp"
+        )
+      end)
+    end)
+
+    it("jobstart returning -1 for zellij run does not crash", function()
+      vim.fn.jobstart = function()
+        return -1
+      end
+      assert.has_no_errors(function()
+        zellij_backend.open("t", make_agent_config(), "/tmp")
+      end)
     end)
   end)
 end)
