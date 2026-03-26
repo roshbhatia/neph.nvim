@@ -101,6 +101,79 @@ describe("neph.internal.review_provider", function()
   end)
 end)
 
+describe("neph.internal.review_provider resolve_for() / is_enabled_for()", function()
+  local review_provider
+  local config
+  local agents
+
+  before_each(function()
+    config = require("neph.config")
+    config.current = vim.deepcopy(config.defaults)
+    package.loaded["neph.internal.review_provider"] = nil
+    review_provider = require("neph.internal.review_provider")
+    agents = require("neph.internal.agents")
+  end)
+
+  after_each(function()
+    config.current = vim.deepcopy(config.defaults)
+    package.loaded["neph.internal.review_provider"] = nil
+  end)
+
+  it("resolve_for(nil) falls back to global config (noop)", function()
+    config.current.review_provider = nil
+    local p = review_provider.resolve_for(nil)
+    assert.are.equal("noop", p.name)
+  end)
+
+  it("resolve_for(nil) falls back to global config (vimdiff)", function()
+    config.current.review_provider = "vimdiff"
+    local p = review_provider.resolve_for(nil)
+    assert.are.equal("vimdiff", p.name)
+  end)
+
+  it("resolve_for() uses agent pipeline over global config", function()
+    config.current.review_provider = nil -- global = noop
+    local agent = agents.get_by_name("claude")
+    if agent and agent.integration_pipeline then
+      -- claude's pipeline has review_provider = "vimdiff" (harness group)
+      local p = review_provider.resolve_for("claude")
+      assert.are.equal(agent.integration_pipeline.review_provider, p.name)
+    else
+      -- Integration not wired in test env — just verify no crash
+      assert.has_no.errors(function()
+        review_provider.resolve_for("claude")
+      end)
+    end
+  end)
+
+  it("resolve_for() falls back to global when agent has no pipeline", function()
+    config.current.review_provider = "vimdiff"
+    local p = review_provider.resolve_for("__nonexistent_agent__")
+    assert.are.equal("vimdiff", p.name)
+  end)
+
+  it("is_enabled_for(nil) matches is_enabled() when global is noop", function()
+    config.current.review_provider = nil
+    assert.are.equal(review_provider.is_enabled(), review_provider.is_enabled_for(nil))
+  end)
+
+  it("is_enabled_for() returns false for unknown agent with noop global", function()
+    config.current.review_provider = nil
+    assert.is_false(review_provider.is_enabled_for("__nonexistent__"))
+  end)
+
+  it("is_enabled_for() returns true for unknown agent when global is vimdiff", function()
+    config.current.review_provider = "vimdiff"
+    assert.is_true(review_provider.is_enabled_for("__nonexistent__"))
+  end)
+
+  it("resolve_for() does not crash on empty string agent name", function()
+    assert.has_no.errors(function()
+      review_provider.resolve_for("")
+    end)
+  end)
+end)
+
 describe("review_provider fault injection", function()
   local review_provider
   local config

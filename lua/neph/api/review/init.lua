@@ -74,7 +74,7 @@ end
 
 --- Public entry point — routes through the review queue.
 function M.open(params)
-  if not review_provider.is_enabled() then
+  if not review_provider.is_enabled_for(params.agent) then
     local content = params.content
     if content == nil and type(params.path) == "string" and params.path ~= "" then
       local f = io.open(params.path, "r")
@@ -294,7 +294,8 @@ end
 ---@param file_path string  Absolute path to the file
 ---@return {ok: boolean, msg?: string, error?: string}
 function M.open_manual(file_path)
-  if not review_provider.is_enabled() then
+  local active_agent = require("neph.internal.session").get_active()
+  if not review_provider.is_enabled_for(active_agent) then
     return { ok = false, error = "Review provider not configured" }
   end
 
@@ -346,7 +347,7 @@ function M.open_manual(file_path)
     channel_id = nil,
     path = file_path,
     content = "",
-    agent = nil,
+    agent = active_agent,
     mode = "manual",
   }
 
