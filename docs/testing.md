@@ -59,12 +59,11 @@ Located in `tools/lib/tests/`. Run as part of `task tools:test:neph`.
 
 | File | Description |
 |------|-------------|
-| `neph-client.test.ts` | NephClient SDK (connect, register, review, status, reconnect) |
 | `log.test.ts` | Debug logger tests |
 
 ## 4. Pi Extension Tests (Node/Vitest)
 
-Located in `tools/pi/tests/`. Verifies that the pi extension correctly uses NephClient for persistent socket communication with Neovim.
+Located in `tools/pi/tests/`. Verifies that the Pi Cupcake harness correctly intercepts write/edit tool_call events.
 
 **Command:**
 ```bash

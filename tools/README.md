@@ -23,8 +23,8 @@ which invoke `neph review` when review is enabled.
 tools/
   neph-cli/          CLI binary (neph) — integration/deps/review/status/ui-*
   pi/                Pi extension (legacy Cupcake harness)
-  lib/               Shared utilities — neph-client.ts, log.ts
-  amp/               Amp plugin (pending hook integration)
+  lib/               Shared utilities — log.ts, neph-run.ts
+  amp/               Amp plugin (neph-plugin.ts — review interception via tool.call)
   opencode/          OpenCode (uses native Cupcake plugin)
   claude/            Claude Code hook config
   copilot/           Copilot hook config
