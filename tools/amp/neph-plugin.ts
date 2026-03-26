@@ -64,7 +64,7 @@ function neph_plugin_default(amp: any) {
     }
 
     try {
-      const result = await review(filePath, content);
+      const result = await review(filePath, content, "amp");
       if (result.decision === "reject") {
         const reason = result.reason ? `: ${result.reason}` : "";
         return {

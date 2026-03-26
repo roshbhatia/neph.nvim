@@ -88,6 +88,14 @@ describe("neph.agents submodules", function()
     end)
   end)
 
+  -- Amp: integration group assignment
+  describe("amp integration config", function()
+    it("uses the hook integration group", function()
+      local def = require("neph.agents.amp")
+      assert.are.equal("hook", def.integration_group)
+    end)
+  end)
+
   -- Agents with ready_pattern
   local agents_with_ready_pattern = { "claude", "codex", "crush", "goose" }
   for _, name in ipairs(agents_with_ready_pattern) do

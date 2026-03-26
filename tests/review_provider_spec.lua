@@ -119,16 +119,9 @@ describe("neph.internal.review_provider resolve_for() / is_enabled_for()", funct
     package.loaded["neph.internal.review_provider"] = nil
   end)
 
-  it("resolve_for(nil) falls back to global config (noop)", function()
-    config.current.review_provider = nil
+  it("resolve_for(nil) returns noop (no agent, no pipeline)", function()
     local p = review_provider.resolve_for(nil)
     assert.are.equal("noop", p.name)
-  end)
-
-  it("resolve_for(nil) falls back to global config (vimdiff)", function()
-    config.current.review_provider = "vimdiff"
-    local p = review_provider.resolve_for(nil)
-    assert.are.equal("vimdiff", p.name)
   end)
 
   it("resolve_for() uses agent pipeline over global config", function()
@@ -146,25 +139,17 @@ describe("neph.internal.review_provider resolve_for() / is_enabled_for()", funct
     end
   end)
 
-  it("resolve_for() falls back to global when agent has no pipeline", function()
-    config.current.review_provider = "vimdiff"
+  it("resolve_for() returns noop for unknown agent (no pipeline)", function()
     local p = review_provider.resolve_for("__nonexistent_agent__")
-    assert.are.equal("vimdiff", p.name)
+    assert.are.equal("noop", p.name)
   end)
 
-  it("is_enabled_for(nil) matches is_enabled() when global is noop", function()
-    config.current.review_provider = nil
-    assert.are.equal(review_provider.is_enabled(), review_provider.is_enabled_for(nil))
+  it("is_enabled_for(nil) returns false", function()
+    assert.is_false(review_provider.is_enabled_for(nil))
   end)
 
-  it("is_enabled_for() returns false for unknown agent with noop global", function()
-    config.current.review_provider = nil
+  it("is_enabled_for() returns false for unknown agent", function()
     assert.is_false(review_provider.is_enabled_for("__nonexistent__"))
-  end)
-
-  it("is_enabled_for() returns true for unknown agent when global is vimdiff", function()
-    config.current.review_provider = "vimdiff"
-    assert.is_true(review_provider.is_enabled_for("__nonexistent__"))
   end)
 
   it("resolve_for() does not crash on empty string agent name", function()

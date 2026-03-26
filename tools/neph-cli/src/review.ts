@@ -12,6 +12,7 @@ export interface ReviewOptions {
 export interface ReviewInput {
   path: string;
   content: string;
+  agent?: string;
 }
 
 export interface ReviewEnvelope {
@@ -119,6 +120,7 @@ export async function runReview(opts: ReviewOptions): Promise<number> {
         channel_id: channelId,
         path: input.path,
         content: input.content,
+        agent: input.agent,
       },
     ]).then(async (result) => {
       // Check if auto-completed (no hunks)

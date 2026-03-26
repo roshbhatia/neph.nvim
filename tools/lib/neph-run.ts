@@ -97,11 +97,12 @@ export function createNephQueue(): (...args: string[]) => void {
 export async function review(
   filePath: string,
   content: string,
+  agent?: string,
 ): Promise<ReviewEnvelope> {
   try {
     const json = await nephRun(
       ["review"],
-      JSON.stringify({ path: filePath, content }),
+      JSON.stringify({ path: filePath, content, agent }),
     );
     return JSON.parse(json) as ReviewEnvelope;
   } catch {

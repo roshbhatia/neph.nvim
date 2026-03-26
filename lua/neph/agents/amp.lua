@@ -10,7 +10,7 @@ return {
   args = { "--ide" },
   env = { PLUGINS = "all" },
   type = "terminal",
-  integration_group = "default",
+  integration_group = "hook",
   tools = {
     { type = "symlink", src = "tools/amp/neph-plugin.ts", dst = "~/.config/amp/plugins/neph-plugin.ts" },
   },

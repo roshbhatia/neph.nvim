@@ -54,7 +54,7 @@ tasks:
   test:e2e:review:
     desc: Run neph-cli review integration tests
     cmds:
-      - cd tools/neph-cli && npx vitest run tests/integration/
+      - cd tools/neph-cli && npx vitest run tests/integration/  # Run neph-cli review integration tests via vitest
 
   build:
     desc: Build all companion tools (neph-cli, pi cupcake harness)
