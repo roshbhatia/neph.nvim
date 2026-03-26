@@ -41,7 +41,7 @@ describe("neph.agents submodules", function()
   end
 
   -- Agents with tools manifests
-  local agents_with_tools = { "pi" }
+  local agents_with_tools = { "amp", "cursor", "pi" }
   for _, name in ipairs(agents_with_tools) do
     it(name .. " has a valid tools manifest", function()
       local def = require("neph.agents." .. name)
@@ -53,7 +53,7 @@ describe("neph.agents submodules", function()
   end
 
   -- Agents without tools (hooks managed via launch_args_fn or Cupcake native)
-  local agents_without_tools = { "amp", "claude", "codex", "copilot", "crush", "gemini", "goose", "opencode" }
+  local agents_without_tools = { "claude", "codex", "copilot", "crush", "gemini", "goose", "opencode" }
   for _, name in ipairs(agents_without_tools) do
     it(name .. " has no tools field", function()
       local def = require("neph.agents." .. name)
