@@ -225,6 +225,40 @@ describe("snacks backend integration", function()
     end)
   end)
 
+  describe("snacks send()", function()
+    it("send(nil, text) does not crash", function()
+      assert.has_no_errors(function()
+        snacks_backend.send(nil, "hello")
+      end)
+    end)
+
+    it("send({}, text) does not crash (no buf field)", function()
+      assert.has_no_errors(function()
+        snacks_backend.send({}, "hello")
+      end)
+    end)
+
+    it("send({buf=999}, text) with invalid buf does not crash", function()
+      assert.has_no_errors(function()
+        snacks_backend.send({ buf = 999 }, "hello")
+      end)
+    end)
+
+    it("send(td, text, {submit=true}) appends newline to text", function()
+      local sent = {}
+      vim.fn.chansend = function(_, data)
+        table.insert(sent, data)
+      end
+      local buf = vim.api.nvim_create_buf(false, true)
+      -- Simulate a valid buf with a terminal_job_id
+      vim.b[buf] = vim.b[buf] or {}
+      vim.b[buf].terminal_job_id = 1
+      snacks_backend.send({ buf = buf }, "hello", { submit = true })
+      -- The text sent should include a newline (concatenated)
+      assert.are.equal("hello\n", sent[1])
+    end)
+  end)
+
   describe("nil guard safety", function()
     it("hide(nil) does not error", function()
       assert.has_no_errors(function()

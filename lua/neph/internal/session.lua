@@ -299,12 +299,15 @@ function M.send(termname, text, opts)
     return
   end
   if td.buf and vim.api.nvim_buf_is_valid(td.buf) then
-    local chan = vim.b[td.buf].terminal_job_id
-    if chan then
-      vim.fn.chansend(chan, text)
-      if opts.submit then
-        vim.fn.chansend(chan, "\n")
-      end
+    local ok, chan = pcall(function()
+      return vim.b[td.buf].terminal_job_id
+    end)
+    if not ok or not chan then
+      return
+    end
+    vim.fn.chansend(chan, text)
+    if opts.submit then
+      vim.fn.chansend(chan, "\n")
     end
   end
 end

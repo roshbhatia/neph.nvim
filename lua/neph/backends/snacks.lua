@@ -135,6 +135,22 @@ function M.kill(term_data)
   term_data.term = nil
 end
 
+---@param td table  term_data with buf
+---@param text string
+---@param opts? {submit?: boolean}
+function M.send(td, text, opts)
+  opts = opts or {}
+  if not td or not td.buf or not vim.api.nvim_buf_is_valid(td.buf) then
+    return
+  end
+  local chan = vim.b[td.buf].terminal_job_id
+  if not chan then
+    return
+  end
+  local full_text = opts.submit and (text .. "\n") or text
+  vim.fn.chansend(chan, full_text)
+end
+
 function M.cleanup_all(terminals)
   if not terminals then
     return

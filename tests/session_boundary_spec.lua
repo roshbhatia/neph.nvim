@@ -352,4 +352,32 @@ describe("neph.session boundary", function()
       assert.is_true(session.is_visible("rapid"))
     end)
   end)
+
+  describe("contract violations", function()
+    it("send() with unknown termname returns silently (no crash, no error)", function()
+      fresh_session()
+      assert.has_no_errors(function()
+        session.send("totally_unknown_term", "hello", { submit = true })
+      end)
+    end)
+
+    it("send() with nil termname returns silently", function()
+      fresh_session()
+      assert.has_no_errors(function()
+        session.send(nil, "hello")
+      end)
+    end)
+
+    it("open() with unknown agent name notifies user", function()
+      fresh_session()
+      local notified = false
+      local orig = vim.notify
+      vim.notify = function()
+        notified = true
+      end
+      session.open("agent_that_does_not_exist")
+      vim.notify = orig
+      assert.is_true(notified)
+    end)
+  end)
 end)

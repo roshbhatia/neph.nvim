@@ -36,6 +36,10 @@ end
 
 ---@param params neph.ReviewRequest
 function M.enqueue(params)
+  if not open_fn then
+    vim.notify("Neph: review UI not initialised (set_open_fn not called)", vim.log.levels.WARN)
+    return
+  end
   if not active then
     active = params
     log.debug("review_queue", "opening immediately: %s", params.path)
