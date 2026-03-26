@@ -1,3 +1,17 @@
+# Taskfile.yml — neph.nvim development task runner (https://taskfile.dev)
+#
+# Common workflows:
+#   task check          Fast lint + type check, no tests (good for save-on-change)
+#   task lint           Full lint: stylua formatting + luacheck + tools TSC
+#   task test           Full test suite: Lua (plenary/busted) + TS (vitest) + Rego + e2e
+#   task ci             lint + test (what CI runs)
+#   task build          Compile all TypeScript tools to dist/
+#   task install        Build + symlink tools into agent config dirs
+#   task docs           Regenerate vimdoc from EmmyLua annotations
+#
+# Tool sub-tasks live in tools/Taskfile.yml and are namespaced as `tools:*`
+# e.g. `task tools:build`, `task tools:test`, `task tools:lint`
+
 version: "3"
 
 includes:

@@ -129,6 +129,7 @@ function M.gate()
     vim.notify("Neph: reviews held — writes will accumulate", vim.log.levels.INFO)
   elseif current == "hold" then
     gate.release()
+    require("neph.internal.review_queue").drain()
     vim.notify("Neph: gate released — draining pending reviews", vim.log.levels.INFO)
   else -- bypass
     gate.set("normal")
@@ -150,6 +151,7 @@ end
 --- Release hold and drain accumulated reviews.
 function M.gate_release()
   require("neph.internal.gate").release()
+  require("neph.internal.review_queue").drain()
   vim.notify("Neph: gate released", vim.log.levels.INFO)
 end
 

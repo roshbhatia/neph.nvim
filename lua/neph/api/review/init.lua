@@ -357,6 +357,21 @@ function M.open_manual(file_path)
   return { ok = true, msg = "Review enqueued" }
 end
 
+--- Auto-accept a review request (called when gate is in bypass mode).
+--- Writes an accept envelope and notifies the caller so the CLI doesn't hang.
+---@param params neph.ReviewRequest
+function M._bypass_accept(params)
+  local envelope = {
+    schema = "review/v1",
+    decision = "accept",
+    content = params.content or "",
+    hunks = {},
+    reason = "bypass",
+  }
+  M.write_result(params.result_path, params.channel_id, params.request_id, envelope)
+  require("neph.internal.review_queue").on_complete(params.request_id)
+end
+
 function M.write_result(path, channel_id, request_id, envelope)
   envelope.request_id = request_id
 
