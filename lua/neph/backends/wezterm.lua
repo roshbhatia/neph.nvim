@@ -231,7 +231,7 @@ function M.open(termname, agent_config, cwd)
 end
 
 function M.focus(term_data)
-  if not term_data.pane_id or not pane_exists(term_data.pane_id) then
+  if not term_data or not term_data.pane_id or not pane_exists(term_data.pane_id) then
     return false
   end
   activate_pane(term_data.pane_id)
@@ -239,7 +239,7 @@ function M.focus(term_data)
 end
 
 function M.hide(term_data)
-  if not term_data.pane_id then
+  if not term_data or not term_data.pane_id then
     return
   end
   pane_errors[term_data.pane_id] = nil
@@ -261,6 +261,9 @@ function M.is_visible(term_data)
 end
 
 function M.kill(term_data)
+  if not term_data then
+    return
+  end
   if term_data.pane_id then
     pane_errors[term_data.pane_id] = nil
     kill_pane(term_data.pane_id)
@@ -269,6 +272,9 @@ function M.kill(term_data)
 end
 
 function M.cleanup_all(terminals)
+  if not terminals then
+    return
+  end
   for _, td in pairs(terminals) do
     if td.pane_id then
       pane_errors[td.pane_id] = nil

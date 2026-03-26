@@ -53,8 +53,13 @@ function M.setup(opts)
   -- Auto-create RPC socket if not already listening
   local socket_cfg = config.current.socket or {}
   if socket_cfg.enable ~= false and (vim.v.servername == nil or vim.v.servername == "") then
-    local path = socket_cfg.path or vim.fn.tempname()
-    vim.fn.serverstart(path)
+    local path = socket_cfg.path
+    if not path or path == "" then
+      path = vim.fn.tempname()
+    end
+    if path and path ~= "" then
+      vim.fn.serverstart(path)
+    end
   end
 
   require("neph.internal.agents").init(agents)
