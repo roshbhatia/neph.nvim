@@ -99,6 +99,9 @@ function M.focus(term_data)
 end
 
 function M.hide(term_data)
+  if not term_data or not term_data.win then
+    return
+  end
   if term_data.win and vim.api.nvim_win_is_valid(term_data.win) then
     vim.api.nvim_win_close(term_data.win, true)
   end
@@ -116,6 +119,9 @@ function M.is_visible(term_data)
 end
 
 function M.kill(term_data)
+  if not term_data then
+    return
+  end
   if term_data.ready_timer then
     pcall(term_data.ready_timer.stop, term_data.ready_timer)
     pcall(term_data.ready_timer.close, term_data.ready_timer)
@@ -130,6 +136,9 @@ function M.kill(term_data)
 end
 
 function M.cleanup_all(terminals)
+  if not terminals then
+    return
+  end
   for _, td in pairs(terminals) do
     if td.ready_timer then
       pcall(td.ready_timer.stop, td.ready_timer)

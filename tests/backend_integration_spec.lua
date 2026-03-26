@@ -224,6 +224,32 @@ describe("snacks backend integration", function()
       end)
     end)
   end)
+
+  describe("nil guard safety", function()
+    it("hide(nil) does not error", function()
+      assert.has_no_errors(function()
+        snacks_backend.hide(nil)
+      end)
+    end)
+
+    it("kill(nil) does not error", function()
+      assert.has_no_errors(function()
+        snacks_backend.kill(nil)
+      end)
+    end)
+
+    it("cleanup_all(nil) does not error", function()
+      assert.has_no_errors(function()
+        snacks_backend.cleanup_all(nil)
+      end)
+    end)
+
+    it("focus(nil) does not error", function()
+      assert.has_no_errors(function()
+        snacks_backend.focus(nil)
+      end)
+    end)
+  end)
 end)
 
 -- =========================================================================
