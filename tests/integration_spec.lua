@@ -146,6 +146,66 @@ describe("neph.internal.integration", function()
       assert.are.equal("default", pipeline.group)
       assert.are.equal("noop", pipeline.policy_engine)
     end)
+
+    it("resolve() with empty integration_overrides behaves same as no overrides", function()
+      local pipeline_no_overrides = integration.resolve({ name = "test", integration_group = "harness" })
+      local pipeline_empty_overrides = integration.resolve({
+        name = "test",
+        integration_group = "harness",
+        integration_overrides = {},
+      })
+      assert.are.equal(pipeline_no_overrides.policy_engine, pipeline_empty_overrides.policy_engine)
+      assert.are.equal(pipeline_no_overrides.review_provider, pipeline_empty_overrides.review_provider)
+      assert.are.equal(pipeline_no_overrides.formatter, pipeline_empty_overrides.formatter)
+      assert.are.equal(pipeline_no_overrides.adapter, pipeline_empty_overrides.adapter)
+      assert.are.equal(pipeline_no_overrides.sources.policy_engine, pipeline_empty_overrides.sources.policy_engine)
+    end)
+
+    it("resolve() with all four override fields set — all sources are 'agent'", function()
+      local pipeline = integration.resolve({
+        name = "test",
+        integration_group = "harness",
+        integration_overrides = {
+          policy_engine = "my_engine",
+          review_provider = "my_review",
+          formatter = "my_fmt",
+          adapter = "my_adapter",
+        },
+      })
+      assert.are.equal("my_engine", pipeline.policy_engine)
+      assert.are.equal("my_review", pipeline.review_provider)
+      assert.are.equal("my_fmt", pipeline.formatter)
+      assert.are.equal("my_adapter", pipeline.adapter)
+      assert.are.equal("agent", pipeline.sources.policy_engine)
+      assert.are.equal("agent", pipeline.sources.review_provider)
+      assert.are.equal("agent", pipeline.sources.formatter)
+      assert.are.equal("agent", pipeline.sources.adapter)
+    end)
+  end)
+
+  describe("apply_all() extra coverage", function()
+    it("agent with integration_group pointing to a group with all four fields set", function()
+      config.current.integration_groups = {
+        full_group = {
+          policy_engine = "pe_val",
+          review_provider = "rp_val",
+          formatter = "fmt_val",
+          adapter = "adp_val",
+        },
+      }
+      local agents = { { name = "test_agent", integration_group = "full_group" } }
+      integration.apply_all(agents)
+      local p = agents[1].integration_pipeline
+      assert.is_not_nil(p)
+      assert.are.equal("pe_val", p.policy_engine)
+      assert.are.equal("rp_val", p.review_provider)
+      assert.are.equal("fmt_val", p.formatter)
+      assert.are.equal("adp_val", p.adapter)
+      assert.are.equal("group", p.sources.policy_engine)
+      assert.are.equal("group", p.sources.review_provider)
+      assert.are.equal("group", p.sources.formatter)
+      assert.are.equal("group", p.sources.adapter)
+    end)
   end)
 end)
 

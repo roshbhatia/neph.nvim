@@ -24,7 +24,7 @@ local AGENT_OPTIONAL_FIELDS = {
   integration_overrides = "table",
 }
 
-local VALID_AGENT_TYPES = { hook = true, terminal = true }
+local VALID_AGENT_TYPES = { hook = true, terminal = true, extension = true }
 
 ---@type table<string, string>
 local REMOVED_FIELDS = {
@@ -53,6 +53,9 @@ function M.validate_agent(def)
       error(
         string.format("neph: agent '%s' field '%s' must be %s, got %s", name, field, expected_type, type(def[field]))
       )
+    end
+    if expected_type == "string" and def[field] == "" then
+      error(string.format("neph: agent '%s' field '%s' must not be empty", name, field))
     end
   end
 

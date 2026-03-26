@@ -61,5 +61,39 @@ describe("neph.agents", function()
     it("returns nil for nil input", function()
       assert.is_nil(agents.get_by_name(nil))
     end)
+
+    it("returns nil for nonexistent agent after init", function()
+      assert.is_nil(agents.get_by_name("nonexistent"))
+    end)
+  end)
+
+  describe("get_all() after init([])", function()
+    it("returns empty table when initialized with empty array", function()
+      agents.init({})
+      assert.are.same({}, agents.get_all())
+    end)
+  end)
+
+  describe("get_all_registered()", function()
+    it("returns ALL agents including unavailable ones", function()
+      agents.init({
+        { name = "available", label = "A", icon = " ", cmd = "ls", args = {} },
+        { name = "unavailable", label = "B", icon = " ", cmd = "__nonexistent_cmd__", args = {} },
+      })
+      local all_registered = agents.get_all_registered()
+      local available = agents.get_all()
+      -- get_all_registered returns more agents than get_all when some are unavailable
+      assert.are.equal(2, #all_registered)
+      assert.are.equal(1, #available)
+    end)
+
+    it("includes agents whose executables are not on PATH", function()
+      agents.init({
+        { name = "ghost", label = "Ghost", icon = " ", cmd = "__nonexistent_cmd__" },
+      })
+      local registered = agents.get_all_registered()
+      assert.are.equal(1, #registered)
+      assert.are.equal("ghost", registered[1].name)
+    end)
   end)
 end)

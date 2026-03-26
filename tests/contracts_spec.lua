@@ -94,6 +94,120 @@ describe("neph.contracts", function()
     end)
   end)
 
+  describe("agent type field", function()
+    local function base(extra)
+      local def = { name = "test", label = "Test", icon = " ", cmd = "test" }
+      for k, v in pairs(extra or {}) do
+        def[k] = v
+      end
+      return def
+    end
+
+    it("type = nil is valid (no type field)", function()
+      assert.has_no.errors(function()
+        contracts.validate_agent(base())
+      end)
+    end)
+
+    it("type = 'extension' is valid", function()
+      assert.has_no.errors(function()
+        contracts.validate_agent(base({ type = "extension" }))
+      end)
+    end)
+
+    it("type = 'hook' is valid", function()
+      assert.has_no.errors(function()
+        contracts.validate_agent(base({ type = "hook" }))
+      end)
+    end)
+
+    it("type = 'unknown' throws error", function()
+      assert.has_error(function()
+        contracts.validate_agent(base({ type = "unknown" }))
+      end)
+    end)
+
+    it("type = '' throws error", function()
+      assert.has_error(function()
+        contracts.validate_agent(base({ type = "" }))
+      end)
+    end)
+
+    it("type = 123 (non-string) throws error", function()
+      assert.has_error(function()
+        contracts.validate_agent(base({ type = 123 }))
+      end)
+    end)
+
+    it("type = 'Extension' (wrong case) throws error", function()
+      assert.has_error(function()
+        contracts.validate_agent(base({ type = "Extension" }))
+      end)
+    end)
+  end)
+
+  describe("agent field boundaries", function()
+    local function base(extra)
+      local def = { name = "test", label = "Test", icon = " ", cmd = "test" }
+      for k, v in pairs(extra or {}) do
+        def[k] = v
+      end
+      return def
+    end
+
+    it("name = '' throws error", function()
+      assert.has_error(function()
+        contracts.validate_agent({ name = "", label = "Test", icon = " ", cmd = "test" })
+      end)
+    end)
+
+    it("name = very long string does not crash", function()
+      assert.has_no.errors(function()
+        contracts.validate_agent(base({ name = string.rep("a", 1000) }))
+      end)
+    end)
+
+    it("cmd = '' throws error", function()
+      assert.has_error(function()
+        contracts.validate_agent(base({ cmd = "" }))
+      end)
+    end)
+
+    it("label with unicode is accepted", function()
+      assert.has_no.errors(function()
+        contracts.validate_agent(base({ label = "テスト Agent" }))
+      end)
+    end)
+
+    it("icon with multi-byte emoji is accepted", function()
+      assert.has_no.errors(function()
+        contracts.validate_agent(base({ icon = "🤖" }))
+      end)
+    end)
+
+    it("env with empty table is valid", function()
+      assert.has_no.errors(function()
+        contracts.validate_agent(base({ env = {} }))
+      end)
+    end)
+
+    it("env with numeric value is accepted (no value-type validation on env entries)", function()
+      assert.has_no.errors(function()
+        contracts.validate_agent(base({ env = { KEY = 123 } }))
+      end)
+    end)
+
+    it("args with 100 elements is valid", function()
+      local big_args = {}
+      for i = 1, 100 do
+        big_args[i] = tostring(i)
+      end
+      assert.has_no.errors(function()
+        contracts.validate_agent(base({ args = big_args }))
+      end)
+    end)
+  end)
+
   describe("validate_backend", function()
     local function make_valid_backend()
       return {
