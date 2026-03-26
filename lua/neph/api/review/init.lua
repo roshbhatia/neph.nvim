@@ -204,10 +204,9 @@ function M._open_immediate(params)
 
   -- Handle manual tab close
   vim.api.nvim_create_autocmd("TabClosed", {
-    once = true,
     callback = function()
       if vim.api.nvim_tabpage_is_valid(ui_state.tab) then
-        return true -- not our tab; re-register
+        return -- not our tab; keep listening
       end
       if result_written then
         return
