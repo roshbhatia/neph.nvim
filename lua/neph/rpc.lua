@@ -63,14 +63,15 @@ local dispatch = {
   end,
   ["tools.uninstall"] = function(p)
     local agents = require("neph.internal.agents").get_all()
-    local root = require("neph.internal.tools")._plugin_root()
     for _, agent in ipairs(agents) do
       if agent.name == p.name and agent.tools then
         for _, spec in ipairs(agent.tools) do
           if spec.type == "symlink" then
             local dst = vim.fn.expand(spec.dst)
             local stat = vim.uv.fs_lstat(dst)
-            if stat then os.remove(dst) end
+            if stat then
+              os.remove(dst)
+            end
           end
         end
         return { ok = true }

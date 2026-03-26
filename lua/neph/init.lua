@@ -166,10 +166,10 @@ function M.setup(opts)
     nargs = "*",
     desc = "Install neph agent tools (symlinks, json merges)",
     complete = function(arg_lead)
-      local agents = require("neph.internal.agents").get_all()
+      local all_agents = require("neph.internal.agents").get_all()
       local names = vim.tbl_map(function(a)
         return a.name
-      end, agents)
+      end, all_agents)
       table.insert(names, "--preview")
       return vim.tbl_filter(function(n)
         return vim.startswith(n, arg_lead)

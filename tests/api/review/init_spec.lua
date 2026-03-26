@@ -44,7 +44,7 @@ local function make_stub_engine()
     build_envelope = function(_, content)
       return { schema = "review/v1", decision = "accept", content = content or "" }
     end,
-    create_session = function(old, new)
+    create_session = function(_old, _new)
       local session = {}
       session.get_total_hunks = function()
         return 0
@@ -423,9 +423,9 @@ describe("neph.api.review._open_immediate large file handling", function()
       build_envelope = function(_, content)
         return { schema = "review/v1", decision = "accept", content = content or "" }
       end,
-      create_session = function(old, new)
-        called_with_old = old
-        called_with_new = new
+      create_session = function(o, n) -- luacheck: ignore 431
+        called_with_old = o
+        called_with_new = n
         local session = {}
         session.get_total_hunks = function()
           return 0
