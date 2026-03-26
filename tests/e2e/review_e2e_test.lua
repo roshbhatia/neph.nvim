@@ -24,7 +24,8 @@ local function call_review_keymap(lhs)
 end
 
 --- Spawn neph-cli review as a job and return a handle for checking results.
-local function spawn_review(neph_cli, nvim_socket, stdin_json, extra_env)
+--- @param cmd string[] Full command argv (e.g. {"node", "/path/dist/index.js", "review"})
+local function spawn_review(cmd, nvim_socket, stdin_json, extra_env)
   local state = { stdout = {}, stderr = {}, exited = false, code = nil }
   local env = { NVIM = "", NVIM_SOCKET_PATH = nvim_socket, PATH = os.getenv("PATH") }
   if extra_env then
@@ -33,7 +34,7 @@ local function spawn_review(neph_cli, nvim_socket, stdin_json, extra_env)
     end
   end
 
-  local job_id = vim.fn.jobstart({ "npx", "tsx", neph_cli, "review" }, {
+  local job_id = vim.fn.jobstart(cmd, {
     env = env,
     on_stdout = function(_, data)
       for _, l in ipairs(data) do
@@ -62,13 +63,17 @@ end
 
 return function(t)
   local plugin_root = vim.fn.getcwd()
-  local neph_cli = plugin_root .. "/tools/neph-cli/src/index.ts"
-  if vim.fn.executable("npx") ~= 1 then
-    t.skip("review e2e", "npx not available on PATH")
-    return
-  end
-  if vim.fn.filereadable(neph_cli) ~= 1 then
-    t.skip("review e2e", "neph-cli source not found")
+  -- Prefer pre-built dist/index.js (available after `task tools:build`),
+  -- fall back to tsx + source for local dev without a build step.
+  local neph_cli_dist = plugin_root .. "/tools/neph-cli/dist/index.js"
+  local neph_cli_src = plugin_root .. "/tools/neph-cli/src/index.ts"
+  local review_cmd
+  if vim.fn.filereadable(neph_cli_dist) == 1 then
+    review_cmd = { "node", neph_cli_dist, "review" }
+  elseif vim.fn.filereadable(neph_cli_src) == 1 and vim.fn.executable("npx") == 1 then
+    review_cmd = { "npx", "tsx", neph_cli_src, "review" }
+  else
+    t.skip("review e2e", "neph-cli not built and npx not available")
     return
   end
 
@@ -112,7 +117,7 @@ return function(t)
       local test_file = vim.fn.tempname() .. ".lua"
       vim.fn.writefile({ "same_content" }, test_file)
 
-      local state = spawn_review(neph_cli, nvim_socket, vim.json.encode({ path = test_file, content = "same_content" }))
+      local state = spawn_review(review_cmd, nvim_socket, vim.json.encode({ path = test_file, content = "same_content" }))
 
       t.wait_for(function()
         return state.exited
@@ -129,7 +134,7 @@ return function(t)
       vim.fn.writefile({ "line1", "line2", "line3" }, test_file)
 
       local state = spawn_review(
-        neph_cli,
+        review_cmd,
         nvim_socket,
         vim.json.encode({ path = test_file, content = "line1\nline2_CHANGED\nline3" })
       )
@@ -163,7 +168,7 @@ return function(t)
       local test_file = vim.fn.tempname() .. ".lua"
       vim.fn.writefile({ "old_content" }, test_file)
 
-      local state = spawn_review(neph_cli, nvim_socket, vim.json.encode({ path = test_file, content = "new_content" }))
+      local state = spawn_review(review_cmd, nvim_socket, vim.json.encode({ path = test_file, content = "new_content" }))
 
       t.wait_for(function()
         return vim.fn.tabpagenr("$") > 1
@@ -187,7 +192,7 @@ return function(t)
 
     t.it("dry-run: auto-accepts without Neovim review", function()
       local state = spawn_review(
-        neph_cli,
+        review_cmd,
         nvim_socket,
         vim.json.encode({ path = "/tmp/doesnt_matter.lua", content = "anything" }),
         { NEPH_DRY_RUN = "1" }
@@ -206,7 +211,7 @@ return function(t)
       local test_file = vim.fn.tempname() .. ".lua"
       vim.fn.writefile({ "hello" }, test_file)
 
-      local state = spawn_review(neph_cli, nvim_socket, vim.json.encode({ path = test_file, content = "hello" }))
+      local state = spawn_review(review_cmd, nvim_socket, vim.json.encode({ path = test_file, content = "hello" }))
 
       t.wait_for(function()
         return state.exited
