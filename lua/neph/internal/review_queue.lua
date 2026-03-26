@@ -9,6 +9,8 @@ local M = {}
 
 local log = require("neph.internal.log")
 
+local MAX_QUEUE_SIZE = 50
+
 ---@class neph.ReviewRequest
 ---@field request_id string
 ---@field result_path string
@@ -37,10 +39,17 @@ function M.enqueue(params)
   if not active then
     active = params
     log.debug("review_queue", "opening immediately: %s", params.path)
-    if open_fn then
-      open_fn(params)
+    if not open_fn then
+      vim.notify("neph: review queue: no open function set — review dropped", vim.log.levels.WARN)
+      active = nil
+      return
     end
+    open_fn(params)
   else
+    if #queue >= MAX_QUEUE_SIZE then
+      log.debug("review_queue", "queue full (%d), dropping oldest: %s", MAX_QUEUE_SIZE, queue[1].path)
+      table.remove(queue, 1)
+    end
     table.insert(queue, params)
     log.debug("review_queue", "queued: %s (pending=%d)", params.path, #queue)
 

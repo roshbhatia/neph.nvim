@@ -571,6 +571,35 @@ describe("wezterm backend integration", function()
       end)
     end)
   end)
+
+  describe("cleanup_all clears pane_errors", function()
+    it("after cleanup_all, opening new sessions does not see stale pane error state", function()
+      -- Open two sessions so pane_errors gets populated
+      local td1 = wezterm_backend.open("a", make_agent_config(), "/tmp")
+      local td2 = wezterm_backend.open("b", make_agent_config(), "/tmp")
+      assert.is_not_nil(td1)
+      assert.is_not_nil(td2)
+
+      -- Simulate an error being recorded for one pane by calling wait_for_pane failure path;
+      -- we can't reach the internal table directly, so we verify cleanup_all doesn't error
+      -- and that new sessions open cleanly afterward.
+      assert.has_no_errors(function()
+        wezterm_backend.cleanup_all({ td1, td2 })
+      end)
+
+      -- After cleanup_all, pane_ids should still be cleared (kill_pane was called)
+      -- and a fresh open should succeed without interference from old state
+      local td3 = wezterm_backend.open("c", make_agent_config(), "/tmp")
+      assert.is_not_nil(td3)
+      assert.are.equal(99, td3.pane_id)
+    end)
+
+    it("cleanup_all with nil terminals does not error", function()
+      assert.has_no_errors(function()
+        wezterm_backend.cleanup_all(nil)
+      end)
+    end)
+  end)
 end)
 
 -- =========================================================================

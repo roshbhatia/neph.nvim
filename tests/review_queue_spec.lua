@@ -166,4 +166,91 @@ describe("neph.internal.review_queue", function()
       assert.is_nil(review_queue.get_active())
     end)
   end)
+
+  describe("enqueue before set_open_fn", function()
+    it("calling enqueue before set_open_fn does not crash", function()
+      -- Reset clears open_fn
+      review_queue._reset()
+      assert.has_no.errors(function()
+        review_queue.enqueue(make_request("r1", "/tmp/a.lua"))
+      end)
+    end)
+
+    it("after set_open_fn is called, subsequent enqueues work", function()
+      review_queue._reset()
+      -- Enqueue without open_fn — should be dropped silently
+      review_queue.enqueue(make_request("r1", "/tmp/a.lua"))
+      assert.is_nil(review_queue.get_active())
+
+      -- Now set open_fn and enqueue again
+      local opened = {}
+      review_queue.set_open_fn(function(params)
+        table.insert(opened, params)
+      end)
+      review_queue.enqueue(make_request("r2", "/tmp/b.lua"))
+      assert.are.equal(1, #opened)
+      assert.are.equal("r2", opened[1].request_id)
+    end)
+  end)
+
+  describe("queue bounds", function()
+    it("filling queue to MAX_QUEUE_SIZE works without error", function()
+      -- Activate one item first
+      review_queue.enqueue(make_request("r0", "/tmp/0.lua"))
+      assert.has_no.errors(function()
+        for i = 1, 50 do
+          review_queue.enqueue(make_request("r" .. i, "/tmp/" .. i .. ".lua"))
+        end
+      end)
+      assert.are.equal(50, review_queue.count())
+    end)
+
+    it("enqueueing one more than MAX drops the oldest and keeps count at 50", function()
+      review_queue.enqueue(make_request("r0", "/tmp/0.lua"))
+      for i = 1, 50 do
+        review_queue.enqueue(make_request("r" .. i, "/tmp/" .. i .. ".lua"))
+      end
+      -- queue is full (50 items); enqueue one more
+      review_queue.enqueue(make_request("r51", "/tmp/51.lua"))
+      -- oldest was dropped, count stays at 50
+      assert.are.equal(50, review_queue.count())
+    end)
+
+    it("count() never exceeds MAX_QUEUE_SIZE", function()
+      review_queue.enqueue(make_request("r0", "/tmp/0.lua"))
+      for i = 1, 100 do
+        review_queue.enqueue(make_request("r" .. i, "/tmp/" .. i .. ".lua"))
+      end
+      assert.is_true(review_queue.count() <= 50)
+    end)
+
+    it("after draining queue below limit, new enqueue succeeds", function()
+      review_queue.enqueue(make_request("r0", "/tmp/0.lua"))
+      for i = 1, 50 do
+        review_queue.enqueue(make_request("r" .. i, "/tmp/" .. i .. ".lua"))
+      end
+      assert.are.equal(50, review_queue.count())
+      -- Drain active + a few queued
+      review_queue.on_complete("r0")
+      review_queue.on_complete(review_queue.get_active().request_id)
+      -- count should have decreased
+      assert.is_true(review_queue.count() < 50)
+      -- New enqueue should work
+      assert.has_no.errors(function()
+        review_queue.enqueue(make_request("r200", "/tmp/200.lua"))
+      end)
+    end)
+  end)
+
+  describe("_reset clears everything", function()
+    it("after filling queue, _reset() makes count() return 0", function()
+      review_queue.enqueue(make_request("r0", "/tmp/0.lua"))
+      for i = 1, 50 do
+        review_queue.enqueue(make_request("r" .. i, "/tmp/" .. i .. ".lua"))
+      end
+      review_queue._reset()
+      assert.are.equal(0, review_queue.count())
+      assert.is_nil(review_queue.get_active())
+    end)
+  end)
 end)

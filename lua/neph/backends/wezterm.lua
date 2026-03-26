@@ -277,10 +277,10 @@ function M.cleanup_all(terminals)
   end
   for _, td in pairs(terminals) do
     if td.pane_id then
-      pane_errors[td.pane_id] = nil
       kill_pane(td.pane_id)
     end
   end
+  pane_errors = {}
 end
 
 ---@param td table  term_data with pane_id
