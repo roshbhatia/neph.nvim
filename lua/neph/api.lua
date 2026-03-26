@@ -118,4 +118,55 @@ function M.resend()
   end
 end
 
+--- Cycle the review gate: normal → hold → bypass → normal.
+--- In hold mode, reviews accumulate silently until released.
+--- In bypass mode, all agent writes are auto-accepted.
+function M.gate()
+  local gate = require("neph.internal.gate")
+  local current = gate.get()
+  if current == "normal" then
+    gate.set("hold")
+    vim.notify("Neph: reviews held — writes will accumulate", vim.log.levels.INFO)
+  elseif current == "hold" then
+    gate.release()
+    vim.notify("Neph: gate released — draining pending reviews", vim.log.levels.INFO)
+  else -- bypass
+    gate.set("normal")
+    vim.notify("Neph: review gate restored to normal", vim.log.levels.INFO)
+  end
+end
+
+--- Set gate to hold mode explicitly.
+function M.gate_hold()
+  require("neph.internal.gate").set("hold")
+  vim.notify("Neph: reviews held", vim.log.levels.INFO)
+end
+
+--- Set gate to bypass mode explicitly (auto-accepts all writes).
+function M.gate_bypass()
+  require("neph.internal.gate").set("bypass")
+end
+
+--- Release hold and drain accumulated reviews.
+function M.gate_release()
+  require("neph.internal.gate").release()
+  vim.notify("Neph: gate released", vim.log.levels.INFO)
+end
+
+--- Return the current gate state string.
+---@return neph.GateState
+function M.gate_status()
+  return require("neph.internal.gate").get()
+end
+
+--- Open the NephStatus floating buffer showing agent integration state.
+function M.tools_status()
+  require("neph.api.status_buf").open()
+end
+
+--- Show a dry-run preview of what tools.install would change.
+function M.tools_preview()
+  require("neph.api.status_buf").open_preview()
+end
+
 return M

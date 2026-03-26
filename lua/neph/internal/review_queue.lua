@@ -40,6 +40,22 @@ function M.enqueue(params)
     vim.notify("Neph: review UI not initialised (set_open_fn not called)", vim.log.levels.WARN)
     return
   end
+
+  local gate = require("neph.internal.gate")
+  local gate_state = gate.get()
+
+  if gate_state == "hold" then
+    table.insert(queue, params)
+    vim.notify(string.format("Neph: review held — %d pending", #queue), vim.log.levels.INFO)
+    return
+  elseif gate_state == "bypass" then
+    local ok, review = pcall(require, "neph.api.review")
+    if ok and review._bypass_accept then
+      review._bypass_accept(params)
+    end
+    return
+  end
+
   if not active then
     active = params
     log.debug("review_queue", "opening immediately: %s", params.path)
@@ -187,6 +203,23 @@ function M.cancel_path(path)
         end)
       end
     end
+  end
+end
+
+--- Drain the held queue after a gate release.
+--- Triggers open_fn for the head item if nothing is currently active.
+function M.drain()
+  if active or not open_fn then
+    return
+  end
+  local next_review = table.remove(queue, 1)
+  if next_review then
+    active = next_review
+    vim.schedule(function()
+      if active then
+        open_fn(active)
+      end
+    end)
   end
 end
 

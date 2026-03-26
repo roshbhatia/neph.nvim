@@ -7,6 +7,8 @@ import { discoverNvimSocket, SocketTransport, NvimTransport } from './transport'
 import { runReview } from './review';
 import { runIntegrationCommand } from './integration';
 import { runDepsCommand } from './deps';
+import { runGateCommand } from './gate';
+import { runToolsCommand } from './tools';
 
 const RPC_CALL = 'return require("neph.rpc").request(...)';
 
@@ -28,6 +30,16 @@ export async function runCommand(transport: NvimTransport | null, command: strin
 
   if (command === 'deps') {
     await runDepsCommand(args);
+    return;
+  }
+
+  if (command === 'gate') {
+    await runGateCommand(args, transport);
+    return;
+  }
+
+  if (command === 'tools') {
+    await runToolsCommand(args, transport);
     return;
   }
 
@@ -273,7 +285,7 @@ if (require.main === module) {
   if (!command) {
     process.stderr.write(
       'Usage: neph <command> [args...]\n' +
-        'Commands: review, set, unset, get, checktime, close-tab, status, spec, ui-select, ui-input, ui-notify, integration, deps\n'
+        'Commands: review, set, unset, get, checktime, close-tab, status, spec, ui-select, ui-input, ui-notify, integration, deps, gate, tools\n'
     );
     process.exit(1);
   }
@@ -293,7 +305,7 @@ if (require.main === module) {
     } catch (err) {
       process.stderr.write(`neph: failed to connect to Neovim socket at ${socketPath}: ${err}\n`);
     }
-  } else if (command !== 'spec' && command !== 'integration' && command !== 'deps') {
+  } else if (command !== 'spec' && command !== 'integration' && command !== 'deps' && command !== 'gate' && command !== 'tools') {
     // review handles missing transport itself (fail-open); other commands need it
     if (command !== 'review') {
       process.stderr.write(

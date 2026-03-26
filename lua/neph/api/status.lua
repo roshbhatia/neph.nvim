@@ -39,4 +39,19 @@ function M.get(params)
   return { ok = true, value = value }
 end
 
+---Get a status display string including gate state when active.
+---@return string
+function M.get_display()
+  local parts = {}
+
+  local gate_state = require("neph.internal.gate").get()
+  if gate_state == "hold" then
+    table.insert(parts, "[HELD]")
+  elseif gate_state == "bypass" then
+    table.insert(parts, "[BYPASS]")
+  end
+
+  return table.concat(parts, " ")
+end
+
 return M

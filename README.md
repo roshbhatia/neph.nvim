@@ -41,6 +41,10 @@ return {
         -- Review
         { "<leader>jr", api.review, desc = "Neph: review current file" },
 
+        -- Gate / status
+        { "<leader>jg", api.gate, desc = "Neph: cycle review gate (normal→hold→bypass)" },
+        { "<leader>jn", api.tools_status, desc = "Neph: tools/integration status" },
+
         -- History / replay
         { "<leader>jv", api.resend, desc = "Neph: resend previous prompt" },
         { "<leader>jh", api.history, desc = "Neph: browse prompt history" },
@@ -48,6 +52,47 @@ return {
     end,
   },
 }
+```
+
+### Review Gate
+
+Control the review pipeline at runtime without changing config:
+
+| Keymap | Action |
+|--------|--------|
+| `<leader>jg` | Cycle gate: normal → hold → bypass → normal |
+
+**States:**
+- **normal** — reviews open immediately on agent file writes (default)
+- **hold** — reviews accumulate silently; release with `<leader>jg` to review all at once
+- **bypass** — all agent writes are auto-accepted without UI (a warning fires on activation)
+
+From the CLI (in any agent pane, `NVIM_SOCKET_PATH` is set automatically):
+```bash
+neph gate hold      # pause reviews
+neph gate release   # drain queue, resume
+neph gate bypass    # auto-accept all
+neph gate status    # print current state
+```
+
+### Tools & Integration Status
+
+Check which agent integrations are installed and install missing ones:
+
+| Keymap / Command | Action |
+|-----------------|--------|
+| `<leader>jn` | Open NephStatus float (agent table + install state) |
+| `:NephInstall` | Install tools for all agents |
+| `:NephInstall claude` | Install for a single agent |
+| `:NephInstall --preview` | Dry-run: show what would be installed |
+
+From the CLI:
+```bash
+neph tools status           # show install state (requires Neovim socket)
+neph tools status --offline # filesystem check only
+neph tools install          # install all
+neph tools install claude   # install for one agent
+neph tools preview          # dry-run diff
 ```
 
 ## Socket Integration

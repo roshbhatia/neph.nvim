@@ -113,6 +113,69 @@ function M.setup(opts)
   vim.api.nvim_create_user_command("NephTools", function()
     vim.notify("NephTools has moved to the neph CLI. Use `neph integration` instead.", vim.log.levels.WARN)
   end, { nargs = "*" })
+
+  -- Register :NephInstall command
+  vim.api.nvim_create_user_command("NephInstall", function(cmd_opts)
+    local args = vim.split(cmd_opts.args, "%s+", { trimempty = true })
+    local preview = vim.tbl_contains(args, "--preview")
+    local name = nil
+    for _, a in ipairs(args) do
+      if a ~= "--preview" then
+        name = a
+        break
+      end
+    end
+    if preview then
+      require("neph.api").tools_preview()
+    else
+      -- install via tools module
+      local root = require("neph.internal.tools")._plugin_root()
+      local agents_mod = require("neph.internal.agents")
+      local all = agents_mod.get_all()
+      if name then
+        local agent = agents_mod.get_by_name(name)
+        if not agent then
+          vim.notify("Neph: agent '" .. name .. "' not found", vim.log.levels.ERROR)
+          return
+        end
+        all = { agent }
+      end
+      local count = 0
+      for _, agent in ipairs(all) do
+        if agent.tools then
+          local ok, err = pcall(require("neph.internal.tools").install_agent, root, agent)
+          if ok then
+            count = count + 1
+          else
+            vim.notify("Neph: install failed for " .. agent.name .. ": " .. tostring(err), vim.log.levels.ERROR)
+          end
+        end
+      end
+      if name then
+        local agent = agents_mod.get_by_name(name)
+        if agent and not agent.tools then
+          vim.notify("Neph: " .. name .. ": no tools to install", vim.log.levels.INFO)
+        else
+          vim.notify(string.format("Neph: installed tools for %d agent(s)", count), vim.log.levels.INFO)
+        end
+      else
+        vim.notify(string.format("Neph: installed tools for %d agent(s)", count), vim.log.levels.INFO)
+      end
+    end
+  end, {
+    nargs = "*",
+    desc = "Install neph agent tools (symlinks, json merges)",
+    complete = function(arg_lead)
+      local agents = require("neph.internal.agents").get_all()
+      local names = vim.tbl_map(function(a)
+        return a.name
+      end, agents)
+      table.insert(names, "--preview")
+      return vim.tbl_filter(function(n)
+        return vim.startswith(n, arg_lead)
+      end, names)
+    end,
+  })
 end
 
 return M

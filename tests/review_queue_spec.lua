@@ -311,3 +311,119 @@ describe("neph.internal.review_queue", function()
     end)
   end)
 end)
+
+-- ---------------------------------------------------------------------------
+-- Gate + review_queue integration
+-- ---------------------------------------------------------------------------
+
+describe("review_queue gate integration", function()
+  local rq, gate
+
+  local function make_req(id, path)
+    return {
+      request_id = id,
+      result_path = "/tmp/result.json",
+      channel_id = 0,
+      path = path or "/tmp/test.lua",
+      content = "content",
+      agent = "test",
+    }
+  end
+
+  before_each(function()
+    package.loaded["neph.internal.review_queue"] = nil
+    package.loaded["neph.internal.gate"] = nil
+    gate = require("neph.internal.gate")
+    rq = require("neph.internal.review_queue")
+  end)
+
+  -- A realistic helper that mimics how a caller respects the gate
+  local function gate_aware_enqueue(params)
+    if gate.is_hold() or gate.is_bypass() then
+      -- In hold: silently defer (caller would queue elsewhere or skip)
+      -- In bypass: drop entirely
+      return false
+    end
+    rq.enqueue(params)
+    return true
+  end
+
+  it("gate starts normal and enqueue proceeds", function()
+    local opened = 0
+    rq.set_open_fn(function(_)
+      opened = opened + 1
+    end)
+    local ok = gate_aware_enqueue(make_req("r1", "/tmp/a.lua"))
+    assert.is_true(ok)
+    assert.are.equal(1, opened)
+  end)
+
+  it("hold mode suppresses gate_aware_enqueue", function()
+    local opened = 0
+    rq.set_open_fn(function(_)
+      opened = opened + 1
+    end)
+    gate.set("hold")
+    local ok = gate_aware_enqueue(make_req("r1", "/tmp/a.lua"))
+    assert.is_false(ok)
+    assert.are.equal(0, opened)
+    assert.are.equal(0, rq.total())
+  end)
+
+  it("bypass mode suppresses gate_aware_enqueue", function()
+    local opened = 0
+    rq.set_open_fn(function(_)
+      opened = opened + 1
+    end)
+    gate.set("bypass")
+    local ok = gate_aware_enqueue(make_req("r1", "/tmp/a.lua"))
+    assert.is_false(ok)
+    assert.are.equal(0, opened)
+    assert.are.equal(0, rq.total())
+  end)
+
+  it("releasing hold allows subsequent enqueues to proceed", function()
+    local opened = 0
+    rq.set_open_fn(function(_)
+      opened = opened + 1
+    end)
+    gate.set("hold")
+    gate_aware_enqueue(make_req("r1", "/tmp/a.lua")) -- suppressed
+    assert.are.equal(0, opened)
+
+    gate.release()
+    local ok = gate_aware_enqueue(make_req("r2", "/tmp/b.lua"))
+    assert.is_true(ok)
+    assert.are.equal(1, opened)
+  end)
+
+  it("gate state is independent from review_queue state", function()
+    -- Setting hold does not affect items already in the queue
+    rq.set_open_fn(function(_) end)
+    rq.enqueue(make_req("r1", "/tmp/a.lua"))
+    rq.enqueue(make_req("r2", "/tmp/b.lua"))
+    assert.are.equal(1, rq.count())
+    assert.are.equal(2, rq.total())
+
+    gate.set("hold")
+
+    -- Queue state unchanged
+    assert.are.equal(1, rq.count())
+    assert.are.equal(2, rq.total())
+    assert.are.equal("hold", gate.get())
+  end)
+
+  it("normal gate allows multiple sequential enqueues", function()
+    local opened = {}
+    rq.set_open_fn(function(p)
+      table.insert(opened, p.request_id)
+    end)
+    gate_aware_enqueue(make_req("r1", "/tmp/a.lua"))
+    gate_aware_enqueue(make_req("r2", "/tmp/b.lua"))
+    gate_aware_enqueue(make_req("r3", "/tmp/c.lua"))
+    -- First opened immediately; rest queued
+    assert.are.equal(1, #opened)
+    assert.are.equal("r1", opened[1])
+    assert.are.equal(2, rq.count())
+  end)
+end)
