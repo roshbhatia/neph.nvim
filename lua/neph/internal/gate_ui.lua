@@ -13,7 +13,7 @@ local state = {
 
 local INDICATORS = {
   hold = "%#WarningMsg# ⏸ NEPH HOLD %*",
-  bypass = "%#DiagnosticError# ⚡ NEPH BYPASS %*",
+  bypass = "%#DiagnosticError# 󰈑 NEPH BYPASS %*",
 }
 
 ---@param gate_state string  "hold" | "bypass"
