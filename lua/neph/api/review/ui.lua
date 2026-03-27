@@ -25,8 +25,18 @@ function M.open_diff_tab(path, old_lines, new_lines, opts)
   vim.cmd("tabnew")
   local tab = vim.api.nvim_get_current_tabpage()
 
-  -- Set review-specific diffopt (global option, restored on cleanup)
-  vim.o.diffopt = "internal,filler,closeoff,indent-heuristic,inline:char,linematch:60,algorithm:histogram"
+  -- Set review-specific diffopt (global option, restored on cleanup).
+  -- Use pcall: some options (inline:char, linematch) require newer Neovim; fall
+  -- back gracefully so the review tab still opens on older versions / headless.
+  local preferred_diffopt = "internal,filler,closeoff,indent-heuristic,inline:char,linematch:60,algorithm:histogram"
+  local ok_diffopt = pcall(function()
+    vim.o.diffopt = preferred_diffopt
+  end)
+  if not ok_diffopt then
+    pcall(function()
+      vim.o.diffopt = "internal,filler,closeoff,indent-heuristic,algorithm:histogram"
+    end)
+  end
 
   -- Left: current (or buffer contents in post-write mode)
   -- Use nvim_tabpage_get_win to get the correct window in the new tab,
