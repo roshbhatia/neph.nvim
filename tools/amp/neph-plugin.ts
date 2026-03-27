@@ -1,14 +1,13 @@
 // @i-know-the-amp-plugin-api-is-wip-and-very-experimental-right-now
 import { readFileSync } from "node:fs";
 import { debug } from "../lib/log";
-import { review, uiSelect, uiInput, uiNotify, nephRun, NEPH_TIMEOUT_MS } from "../lib/neph-run";
-
-/** Fire-and-forget a neph CLI call in parallel (no serial queueing). */
-function nephFire(...args: string[]): void {
-  nephRun(args, undefined, NEPH_TIMEOUT_MS).catch(() => { /* nvim may have closed */ });
-}
+import { review, uiSelect, uiInput, uiNotify, createNephQueue } from "../lib/neph-run";
 
 function neph_plugin_default(amp: any) {
+  // Serial queue ensures agent lifecycle commands (set/unset/checktime) execute
+  // in dispatch order and don't race each other across concurrent agent events.
+  const agentQueue = createNephQueue();
+
   amp.on("session.start", async () => {
     debug("amp", "session.start");
 
@@ -28,12 +27,12 @@ function neph_plugin_default(amp: any) {
   });
 
   amp.on("agent.start", async () => {
-    nephFire("set", "amp_running", "true");
+    agentQueue("set", "amp_running", "true");
   });
 
   amp.on("agent.end", async () => {
-    nephFire("unset", "amp_running");
-    nephFire("checktime");
+    agentQueue("unset", "amp_running");
+    agentQueue("checktime");
   });
 
   amp.on("tool.call", async (event: any, _ctx: any) => {
@@ -69,10 +68,10 @@ function neph_plugin_default(amp: any) {
     try {
       const result = await review(filePath, content, "amp");
       if (result.decision === "reject") {
-        const reason = result.reason ? `: ${result.reason}` : "";
+        const reason = result.reason ?? "User rejected changes";
         return {
           action: "reject-and-continue",
-          message: `Write rejected by neph review${reason}`,
+          message: `Write rejected by neph review: ${reason}`,
         };
       }
       return { action: "allow" };

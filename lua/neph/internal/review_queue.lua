@@ -70,8 +70,12 @@ function M.enqueue(params)
     open_fn(params)
   else
     if #queue >= MAX_QUEUE_SIZE then
-      log.debug("review_queue", "queue full (%d), dropping oldest: %s", MAX_QUEUE_SIZE, queue[1].path)
-      table.remove(queue, 1)
+      local dropped = table.remove(queue, 1)
+      log.debug("review_queue", "queue full (%d), dropping oldest: %s", MAX_QUEUE_SIZE, dropped.path)
+      vim.notify(
+        string.format("Neph: review queue full — dropped oldest review: %s", vim.fn.fnamemodify(dropped.path, ":.")),
+        vim.log.levels.WARN
+      )
     end
     table.insert(queue, params)
     log.debug("review_queue", "queued: %s (pending=%d)", params.path, #queue)

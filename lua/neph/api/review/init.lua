@@ -171,8 +171,10 @@ function M._open_immediate(params)
   local session = engine.create_session(old_lines, new_lines)
 
   if session.get_total_hunks() == 0 then
-    local envelope = session.finalize()
-    M.write_result(result_path, channel_id, request_id, envelope)
+    local ok, envelope = pcall(session.finalize)
+    if ok and envelope then
+      M.write_result(result_path, channel_id, request_id, envelope)
+    end
     review_queue.on_complete(request_id)
     return { ok = true, msg = "No changes" }
   end
@@ -406,13 +408,15 @@ function M.write_result(path, channel_id, request_id, envelope)
       return
     end
     local wok, werr = f:write(vim.json.encode(envelope))
+    f:close()
     if not wok then
       vim.notify("Neph: write_result write error: " .. (werr or "unknown"), vim.log.levels.ERROR)
+      return
     end
-    f:close()
     local ok, rename_err = os.rename(tmp_path, path)
     if not ok then
       vim.notify("Neph: failed to rename review result: " .. (rename_err or ""), vim.log.levels.ERROR)
+      return
     end
   end
 
