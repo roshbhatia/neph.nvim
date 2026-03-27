@@ -109,4 +109,82 @@ describe("neph.api.review.ui open_diff_tab (integration)", function()
 
     assert.is_false(vim.api.nvim_tabpage_is_valid(tab))
   end)
+
+  -- Layout tests
+  it("default layout is vertical: left and right windows share a row", function()
+    ui_state = ui.open_diff_tab("/tmp/neph_layout_v.lua", { "a" }, { "b" }, { mode = "pre_write" })
+
+    assert.are.equal("vertical", ui_state.layout)
+    -- In a vertical split both windows have the same top row
+    local left_pos = vim.api.nvim_win_get_position(ui_state.left_win)
+    local right_pos = vim.api.nvim_win_get_position(ui_state.right_win)
+    assert.are.equal(left_pos[1], right_pos[1]) -- same row
+  end)
+
+  it("horizontal layout: top and bottom windows share a column", function()
+    ui_state = ui.open_diff_tab(
+      "/tmp/neph_layout_h.lua",
+      { "a" },
+      { "b" },
+      { mode = "pre_write", layout = "horizontal" }
+    )
+
+    assert.are.equal("horizontal", ui_state.layout)
+    -- In a horizontal split both windows have the same left column
+    local left_pos = vim.api.nvim_win_get_position(ui_state.left_win)
+    local right_pos = vim.api.nvim_win_get_position(ui_state.right_win)
+    assert.are.equal(left_pos[2], right_pos[2]) -- same column
+  end)
+
+  it("windows are equal sized after open (vertical)", function()
+    ui_state = ui.open_diff_tab("/tmp/neph_layout_eq.lua", { "a" }, { "b" }, { mode = "pre_write" })
+
+    local lw = vim.api.nvim_win_get_width(ui_state.left_win)
+    local rw = vim.api.nvim_win_get_width(ui_state.right_win)
+    -- Allow ±1 for rounding on odd terminal widths
+    assert.is_true(math.abs(lw - rw) <= 1)
+  end)
+
+  it("windows are equal sized after open (horizontal)", function()
+    ui_state = ui.open_diff_tab(
+      "/tmp/neph_layout_eqh.lua",
+      { "a" },
+      { "b" },
+      { mode = "pre_write", layout = "horizontal" }
+    )
+
+    local lh = vim.api.nvim_win_get_height(ui_state.left_win)
+    local rh = vim.api.nvim_win_get_height(ui_state.right_win)
+    assert.is_true(math.abs(lh - rh) <= 1)
+  end)
+
+  it("rotate_layout toggles vertical → horizontal and equalizes", function()
+    ui_state = ui.open_diff_tab("/tmp/neph_rotate.lua", { "a" }, { "b" }, { mode = "pre_write" })
+    assert.are.equal("vertical", ui_state.layout)
+
+    ui.rotate_layout(ui_state)
+
+    assert.are.equal("horizontal", ui_state.layout)
+    -- After rotation the windows should share a column (horizontal split)
+    local left_pos = vim.api.nvim_win_get_position(ui_state.left_win)
+    local right_pos = vim.api.nvim_win_get_position(ui_state.right_win)
+    assert.are.equal(left_pos[2], right_pos[2])
+  end)
+
+  it("rotate_layout toggles horizontal → vertical", function()
+    ui_state = ui.open_diff_tab(
+      "/tmp/neph_rotate2.lua",
+      { "a" },
+      { "b" },
+      { mode = "pre_write", layout = "horizontal" }
+    )
+    assert.are.equal("horizontal", ui_state.layout)
+
+    ui.rotate_layout(ui_state)
+
+    assert.are.equal("vertical", ui_state.layout)
+    local left_pos = vim.api.nvim_win_get_position(ui_state.left_win)
+    local right_pos = vim.api.nvim_win_get_position(ui_state.right_win)
+    assert.are.equal(left_pos[1], right_pos[1])
+  end)
 end)

@@ -180,7 +180,10 @@ function M._open_immediate(params)
   end
 
   ui.setup_signs()
-  local ui_state = ui.open_diff_tab(file_path, old_lines, new_lines, { mode = mode, request_id = request_id })
+  local config = require("neph.config").current
+  local layout = (type(config.review_layout) == "string" and config.review_layout) or "vertical"
+  local ui_state =
+    ui.open_diff_tab(file_path, old_lines, new_lines, { mode = mode, request_id = request_id, layout = layout })
 
   local result_written = false
   local augroup_name = "NephReview_" .. request_id

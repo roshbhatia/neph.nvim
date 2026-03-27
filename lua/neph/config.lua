@@ -50,6 +50,7 @@ local M = {}
 ---@field backend?        table                Injected backend module (required)
 ---@field review_signs?   neph.ReviewSignsConfig  Sign icons for diff review UI
 ---@field review_keymaps? neph.ReviewKeymapsConfig  Keymaps for diff review UI
+---@field review_layout?  string               Default diff split layout: "vertical" (default) | "horizontal"
 ---@field review?         neph.ReviewConfig     Review system configuration
 ---@field review_provider? neph.ReviewProvider  Explicit review provider (default: noop)
 ---@field integration_groups? table<string, neph.IntegrationGroup>  Integration group defaults
@@ -69,13 +70,14 @@ local M = {}
 ---@field current?   string  Icon for current hunk (default: →)
 
 ---@class neph.ReviewKeymapsConfig
----@field accept?      string  Accept current hunk (default: ga)
----@field reject?      string  Reject current hunk (default: gr)
----@field accept_all?  string  Accept all remaining (default: gA)
----@field reject_all?  string  Reject all remaining (default: gR)
----@field undo?        string  Clear decision (default: gu)
----@field submit?      string  Submit/finalize review (default: gs)
----@field quit?        string  Quit review (default: q)
+---@field accept?         string  Accept current hunk (default: ga)
+---@field reject?         string  Reject current hunk (default: gr)
+---@field accept_all?     string  Accept all remaining (default: gA)
+---@field reject_all?     string  Reject all remaining (default: gR)
+---@field undo?           string  Clear decision (default: gu)
+---@field submit?         string  Submit/finalize review (default: gs)
+---@field quit?           string  Quit review (default: q)
+---@field rotate_layout?  string  Rotate split layout (default: gL)
 
 ---@class neph.ReviewConfig
 ---@field fs_watcher?     neph.FsWatcherConfig  Filesystem watcher for post-write review
@@ -119,7 +121,9 @@ M.defaults = {
     undo = "gu",
     submit = "gs",
     quit = "q",
+    rotate_layout = "gL",
   },
+  review_layout = "vertical",
   review = {
     fs_watcher = {
       enable = true,

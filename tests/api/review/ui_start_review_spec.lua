@@ -319,4 +319,18 @@ describe("neph.api.review.ui start_review keymaps", function()
 
     assert.are.equal(1, done_count) -- still only 1, not 2
   end)
+
+  it("gL keymap is registered on the left buffer", function()
+    ui.setup_signs()
+    ui.start_review(session, ui_state, on_done)
+    local maps = vim.api.nvim_buf_get_keymap(ui_state.left_buf, "n")
+    local found = false
+    for _, m in ipairs(maps) do
+      if m.lhs == "gL" then
+        found = true
+        break
+      end
+    end
+    assert.is_true(found)
+  end)
 end)

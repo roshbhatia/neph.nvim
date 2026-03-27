@@ -13,11 +13,15 @@ function M.setup_signs()
   vim.fn.sign_define("neph_reject", { text = signs.reject, texthl = "DiagnosticError" })
 end
 
+--- Valid layout values for open_diff_tab.
+---@alias neph.ReviewLayout "vertical" | "horizontal"
+
 function M.open_diff_tab(path, old_lines, new_lines, opts)
   opts = opts or {}
   local ft = vim.filetype.match({ filename = path }) or ""
   local basename = vim.fn.fnamemodify(path, ":t")
   local is_post_write = opts.mode == "post_write"
+  local layout = opts.layout or "vertical" -- "vertical" | "horizontal"
 
   -- Save and set diffopt for consistent review experience
   local original_diffopt = vim.o.diffopt
@@ -62,8 +66,12 @@ function M.open_diff_tab(path, old_lines, new_lines, opts)
   vim.wo[left_win].signcolumn = "yes"
   vim.wo[left_win].fillchars = "diff:╌"
 
-  -- Right: proposed
-  vim.cmd("rightbelow vsplit")
+  -- Right/bottom: proposed (split direction depends on layout)
+  if layout == "horizontal" then
+    vim.cmd("rightbelow split")
+  else
+    vim.cmd("rightbelow vsplit")
+  end
   local right_buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_win_set_buf(0, right_buf)
   vim.api.nvim_buf_set_lines(right_buf, 0, -1, false, new_lines)
@@ -84,7 +92,14 @@ function M.open_diff_tab(path, old_lines, new_lines, opts)
   -- Force line numbers and fillchars after diffthis (no sign column on right)
   vim.wo[right_win].number = true
   vim.wo[right_win].fillchars = "diff:╌"
-  vim.cmd("wincmd h") -- focus left
+
+  -- Equalize window sizes and focus left/top window
+  vim.cmd("wincmd =")
+  if layout == "horizontal" then
+    vim.cmd("wincmd k") -- focus top (left buf)
+  else
+    vim.cmd("wincmd h") -- focus left
+  end
 
   -- Guard autocmd: re-force line numbers on window enter (scoped to tab)
   local guard_augroup = vim.api.nvim_create_augroup("neph_review_guard", { clear = true })
@@ -116,7 +131,29 @@ function M.open_diff_tab(path, old_lines, new_lines, opts)
     mode = opts.mode,
     request_id = opts.request_id,
     original_diffopt = original_diffopt,
+    layout = layout,
   }
+end
+
+--- Rotate the diff split between vertical and horizontal without recreating buffers.
+---@param ui_state table
+function M.rotate_layout(ui_state)
+  if not vim.api.nvim_win_is_valid(ui_state.left_win) or not vim.api.nvim_win_is_valid(ui_state.right_win) then
+    return
+  end
+  if ui_state.layout == "horizontal" then
+    -- Horizontal → vertical: move right_win to far right
+    vim.api.nvim_set_current_win(ui_state.right_win)
+    vim.cmd("wincmd L")
+    ui_state.layout = "vertical"
+  else
+    -- Vertical → horizontal: move right_win to bottom
+    vim.api.nvim_set_current_win(ui_state.right_win)
+    vim.cmd("wincmd J")
+    ui_state.layout = "horizontal"
+  end
+  vim.cmd("wincmd =")
+  vim.api.nvim_set_current_win(ui_state.left_win)
 end
 
 function M.place_sign(buf, sign_name, line, sign_ids)
@@ -265,6 +302,7 @@ local function toggle_help_popup(ui_state, keymaps)
     "  ]c      Next diff hunk",
     "  [c      Previous diff hunk",
     "",
+    "  " .. display_key(keymaps.rotate_layout or "gL") .. "      Rotate layout (vertical ↔ horizontal)",
     "  ?       Toggle this help",
     "",
   }
@@ -374,6 +412,7 @@ function M.start_review(session, ui_state, on_done)
     undo = "gu",
     submit = "gs",
     quit = "q",
+    rotate_layout = "gL",
   }, config.review_keymaps or {})
 
   local finalized = false
@@ -572,6 +611,14 @@ function M.start_review(session, ui_state, on_done)
     session.reject_all_remaining("User exited review")
     do_finalize()
   end, "Neph: quit review")
+
+  -- gL: rotate split layout (vertical ↔ horizontal)
+  map(keymaps.rotate_layout, function()
+    if finalized then
+      return
+    end
+    M.rotate_layout(ui_state)
+  end, "Neph: rotate diff layout")
 
   -- ?: toggle help popup
   map("?", function()
