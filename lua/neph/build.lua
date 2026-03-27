@@ -26,7 +26,10 @@ function M.run()
         vim.notify("Neph: build complete ✓", vim.log.levels.INFO)
       else
         local first_err = (result.stderr or ""):match("[^\n]+") or ("exit " .. result.code)
-        vim.notify("Neph: build failed — " .. first_err .. "\n  See :NephDebug tail for details.", vim.log.levels.ERROR)
+        vim.notify(
+          "Neph: build failed — " .. first_err .. "\n  See :NephDebug tail for details.",
+          vim.log.levels.ERROR
+        )
       end
     end)
   end)

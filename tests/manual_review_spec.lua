@@ -9,6 +9,16 @@ describe("neph.api.review.open_manual", function()
     package.loaded["neph.api.review.engine"] = nil
     package.loaded["neph.api.review.ui"] = nil
     package.loaded["neph.internal.review_queue"] = nil
+    package.loaded["neph.internal.review_provider"] = nil
+    -- Stub provider: enabled by default so validation tests can reach their target code path
+    package.loaded["neph.internal.review_provider"] = {
+      is_enabled_for = function()
+        return true
+      end,
+      is_enabled = function()
+        return true
+      end,
+    }
     review = require("neph.api.review")
     local config = require("neph.config")
     config.current = vim.tbl_deep_extend("force", config.defaults, {
@@ -18,8 +28,17 @@ describe("neph.api.review.open_manual", function()
 
   describe("validation", function()
     it("returns error when review provider is not configured", function()
-      local config = require("neph.config")
-      config.current.review_provider = nil
+      -- Override stub to simulate noop (disabled) provider
+      package.loaded["neph.internal.review_provider"] = {
+        is_enabled_for = function()
+          return false
+        end,
+        is_enabled = function()
+          return false
+        end,
+      }
+      package.loaded["neph.api.review"] = nil
+      review = require("neph.api.review")
       local result = review.open_manual("/tmp/neph-test-review-provider.lua")
       assert.is_false(result.ok)
       assert.truthy(result.error:find("Review provider not configured"))

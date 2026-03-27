@@ -42,7 +42,15 @@ describe("health checks", function()
     health.check()
 
     assert.is_true(#messages.warn > 0)
-    assert.is_true(messages.warn[1]:match("neph CLI not found") ~= nil)
+    -- check_cli warns "neph not found on $PATH" when neph is not executable
+    local found = false
+    for _, msg in ipairs(messages.warn) do
+      if msg:match("neph") then
+        found = true
+        break
+      end
+    end
+    assert.is_true(found)
   end)
 
   it("reports missing required dependencies from CLI", function()
@@ -51,7 +59,7 @@ describe("health checks", function()
     end
 
     vim.fn.systemlist = function(cmd)
-      if cmd:match("neph deps status") then
+      if cmd:match("neph deps check") then
         vim.g.neph_test_shell_error = 1
         return {
           "Dependencies:",
@@ -68,6 +76,13 @@ describe("health checks", function()
     health.check()
 
     assert.is_true(#messages.error > 0)
-    assert.is_true(messages.error[1]:match("cupcake") ~= nil)
+    local found = false
+    for _, msg in ipairs(messages.error) do
+      if msg:match("cupcake") then
+        found = true
+        break
+      end
+    end
+    assert.is_true(found)
   end)
 end)

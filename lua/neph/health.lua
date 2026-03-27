@@ -18,20 +18,26 @@ local function check_build()
 
   local packages = {
     { dir = root .. "/tools/neph-cli", dist = "dist/index.js", label = "neph-cli" },
-    { dir = root .. "/tools/amp",      dist = "dist/amp.js",   label = "amp plugin" },
-    { dir = root .. "/tools/pi",       dist = "dist/cupcake-harness.js", label = "pi harness" },
+    { dir = root .. "/tools/amp", dist = "dist/amp.js", label = "amp plugin" },
+    { dir = root .. "/tools/pi", dist = "dist/cupcake-harness.js", label = "pi harness" },
   }
 
   for _, pkg in ipairs(packages) do
     local state = tools_mod.dist_is_current(pkg.dir, pkg.dist)
     if state == "missing" then
       vim.health.error(
-        pkg.label .. " dist not built (" .. pkg.dir .. "/" .. pkg.dist .. ")\n"
+        pkg.label
+          .. " dist not built ("
+          .. pkg.dir
+          .. "/"
+          .. pkg.dist
+          .. ")\n"
           .. "  Run :NephBuild or 'bash scripts/build.sh'"
       )
     elseif state == "stale" then
       vim.health.warn(
-        pkg.label .. " dist is stale — source files are newer than built artifact\n"
+        pkg.label
+          .. " dist is stale — source files are newer than built artifact\n"
           .. "  Run :NephBuild or 'bash scripts/build.sh'"
       )
     else
@@ -49,9 +55,12 @@ local function check_cli()
 
   if not cli.installed then
     vim.health.error(
-      "neph CLI not installed at " .. cli.path .. "\n"
+      "neph CLI not installed at "
+        .. cli.path
+        .. "\n"
         .. "  Run :NephBuild or :NephInstall to fix this.\n"
-        .. "  Expected symlink → " .. cli.target
+        .. "  Expected symlink → "
+        .. cli.target
     )
   else
     vim.health.ok("neph CLI installed: " .. cli.path .. " → " .. cli.target)
@@ -60,7 +69,9 @@ local function check_cli()
   if vim.fn.executable("neph") ~= 1 then
     vim.health.warn(
       "neph not found on $PATH — agent plugins cannot spawn the CLI.\n"
-        .. "  Ensure " .. vim.fn.fnamemodify(cli.path, ":h") .. " is in your $PATH."
+        .. "  Ensure "
+        .. vim.fn.fnamemodify(cli.path, ":h")
+        .. " is in your $PATH."
     )
   else
     local which = vim.fn.exepath("neph")
@@ -86,7 +97,8 @@ local function check_socket()
       vim.health.warn(
         "$NVIM_SOCKET_PATH not set in shell env — new terminal agents may not find the socket.\n"
           .. "  neph forwards the socket via agent env vars, so this is usually fine.\n"
-          .. "  Current socket: " .. servername
+          .. "  Current socket: "
+          .. servername
       )
     end
   end
@@ -135,7 +147,12 @@ local function check_agents()
         table.insert(issues, "stale: " .. p)
       end
       vim.health.warn(
-        string.format("%s: tools not installed — run :NephInstall %s\n  %s", agent.name, agent.name, table.concat(issues, "\n  "))
+        string.format(
+          "%s: tools not installed — run :NephInstall %s\n  %s",
+          agent.name,
+          agent.name,
+          table.concat(issues, "\n  ")
+        )
       )
     end
   end
@@ -171,10 +188,7 @@ local function check_integrations()
   end
 
   if not any_enabled then
-    vim.health.warn(
-      "No integrations enabled.\n"
-        .. "  Run :NephInstall to install hook configs for supported agents."
-    )
+    vim.health.warn("No integrations enabled.\n" .. "  Run :NephInstall to install hook configs for supported agents.")
   end
 end
 

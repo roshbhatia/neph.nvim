@@ -29,7 +29,10 @@ function M.open_diff_tab(path, old_lines, new_lines, opts)
   vim.o.diffopt = "internal,filler,closeoff,indent-heuristic,inline:char,linematch:60,algorithm:histogram"
 
   -- Left: current (or buffer contents in post-write mode)
-  local left_buf = vim.api.nvim_get_current_buf()
+  -- Use nvim_tabpage_get_win to get the correct window in the new tab,
+  -- since nvim_get_current_buf() may be stale when called from an RPC context.
+  local left_win_pre = vim.api.nvim_tabpage_get_win(tab)
+  local left_buf = vim.api.nvim_win_get_buf(left_win_pre)
   vim.api.nvim_buf_set_lines(left_buf, 0, -1, false, old_lines)
   local left_label = is_post_write and "neph://buffer-before/" or "neph://current/"
   vim.api.nvim_buf_set_name(left_buf, left_label .. basename)

@@ -35,6 +35,9 @@ local function make_stub_provider(enabled)
     is_enabled = function()
       return enabled
     end,
+    is_enabled_for = function()
+      return enabled
+    end,
   }
 end
 
