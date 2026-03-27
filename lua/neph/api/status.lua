@@ -54,4 +54,56 @@ function M.get_display()
   return table.concat(parts, " ")
 end
 
+--- Build a rich statusline component string for neph state.
+--- Shows: active agent icon+name, gate state, pending review count, RPC connection.
+--- Designed to be called from a statusline plugin (staline, lualine, etc.).
+---@return string
+function M.component()
+  local parts = {}
+
+  -- Active agent
+  local ok_sess, session = pcall(require, "neph.internal.session")
+  local ok_agents, agents_mod = pcall(require, "neph.internal.agents")
+  if ok_sess and ok_agents then
+    local active = session.get_active()
+    if active then
+      local agent = agents_mod.get_by_name(active)
+      local icon = (agent and agent.icon) or "󰚩"
+      local running = vim.g[active .. "_running"]
+      local suffix = running and " ●" or ""
+      table.insert(parts, icon .. " " .. active .. suffix)
+    end
+  end
+
+  -- Gate state
+  local ok_gate, gate = pcall(require, "neph.internal.gate")
+  if ok_gate then
+    local state = gate.get()
+    if state == "hold" then
+      table.insert(parts, "󰏤 held")
+    elseif state == "bypass" then
+      table.insert(parts, "󰭟 bypass")
+    end
+  end
+
+  -- Pending reviews
+  local ok_q, review_queue = pcall(require, "neph.internal.review_queue")
+  if ok_q then
+    local total = review_queue.total()
+    if total > 0 then
+      table.insert(parts, "󰈈 " .. total)
+    end
+  end
+
+  -- Active RPC session (agent calling back)
+  if vim.g.neph_connected then
+    table.insert(parts, "󰞇")
+  end
+
+  if #parts == 0 then
+    return ""
+  end
+  return table.concat(parts, "  ")
+end
+
 return M

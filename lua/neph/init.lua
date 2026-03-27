@@ -66,6 +66,21 @@ function M.setup(opts)
   require("neph.internal.session").setup(config.current, backend)
   require("neph.internal.file_refresh").setup(config.current)
 
+  -- Auto-repair neph CLI symlink if missing/stale (silent, deferred)
+  vim.schedule(function()
+    local tools_mod = require("neph.internal.tools")
+    local root = tools_mod._plugin_root()
+    local cli = tools_mod.cli_status(root)
+    if not cli.installed then
+      local ok, err = tools_mod.install_cli(root)
+      if ok then
+        vim.notify("Neph: installed neph CLI → ~/.local/bin/neph", vim.log.levels.INFO)
+      else
+        vim.notify("Neph: failed to install neph CLI: " .. tostring(err) .. "\n  Run :NephInstall to fix.", vim.log.levels.WARN)
+      end
+    end
+  end)
+
   -- Register :NephDebug command
   vim.api.nvim_create_user_command("NephDebug", function(cmd_opts)
     local log = require("neph.internal.log")
@@ -121,10 +136,21 @@ function M.setup(opts)
     if preview then
       require("neph.api").tools_preview()
     else
-      -- install via tools module
-      local root = require("neph.internal.tools")._plugin_root()
+      local tools_mod = require("neph.internal.tools")
+      local root = tools_mod._plugin_root()
       local agents_mod = require("neph.internal.agents")
       local all = agents_mod.get_all()
+
+      -- Always install the global neph CLI binary (no --name filter)
+      if not name then
+        local cli_ok, cli_err = tools_mod.install_cli(root)
+        if cli_ok then
+          vim.notify("Neph: installed neph CLI → ~/.local/bin/neph", vim.log.levels.INFO)
+        else
+          vim.notify("Neph: CLI install failed: " .. tostring(cli_err), vim.log.levels.WARN)
+        end
+      end
+
       if name then
         local agent = agents_mod.get_by_name(name)
         if not agent then
@@ -136,7 +162,7 @@ function M.setup(opts)
       local count = 0
       for _, agent in ipairs(all) do
         if agent.tools then
-          local ok, err = pcall(require("neph.internal.tools").install_agent, root, agent)
+          local ok, err = pcall(tools_mod.install_agent, root, agent)
           if ok then
             count = count + 1
           else
@@ -151,7 +177,7 @@ function M.setup(opts)
         else
           vim.notify(string.format("Neph: installed tools for %d agent(s)", count), vim.log.levels.INFO)
         end
-      else
+      elseif count > 0 then
         vim.notify(string.format("Neph: installed tools for %d agent(s)", count), vim.log.levels.INFO)
       end
     end

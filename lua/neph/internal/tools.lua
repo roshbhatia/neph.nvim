@@ -74,6 +74,40 @@ function M.install_agent(root, agent)
   end
 end
 
+--- Install the neph CLI binary to ~/.local/bin/neph.
+--- This is a global install (not per-agent) and is always performed by :NephInstall.
+---@param root string  Plugin root path
+---@return boolean ok
+---@return string? err
+function M.install_cli(root)
+  local src = root .. "/tools/neph-cli/dist/index.js"
+  local dst = vim.fn.expand("~/.local/bin/neph")
+  vim.fn.mkdir(vim.fn.fnamemodify(dst, ":h"), "p")
+  local stat = vim.uv.fs_lstat(dst)
+  if stat then
+    os.remove(dst)
+  end
+  local ok, err = vim.uv.fs_symlink(src, dst)
+  if not ok then
+    return false, tostring(err)
+  end
+  return true, nil
+end
+
+--- Return status of the neph CLI binary.
+---@param root string
+---@return {installed: boolean, path: string, target: string}
+function M.cli_status(root)
+  local src = root .. "/tools/neph-cli/dist/index.js"
+  local dst = vim.fn.expand("~/.local/bin/neph")
+  local stat = vim.uv.fs_lstat(dst)
+  if not stat then
+    return { installed = false, path = dst, target = src }
+  end
+  local link_target = vim.uv.fs_readlink(dst)
+  return { installed = link_target == src, path = dst, target = src }
+end
+
 --- Return a status table for all agents.
 ---@param root string
 ---@param agents table[]
