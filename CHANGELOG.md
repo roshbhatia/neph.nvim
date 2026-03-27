@@ -1,5 +1,48 @@
 # Changelog
 
+## [1.1.0](https://github.com/roshbhatia/neph.nvim/compare/v1.0.0...v1.1.0) (2026-03-27)
+
+
+### Features
+
+* auto-create Neovim RPC socket on setup ([1108543](https://github.com/roshbhatia/neph.nvim/commit/110854393a8415aa93a05a88d14a4aee3358a200))
+* equal splits, horizontal layout, and rotate view for diff review ([10632cf](https://github.com/roshbhatia/neph.nvim/commit/10632cfe1c20b00d10f8dee6445ecb14cb58ef5e))
+* lazy.nvim build hook, :NephBuild command, and checkhealth staleness ([6960d8d](https://github.com/roshbhatia/neph.nvim/commit/6960d8d4dbd3ce3d7822e41017c3976ae945eaa6))
+* review gate toggle, tools inspector, CLI gate/tools commands ([cb1faee](https://github.com/roshbhatia/neph.nvim/commit/cb1faee3c2a20271d8cbc8530c1a2f3d2f4d5ceb))
+* review QOL improvements (cursor restore, winbar path, queue inspector, gate UI, submit summary) ([71a180b](https://github.com/roshbhatia/neph.nvim/commit/71a180bdb020a06225a1fa5ce87fcf0f5fb6b806))
+* robust CLI install, rich statusline component, comprehensive checkhealth ([e2c36f0](https://github.com/roshbhatia/neph.nvim/commit/e2c36f0b930f8b8c3d84a56fd60329fd82143375))
+* wire amp vimdiff review and remove global review_provider fallback ([6398249](https://github.com/roshbhatia/neph.nvim/commit/6398249ed86c217a49af9fe63658d776a87c910f))
+
+
+### Bug Fixes
+
+* add nil guards to snacks backend hide/kill/cleanup_all and add regression tests ([33cf161](https://github.com/roshbhatia/neph.nvim/commit/33cf16155e253375f8ed3052da3db9a1e73cbde0))
+* agent configs, amp plugin, and rpc dispatch gaps ([83a8015](https://github.com/roshbhatia/neph.nvim/commit/83a8015ce9971259beb9949123ad4c9f61c13d93))
+* bound review_queue growth, guard nil open_fn, clear wezterm pane_errors on cleanup ([fcfbad1](https://github.com/roshbhatia/neph.nvim/commit/fcfbad1c00d4cfb8c6b23185b6b270a69650aa69))
+* **contracts:** add 'extension' to valid agent types and validate empty required fields ([d971de1](https://github.com/roshbhatia/neph.nvim/commit/d971de1ba6e182150ad26676b34176239f62a2bf))
+* correct neph CLI command names in amp plugin ([61ff133](https://github.com/roshbhatia/neph.nvim/commit/61ff133b755cd015903072721c9cf7470fd80097))
+* correct TabClosed autocmd logic and contracts error message ([6a2fa0e](https://github.com/roshbhatia/neph.nvim/commit/6a2fa0e033a0c689aa88465af797149d7703f863))
+* empty vimdiff tab when review opens from RPC context ([60d6f53](https://github.com/roshbhatia/neph.nvim/commit/60d6f53f3561c51fd85dd4411efee5b84d126b9f))
+* guard backend methods against nil term_data, skip empty socket path ([c3784d0](https://github.com/roshbhatia/neph.nvim/commit/c3784d04df86ceaee7a922097c2592e58b75160b))
+* harden review pipeline and amp plugin reliability ([fc6d653](https://github.com/roshbhatia/neph.nvim/commit/fc6d653f585f902876de1f7caf0e10d6f91a5834))
+* manual reviews jump queue; :NephReview always registered; remove :NephTools stub ([09e10ee](https://github.com/roshbhatia/neph.nvim/commit/09e10ee8450144cc1c2b7d7f489999cf2bdd2f51))
+* neph-cli gate commands use direct lua execution instead of RPC dispatcher ([bb20d20](https://github.com/roshbhatia/neph.nvim/commit/bb20d202c4e8fde24fa9f64b3a7e7cc852330cf3))
+* neph-run review() must send JSON stdin not raw content ([dfd1f5d](https://github.com/roshbhatia/neph.nvim/commit/dfd1f5dd5a140eb6a7ffee3a8e0052fedeb42ea9))
+* prevent spurious Taskfile reviews and stale +cursor context ([3d51bae](https://github.com/roshbhatia/neph.nvim/commit/3d51baec3287e181895826db5b46d860462375ce))
+* prevent TabClosed autocmd accumulation and nil envelope crash in review ([02adbde](https://github.com/roshbhatia/neph.nvim/commit/02adbde027733edf758511ddc3f419424baae221))
+* resolve luacheck warnings breaking CI ([6a97b85](https://github.com/roshbhatia/neph.nvim/commit/6a97b85ce0f0d2400275e62e47ee6edd4d98853f))
+* route reviews through per-agent pipeline instead of global config ([b0be8fa](https://github.com/roshbhatia/neph.nvim/commit/b0be8fa4e044c6a161b53308b00105742e68f275))
+* session safety, review finalize pcall, queue nil guard ([6f5f869](https://github.com/roshbhatia/neph.nvim/commit/6f5f869be4fbe1bd6f653b68fb42861bd290f13f))
+* snacks send(), session race, review_queue nil open_fn + contract tests ([3df8b8a](https://github.com/roshbhatia/neph.nvim/commit/3df8b8a434654e9ca6f470f4d2d9b1b3e584949d))
+* two critical gate/review-queue bugs + comment Taskfile ([ce4d3c9](https://github.com/roshbhatia/neph.nvim/commit/ce4d3c9110233e15faee1eaae97d4183e9d3f76d))
+* update agent_submodules_spec to reflect amp and cursor tools ([f331ad5](https://github.com/roshbhatia/neph.nvim/commit/f331ad5eb56c20b231fa86558df9411615edb2f1))
+* use nf-md-skull icon for bypass gate indicator ([1cac287](https://github.com/roshbhatia/neph.nvim/commit/1cac28759de5162a7ff788ee0becb9b18cb54491))
+
+
+### Performance Improvements
+
+* **context:** replace blocking vim.fn.system with vim.system and add BufEnter pre-warm ([f1a8ad0](https://github.com/roshbhatia/neph.nvim/commit/f1a8ad099f395f732e9805f20c3fb8f281dbcb73))
+
 ## 1.0.0 (2026-03-26)
 
 
