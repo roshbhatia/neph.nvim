@@ -9,7 +9,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  ci:
+  # ── TypeScript tools: lint + unit tests ─────────────────────────────────────
+  tools:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,7 +20,7 @@ jobs:
       - uses: DeterminateSystems/magic-nix-cache-action@v8
       - name: Install Cupcake
         run: curl -fsSL https://get.eqtylab.io/cupcake | bash
-      - name: CI
+      - name: Build and test TS tools
         run: |
           nix develop -c bash -c '
             set -euo pipefail
@@ -29,3 +30,44 @@ jobs:
             task lint
             task test
           '
+
+  # ── Lua tests: run against stable and nightly Neovim ────────────────────────
+  lua-tests:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        nvim_version: [stable, nightly]
+    name: lua-tests (${{ matrix.nvim_version }})
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Neovim ${{ matrix.nvim_version }}
+        uses: rhysd/action-setup-vim@v1
+        with:
+          neovim: true
+          version: ${{ matrix.nvim_version }}
+
+      - name: Install plenary.nvim
+        run: |
+          # minimal_init.lua expects plenary at stdpath("data")/lazy/plenary.nvim
+          # On Linux that resolves to ~/.local/share/nvim/lazy/plenary.nvim
+          PLENARY_DIR="${HOME}/.local/share/nvim/lazy/plenary.nvim"
+          mkdir -p "$(dirname "$PLENARY_DIR")"
+          git clone --depth 1 https://github.com/nvim-lua/plenary.nvim.git "$PLENARY_DIR"
+
+      - name: Build TypeScript tools (best-effort)
+        continue-on-error: true
+        run: bash scripts/build.sh --no-install
+
+      - name: Run Lua tests
+        run: |
+          OUTPUT=$(nvim --headless \
+            -u tests/minimal_init.lua \
+            -c "lua require('plenary.test_harness').test_directory('tests/', {minimal_init='tests/minimal_init.lua', sequential=true})" \
+            2>&1 || true)
+          echo "$OUTPUT"
+          if echo "$OUTPUT" | grep -qP "Failed\s*:\s*[^0\s]|Errors\s*:\s*[^0\s]"; then
+            echo "::error::Lua tests reported failures or errors"
+            exit 1
+          fi
