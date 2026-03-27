@@ -27,8 +27,19 @@ local review_provider = require("neph.internal.review_provider")
 ---@type neph.ReviewActive|nil
 local active_review = nil
 
--- Wire the queue to call our internal open function
+-- Wire the queue to call our internal open function.
+-- Skip reviews whose agent has no enabled review provider (noop).
 review_queue.set_open_fn(function(params)
+  if not review_provider.is_enabled_for(params.agent) then
+    -- Auto-accept: write result if the caller expects one, then advance queue.
+    if params.result_path or (params.channel_id and params.channel_id ~= 0) then
+      local content = params.content or ""
+      local envelope = engine.build_envelope({}, content)
+      M.write_result(params.result_path, params.channel_id, params.request_id, envelope)
+    end
+    review_queue.on_complete(params.request_id)
+    return
+  end
   M._open_immediate(params)
 end)
 
@@ -186,6 +197,7 @@ function M._open_immediate(params)
 
     M.write_result(result_path, channel_id, request_id, envelope)
     review_queue.on_complete(request_id)
+    review_queue.mark_reviewed(file_path)
   end
 
   -- Track active review for graceful exit

@@ -223,12 +223,19 @@ vim.api.nvim_create_autocmd({ "WinEnter", "BufEnter" }, {
 ---@field col    integer  1-indexed
 ---@field range  {from:integer[],to:integer[],kind:string}|nil
 
---- Capture the current editor state, preferring the last real source window.
+--- Capture the current editor state.
+--- Prefers the current window when it is a real source window (e.g. user pressed
+--- a keymap from their buffer), and falls back to last_source_win only when the
+--- current window is excluded (terminal, float, picker, etc.).
 ---@return neph.EditorState
 function M.capture()
   local win, buf
 
-  if last_source_win and is_source_window(last_source_win) then
+  local cur_win = vim.api.nvim_get_current_win()
+  if is_source_window(cur_win) then
+    win = cur_win
+    buf = vim.api.nvim_win_get_buf(win)
+  elseif last_source_win and is_source_window(last_source_win) then
     win = last_source_win
     buf = vim.api.nvim_win_get_buf(win)
   else

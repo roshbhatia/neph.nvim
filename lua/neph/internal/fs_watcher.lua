@@ -132,7 +132,14 @@ local function on_file_changed(filepath)
   local msg_suffix = review_queue.get_active() and "review queued" or "opening review"
   vim.notify(string.format("Agent changed: %s — %s", rel, msg_suffix), vim.log.levels.INFO)
 
-  -- Enqueue a post-write review
+  -- Skip if this file was recently reviewed (e.g. by a hook-based agent)
+  if review_queue.was_recently_reviewed(filepath) then
+    return
+  end
+
+  -- Enqueue a post-write review, tagged with the active agent so
+  -- is_enabled_for() can gate the review provider correctly.
+  local active_agent = require("neph.internal.session").get_active()
   local crypto = tostring(vim.uv.hrtime())
   review_queue.enqueue({
     request_id = "pw-" .. crypto,
@@ -140,7 +147,7 @@ local function on_file_changed(filepath)
     channel_id = nil,
     path = filepath,
     content = "",
-    agent = nil,
+    agent = active_agent,
     mode = "post_write",
   })
 end

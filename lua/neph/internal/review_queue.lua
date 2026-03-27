@@ -29,6 +29,9 @@ local active = nil
 ---@type fun(params: neph.ReviewRequest)|nil
 local open_fn = nil
 
+---@type table<string, number>  path → hrtime of last completed review
+local recently_reviewed = {}
+
 ---@param fn fun(params: neph.ReviewRequest)
 function M.set_open_fn(fn)
   open_fn = fn
@@ -116,6 +119,25 @@ end
 ---@return neph.ReviewRequest|nil
 function M.get_active()
   return active
+end
+
+--- Mark a path as recently reviewed (suppresses fs_watcher duplicates).
+---@param path string
+function M.mark_reviewed(path)
+  recently_reviewed[path] = vim.uv.hrtime()
+end
+
+--- Returns true if a path was reviewed within the last ttl_ms milliseconds.
+---@param path string
+---@param ttl_ms? number  default 5000
+---@return boolean
+function M.was_recently_reviewed(path, ttl_ms)
+  local t = recently_reviewed[path]
+  if not t then
+    return false
+  end
+  local elapsed_ms = (vim.uv.hrtime() - t) / 1e6
+  return elapsed_ms < (ttl_ms or 5000)
 end
 
 ---@return integer  total reviews (active + queued)
@@ -271,6 +293,7 @@ function M._reset()
   queue = {}
   active = nil
   open_fn = nil
+  recently_reviewed = {}
 end
 
 return M

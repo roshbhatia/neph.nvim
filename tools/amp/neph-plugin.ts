@@ -1,9 +1,12 @@
 // @i-know-the-amp-plugin-api-is-wip-and-very-experimental-right-now
 import { readFileSync } from "node:fs";
 import { debug } from "../lib/log";
-import { review, uiSelect, uiInput, uiNotify, createNephQueue } from "../lib/neph-run";
+import { review, uiSelect, uiInput, uiNotify, nephRun, NEPH_TIMEOUT_MS } from "../lib/neph-run";
 
-const nephQueue = createNephQueue();
+/** Fire-and-forget a neph CLI call in parallel (no serial queueing). */
+function nephFire(...args: string[]): void {
+  nephRun(args, undefined, NEPH_TIMEOUT_MS).catch(() => { /* nvim may have closed */ });
+}
 
 function neph_plugin_default(amp: any) {
   amp.on("session.start", async () => {
@@ -25,12 +28,12 @@ function neph_plugin_default(amp: any) {
   });
 
   amp.on("agent.start", async () => {
-    nephQueue("status-set", "amp_running", "true");
+    nephFire("status-set", "amp_running", "true");
   });
 
   amp.on("agent.end", async () => {
-    nephQueue("status-unset", "amp_running");
-    nephQueue("buffers-check");
+    nephFire("status-unset", "amp_running");
+    nephFire("buffers-check");
   });
 
   amp.on("tool.call", async (event: any, _ctx: any) => {
