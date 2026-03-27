@@ -57,9 +57,9 @@ tasks:
       - cd tools/neph-cli && npx vitest run tests/integration/  # Run neph-cli review integration tests via vitest
 
   build:
-    desc: Build all companion tools (neph-cli, pi cupcake harness)
+    desc: Build all companion tools and install the neph CLI symlink
     cmds:
-      - task tools:build  # Build tools
+      - bash scripts/build.sh  # Compile all TS packages and install ~/.local/bin/neph
 
   install:
     desc: Install (symlink) all bundled tools (neph, pi)

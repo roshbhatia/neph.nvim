@@ -10,6 +10,36 @@ local function run_cli(cmd)
   return output, code
 end
 
+local function check_build()
+  vim.health.start("neph: build artifacts")
+
+  local tools_mod = require("neph.internal.tools")
+  local root = tools_mod._plugin_root()
+
+  local packages = {
+    { dir = root .. "/tools/neph-cli", dist = "dist/index.js", label = "neph-cli" },
+    { dir = root .. "/tools/amp",      dist = "dist/amp.js",   label = "amp plugin" },
+    { dir = root .. "/tools/pi",       dist = "dist/cupcake-harness.js", label = "pi harness" },
+  }
+
+  for _, pkg in ipairs(packages) do
+    local state = tools_mod.dist_is_current(pkg.dir, pkg.dist)
+    if state == "missing" then
+      vim.health.error(
+        pkg.label .. " dist not built (" .. pkg.dir .. "/" .. pkg.dist .. ")\n"
+          .. "  Run :NephBuild or 'bash scripts/build.sh'"
+      )
+    elseif state == "stale" then
+      vim.health.warn(
+        pkg.label .. " dist is stale — source files are newer than built artifact\n"
+          .. "  Run :NephBuild or 'bash scripts/build.sh'"
+      )
+    else
+      vim.health.ok(pkg.label .. ": dist is current")
+    end
+  end
+end
+
 local function check_cli()
   vim.health.start("neph: CLI")
 
@@ -20,7 +50,7 @@ local function check_cli()
   if not cli.installed then
     vim.health.error(
       "neph CLI not installed at " .. cli.path .. "\n"
-        .. "  Run :NephInstall to fix this.\n"
+        .. "  Run :NephBuild or :NephInstall to fix this.\n"
         .. "  Expected symlink → " .. cli.target
     )
   else
@@ -180,6 +210,7 @@ local function check_deps()
 end
 
 function M.check()
+  check_build()
   check_cli()
   check_socket()
   check_agents()

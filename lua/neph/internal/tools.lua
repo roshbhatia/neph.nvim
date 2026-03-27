@@ -74,6 +74,45 @@ function M.install_agent(root, agent)
   end
 end
 
+--- Check whether a package's dist artifact is current relative to its src files.
+--- Compares the mtime of dist_file against every *.ts file under src_dir.
+---@param pkg_dir string  Absolute path to the tool package (e.g. root.."/tools/neph-cli")
+---@param dist_file string  Relative path from pkg_dir to the built artifact (e.g. "dist/index.js")
+---@return "current"|"stale"|"missing"
+function M.dist_is_current(pkg_dir, dist_file)
+  local dist_path = pkg_dir .. "/" .. dist_file
+  local dist_stat = vim.uv.fs_stat(dist_path)
+  if not dist_stat then
+    return "missing"
+  end
+  local dist_mtime = dist_stat.mtime.sec
+
+  -- Walk src/ for *.ts files and find the newest mtime
+  local src_dir = pkg_dir .. "/src"
+  local newest_src = 0
+  local handle = vim.uv.fs_scandir(src_dir)
+  if handle then
+    while true do
+      local name, ftype = vim.uv.fs_scandir_next(handle)
+      if not name then
+        break
+      end
+      if ftype == "file" and name:match("%.ts$") then
+        local s = vim.uv.fs_stat(src_dir .. "/" .. name)
+        if s and s.mtime.sec > newest_src then
+          newest_src = s.mtime.sec
+        end
+      end
+    end
+  end
+
+  if newest_src == 0 then
+    -- No src files found — treat dist as current
+    return "current"
+  end
+  return newest_src <= dist_mtime and "current" or "stale"
+end
+
 --- Install the neph CLI binary to ~/.local/bin/neph.
 --- This is a global install (not per-agent) and is always performed by :NephInstall.
 ---@param root string  Plugin root path

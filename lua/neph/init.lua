@@ -66,20 +66,28 @@ function M.setup(opts)
   require("neph.internal.session").setup(config.current, backend)
   require("neph.internal.file_refresh").setup(config.current)
 
-  -- Auto-repair neph CLI symlink if missing/stale (silent, deferred)
+  -- Auto-repair neph CLI symlink if missing (silent fallback; build step is the canonical path)
   vim.schedule(function()
     local tools_mod = require("neph.internal.tools")
     local root = tools_mod._plugin_root()
     local cli = tools_mod.cli_status(root)
     if not cli.installed then
       local ok, err = tools_mod.install_cli(root)
-      if ok then
-        vim.notify("Neph: installed neph CLI → ~/.local/bin/neph", vim.log.levels.INFO)
-      else
-        vim.notify("Neph: failed to install neph CLI: " .. tostring(err) .. "\n  Run :NephInstall to fix.", vim.log.levels.WARN)
+      if not ok then
+        vim.notify(
+          "Neph: could not install neph CLI symlink: " .. tostring(err) .. "\n  Run :NephBuild or :NephInstall.",
+          vim.log.levels.WARN
+        )
       end
     end
   end)
+
+  -- Register :NephBuild command
+  vim.api.nvim_create_user_command("NephBuild", function()
+    require("neph.build").run()
+  end, {
+    desc = "Build neph TypeScript tools and reinstall CLI symlink",
+  })
 
   -- Register :NephDebug command
   vim.api.nvim_create_user_command("NephDebug", function(cmd_opts)

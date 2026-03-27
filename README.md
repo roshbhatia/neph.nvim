@@ -10,11 +10,18 @@ WIP Neovim plugin for interactive code review using LLMs.
 
 ## Lazy plugin spec
 
+The plugin ships pre-built TypeScript bundles in `dist/` so it works without Node.js.
+To (re)build after an update and install the `~/.local/bin/neph` CLI symlink, add the `build` key:
+
 ```lua
 return {
   {
     "roshbhatia/neph.nvim",
     name = "neph.nvim",
+    -- Optional: rebuild TypeScript tools on install/update (requires node + npm).
+    -- dist/ is committed so this can be omitted if Node is unavailable.
+    -- Lua variant: build = function() require('neph.build').run() end
+    build = "bash scripts/build.sh",
     dependencies = {
       "folke/snacks.nvim",
     },
