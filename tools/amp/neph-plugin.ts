@@ -28,12 +28,12 @@ function neph_plugin_default(amp: any) {
   });
 
   amp.on("agent.start", async () => {
-    nephFire("status-set", "amp_running", "true");
+    nephFire("set", "amp_running", "true");
   });
 
   amp.on("agent.end", async () => {
-    nephFire("status-unset", "amp_running");
-    nephFire("buffers-check");
+    nephFire("unset", "amp_running");
+    nephFire("checktime");
   });
 
   amp.on("tool.call", async (event: any, _ctx: any) => {
