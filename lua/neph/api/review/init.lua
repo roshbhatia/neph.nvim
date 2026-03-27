@@ -79,6 +79,13 @@ function M.force_cleanup(agent_name)
     M.write_result(ar.result_path, ar.channel_id, ar.request_id, envelope)
   end
   pcall(ui.cleanup, ar.ui_state)
+  local orig = ar.ui_state and ar.ui_state.originating
+  if orig then
+    vim.schedule(function()
+      pcall(vim.api.nvim_set_current_win, orig.win)
+      pcall(vim.api.nvim_win_set_cursor, orig.win, orig.cursor)
+    end)
+  end
   pcall(review_queue.on_complete, ar.request_id)
   active_review = nil
 end
@@ -203,6 +210,30 @@ function M._open_immediate(params)
     M.write_result(result_path, channel_id, request_id, envelope)
     review_queue.on_complete(request_id)
     review_queue.mark_reviewed(file_path)
+
+    local orig = ui_state.originating
+    if orig then
+      vim.schedule(function()
+        pcall(vim.api.nvim_set_current_win, orig.win)
+        pcall(vim.api.nvim_win_set_cursor, orig.win, orig.cursor)
+      end)
+    end
+
+    -- Trigger checktime on the reviewed file's buffer for accept/partial
+    -- (the agent will write the file; pre-write mode only)
+    if mode ~= "post_write" and mode ~= "manual" then
+      local envelope_decision = envelope and envelope.decision
+      if envelope_decision == "accept" or envelope_decision == "partial" then
+        vim.schedule(function()
+          local bufnr = vim.fn.bufnr(file_path)
+          if bufnr ~= -1 and vim.api.nvim_buf_is_valid(bufnr) then
+            vim.api.nvim_buf_call(bufnr, function()
+              vim.cmd("checktime")
+            end)
+          end
+        end)
+      end
+    end
   end
 
   -- Track active review for graceful exit

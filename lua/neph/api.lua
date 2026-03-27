@@ -18,6 +18,8 @@
 
 local M = {}
 
+local gate_ui = require("neph.internal.gate_ui")
+
 --- Get the active agent name, notifying if none is set.
 ---@return string|nil
 local function get_active()
@@ -126,13 +128,16 @@ function M.gate()
   local current = gate.get()
   if current == "normal" then
     gate.set("hold")
+    gate_ui.set("hold")
     vim.notify("Neph: reviews held — writes will accumulate", vim.log.levels.INFO)
   elseif current == "hold" then
     gate.release()
+    gate_ui.clear()
     require("neph.internal.review_queue").drain()
     vim.notify("Neph: gate released — draining pending reviews", vim.log.levels.INFO)
   else -- bypass
     gate.set("normal")
+    gate_ui.clear()
     vim.notify("Neph: review gate restored to normal", vim.log.levels.INFO)
   end
 end
@@ -140,17 +145,20 @@ end
 --- Set gate to hold mode explicitly.
 function M.gate_hold()
   require("neph.internal.gate").set("hold")
+  gate_ui.set("hold")
   vim.notify("Neph: reviews held", vim.log.levels.INFO)
 end
 
 --- Set gate to bypass mode explicitly (auto-accepts all writes).
 function M.gate_bypass()
   require("neph.internal.gate").set("bypass")
+  gate_ui.set("bypass")
 end
 
 --- Release hold and drain accumulated reviews.
 function M.gate_release()
   require("neph.internal.gate").release()
+  gate_ui.clear()
   require("neph.internal.review_queue").drain()
   vim.notify("Neph: gate released", vim.log.levels.INFO)
 end
@@ -169,6 +177,11 @@ end
 --- Show a dry-run preview of what tools.install would change.
 function M.tools_preview()
   require("neph.api.status_buf").open_preview()
+end
+
+--- Open the review queue inspector floating window.
+function M.queue()
+  require("neph.api.review.queue_ui").open()
 end
 
 return M

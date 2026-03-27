@@ -120,6 +120,13 @@ function M.setup(opts)
     end,
   })
 
+  -- :NephQueue — open the review queue inspector
+  vim.api.nvim_create_user_command("NephQueue", function()
+    require("neph.api").queue()
+  end, {
+    desc = "Open review queue inspector",
+  })
+
   -- :NephReview — always register; open_manual checks per-agent provider at call time
   vim.api.nvim_create_user_command("NephReview", function(cmd_opts)
     local path = cmd_opts.fargs[1]

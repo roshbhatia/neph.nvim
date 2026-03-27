@@ -26,6 +26,9 @@ local queue = {}
 ---@type neph.ReviewRequest|nil
 local active = nil
 
+local pending_notify_batch = {}
+local notify_timer = nil
+
 ---@type fun(params: neph.ReviewRequest)|nil
 local open_fn = nil
 
@@ -80,13 +83,38 @@ function M.enqueue(params)
     table.insert(queue, params)
     log.debug("review_queue", "queued: %s (pending=%d)", params.path, #queue)
 
-    -- Show notification for queued review
+    -- Show batched notification for queued review
     local config = require("neph.config").current
     local review_cfg = type(config.review) == "table" and config.review or {}
     if review_cfg.pending_notify ~= false then
-      local rel = vim.fn.fnamemodify(params.path, ":.")
-      local agent_str = params.agent and (" (" .. params.agent .. ")") or ""
-      vim.notify(string.format("Review queued: %s%s — %d pending", rel, agent_str, #queue), vim.log.levels.INFO)
+      table.insert(pending_notify_batch, params)
+      if notify_timer then
+        -- already scheduled, just accumulate
+      else
+        notify_timer = vim.defer_fn(function()
+          notify_timer = nil
+          local batch = pending_notify_batch
+          pending_notify_batch = {}
+          if #batch == 0 then
+            return
+          end
+          -- Group by agent
+          local agents_seen = {}
+          local agent_list = {}
+          for _, p in ipairs(batch) do
+            local a = p.agent or "unknown"
+            if not agents_seen[a] then
+              agents_seen[a] = true
+              table.insert(agent_list, a)
+            end
+          end
+          local agent_str = "(" .. table.concat(agent_list, ", ") .. ")"
+          vim.notify(
+            string.format("Neph: %d review%s queued %s", #batch, #batch == 1 and "" or "s", agent_str),
+            vim.log.levels.INFO
+          )
+        end, 400)
+      end
     end
   end
 end
@@ -267,10 +295,34 @@ function M.enqueue_front(params)
     local config = require("neph.config").current
     local review_cfg = type(config.review) == "table" and config.review or {}
     if review_cfg.pending_notify ~= false then
-      vim.notify(
-        string.format("Review queued (next): %s — %d pending", vim.fn.fnamemodify(params.path, ":."), #queue),
-        vim.log.levels.INFO
-      )
+      table.insert(pending_notify_batch, params)
+      if notify_timer then
+        -- already scheduled, just accumulate
+      else
+        notify_timer = vim.defer_fn(function()
+          notify_timer = nil
+          local batch = pending_notify_batch
+          pending_notify_batch = {}
+          if #batch == 0 then
+            return
+          end
+          -- Group by agent
+          local agents_seen = {}
+          local agent_list = {}
+          for _, p in ipairs(batch) do
+            local a = p.agent or "unknown"
+            if not agents_seen[a] then
+              agents_seen[a] = true
+              table.insert(agent_list, a)
+            end
+          end
+          local agent_str = "(" .. table.concat(agent_list, ", ") .. ")"
+          vim.notify(
+            string.format("Neph: %d review%s queued %s", #batch, #batch == 1 and "" or "s", agent_str),
+            vim.log.levels.INFO
+          )
+        end, 400)
+      end
     end
   end
 end
@@ -298,6 +350,19 @@ function M._reset()
   active = nil
   open_fn = nil
   recently_reviewed = {}
+  pending_notify_batch = {}
+  if notify_timer then
+    -- vim.defer_fn timers can't be cancelled directly, but we clear the batch
+    -- so the timer fires and does nothing
+    pending_notify_batch = {}
+    notify_timer = nil
+  end
+end
+
+--- Returns a shallow copy of the pending queue (not the live table).
+---@return neph.ReviewRequest[]
+function M.get_queue()
+  return vim.deepcopy(queue)
 end
 
 return M

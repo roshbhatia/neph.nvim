@@ -26,6 +26,11 @@ function M.open_diff_tab(path, old_lines, new_lines, opts)
   -- Save and set diffopt for consistent review experience
   local original_diffopt = vim.o.diffopt
 
+  local originating = {
+    win = vim.api.nvim_get_current_win(),
+    cursor = vim.api.nvim_win_get_cursor(0),
+  }
+
   vim.cmd("tabnew")
   local tab = vim.api.nvim_get_current_tabpage()
 
@@ -132,6 +137,8 @@ function M.open_diff_tab(path, old_lines, new_lines, opts)
     request_id = opts.request_id,
     original_diffopt = original_diffopt,
     layout = layout,
+    originating = originating,
+    file_path = path,
   }
 end
 
@@ -227,8 +234,10 @@ end
 ---@param decision HunkDecision?  decision for current hunk
 ---@param keymaps neph.ReviewKeymapsConfig
 ---@param tally? { accepted: integer, rejected: integer, undecided: integer }
+---@param opts? table
+---@param file_path? string
 ---@return string
-function M.build_winbar(idx, total, decision, keymaps, tally, opts)
+function M.build_winbar(idx, total, decision, keymaps, tally, opts, file_path)
   opts = opts or {}
   local status = "undecided"
   local hl = "DiagnosticInfo"
@@ -259,8 +268,18 @@ function M.build_winbar(idx, total, decision, keymaps, tally, opts)
   -- Mode label
   local mode_label = opts.mode == "manual" and "MANUAL" or opts.mode == "post_write" and "POST-WRITE" or "CURRENT"
 
+  local path_display = ""
+  if file_path and file_path ~= "" then
+    local rel = vim.fn.fnamemodify(file_path, ":.")
+    if #rel > 35 then
+      rel = "…" .. rel:sub(#rel - 33)
+    end
+    path_display = rel .. "  "
+  end
+
   return string.format(
-    "%%#DiagnosticWarn# %s %%* %%#%s# Hunk %d/%d: %s %%*%s%s  %s=accept %s=reject %s=submit ?=help",
+    "%s%%#DiagnosticWarn# %s %%* %%#%s# Hunk %d/%d: %s %%*%s%s  %s=accept %s=reject %s=submit ?=help",
+    path_display,
     mode_label,
     hl,
     idx,
@@ -387,7 +406,7 @@ local function refresh_ui(session, ui_state, keymaps)
   local decision = session.get_decision(idx)
   local tally = session.get_tally()
   local mode_opts = { mode = ui_state.mode }
-  vim.wo[ui_state.left_win].winbar = M.build_winbar(idx, total, decision, keymaps, tally, mode_opts)
+  vim.wo[ui_state.left_win].winbar = M.build_winbar(idx, total, decision, keymaps, tally, mode_opts, ui_state.file_path)
 end
 
 --- Jump cursor to a specific hunk on the left buffer.
@@ -571,9 +590,81 @@ function M.start_review(session, ui_state, on_done)
     refresh_ui(session, ui_state, keymaps)
   end, "Neph: undo decision")
 
+  local function show_submit_summary(on_confirm)
+    local hunks = session.get_hunk_ranges()
+    local total = #hunks
+    local lines = { " Review Summary ", "" }
+    for i = 1, total do
+      local d = session.get_decision(i)
+      local icon, desc
+      if not d then
+        icon = "?"
+        desc = "undecided → will reject"
+      elseif d.decision == "accept" then
+        icon = "✓"
+        desc = "accepted"
+      else
+        icon = "✗"
+        local reason = d.reason and d.reason ~= "" and (": " .. d.reason:sub(1, 40)) or ""
+        desc = "rejected" .. reason
+      end
+      table.insert(lines, string.format("  Hunk %-3d  %s %s", i, icon, desc))
+    end
+    table.insert(lines, "")
+    table.insert(lines, "  <CR> Confirm and submit    q Cancel")
+    table.insert(lines, "")
+
+    local width = 52
+    local height = #lines
+    local summary_buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_lines(summary_buf, 0, -1, false, lines)
+    vim.bo[summary_buf].buftype = "nofile"
+    vim.bo[summary_buf].bufhidden = "wipe"
+    vim.bo[summary_buf].modifiable = false
+
+    local win_h = vim.o.lines
+    local win_w = vim.o.columns
+    local row = math.max(0, math.floor((win_h - height) / 2) - 2)
+    local col = math.max(0, math.floor((win_w - width) / 2))
+
+    local summary_win = vim.api.nvim_open_win(summary_buf, true, {
+      relative = "editor",
+      row = row,
+      col = col,
+      width = width,
+      height = height,
+      style = "minimal",
+      border = "rounded",
+      title = " Neph Review Summary ",
+      title_pos = "center",
+    })
+
+    local function close_summary()
+      if vim.api.nvim_win_is_valid(summary_win) then
+        pcall(vim.api.nvim_win_close, summary_win, true)
+      end
+    end
+
+    vim.keymap.set("n", "<CR>", function()
+      close_summary()
+      on_confirm()
+    end, { buffer = summary_buf, nowait = true })
+    vim.keymap.set("n", "q", close_summary, { buffer = summary_buf, nowait = true })
+    vim.keymap.set("n", "<Esc>", close_summary, { buffer = summary_buf, nowait = true })
+  end
+
   -- gs: submit/finalize review
   map(keymaps.submit, function()
     if finalized then
+      return
+    end
+    if session.get_total_hunks() >= 3 then
+      show_submit_summary(function()
+        if not finalized then
+          session.reject_all_remaining("Undecided")
+          do_finalize()
+        end
+      end)
       return
     end
     local tally = session.get_tally()
