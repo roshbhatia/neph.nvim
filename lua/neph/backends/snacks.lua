@@ -158,7 +158,10 @@ function M.send(td, text, opts)
   local full_text = opts.submit and (text .. "\n") or text
   -- chansend returns 0 and errors when the job has exited but the buffer is still
   -- valid (stale terminal_job_id). Wrap in pcall so callers are not interrupted.
-  pcall(vim.fn.chansend, chan, full_text)
+  local ok_send, send_err = pcall(vim.fn.chansend, chan, full_text)
+  if not ok_send then
+    require("neph.internal.log").warn("snacks", "chansend failed for %s: %s", tostring(td.name), tostring(send_err))
+  end
 end
 
 function M.cleanup_all(terminals)

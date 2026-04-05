@@ -58,9 +58,12 @@ function M.init(agent_defs)
   for _, agent in ipairs(agents) do
     agent.full_cmd = build_cmd(agent)
   end
-  pcall(function()
+  local ok_int, int_err = pcall(function()
     require("neph.internal.integration").apply_all(agents)
   end)
+  if not ok_int then
+    require("neph.internal.log").warn("agents", "integration.apply_all failed: %s", tostring(int_err))
+  end
 end
 
 --- Return all agents whose executable is present on PATH.

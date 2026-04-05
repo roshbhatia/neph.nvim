@@ -439,12 +439,20 @@ function M.start_review(session, ui_state, on_done)
 
   local finalized = false
   local buf = ui_state.left_buf
+  local right_buf = ui_state.right_buf
 
-  -- Collect all mapped lhs values for cleanup
+  -- Collect all mapped lhs values for cleanup (per-buffer)
   local mapped_keys = {}
 
+  -- Bind a keymap to both the left and right buffers so keys work regardless
+  -- of which pane the cursor is in. Callbacks always read cursor from left_win
+  -- since hunk ranges are indexed in left (old-side) line coordinates; vimdiff
+  -- keeps both cursors in sync so left_win.cursor reflects the user's position.
   local function map(lhs, fn, desc)
     vim.keymap.set("n", lhs, fn, { buffer = buf, desc = desc })
+    if right_buf and vim.api.nvim_buf_is_valid(right_buf) then
+      vim.keymap.set("n", lhs, fn, { buffer = right_buf, desc = desc })
+    end
     table.insert(mapped_keys, lhs)
   end
 
@@ -455,6 +463,9 @@ function M.start_review(session, ui_state, on_done)
     finalized = true
     for _, lhs in ipairs(mapped_keys) do
       pcall(vim.keymap.del, "n", lhs, { buffer = buf })
+      if right_buf and vim.api.nvim_buf_is_valid(right_buf) then
+        pcall(vim.keymap.del, "n", lhs, { buffer = right_buf })
+      end
     end
     -- Remove CursorMoved autocmd
     if ui_state.cursor_autocmd_id then

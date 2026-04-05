@@ -1,0 +1,14 @@
+{
+  "hooks": [
+    {
+      "event": "preToolUse",
+      "filter": {
+        "toolNames": [
+          "edit",
+          "create"
+        ]
+      },
+      "command": "cupcake eval --harness copilot"
+    }
+  ]
+}

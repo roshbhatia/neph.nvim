@@ -488,7 +488,10 @@ function M.reject_all_pending(reason)
         hunks = {},
         reason = reason,
       }
-      pcall(review_api.write_result, req.result_path, req.channel_id, req.request_id, envelope)
+      local wr_ok, wr_err = pcall(review_api.write_result, req.result_path, req.channel_id, req.request_id, envelope)
+      if not wr_ok then
+        log.warn("review_queue", "reject_all_pending: write_result failed for %s: %s", req.path, tostring(wr_err))
+      end
     end
   end
 end

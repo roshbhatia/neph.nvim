@@ -11,6 +11,21 @@ local LOG_PATH = "/tmp/neph-debug-" .. vim.fn.getpid() .. ".log"
 ---@param module string  Short module name (e.g. "session", "rpc")
 ---@param fmt string     Format string (string.format style)
 ---@param ... any        Format arguments
+function M.warn(module, fmt, ...)
+  -- warn always writes regardless of neph_debug so silent failures surface.
+  local msg = select("#", ...) > 0 and string.format(fmt, ...) or fmt
+  local ts = os.date("%H:%M:%S") .. string.format(".%03d", math.floor(vim.uv.hrtime() / 1e6) % 1000)
+  local line = string.format("[%s] [lua] [WARN] [%s] %s\n", ts, module, msg)
+  local f = io.open(M.LOG_PATH, "a")
+  if f then
+    f:write(line)
+    f:close()
+  end
+end
+
+---@param module string  Short module name (e.g. "session", "rpc")
+---@param fmt string     Format string (string.format style)
+---@param ... any        Format arguments
 function M.debug(module, fmt, ...)
   if not vim.g.neph_debug then
     return

@@ -28,9 +28,11 @@ local review_provider = require("neph.internal.review_provider")
 local active_review = nil
 
 -- Wire the queue to call our internal open function.
--- Skip reviews whose agent has no enabled review provider (noop).
+-- Skip agent-triggered reviews whose agent has no enabled review provider (noop).
+-- Manual reviews (mode == "manual") always open regardless of agent/provider.
 review_queue.set_open_fn(function(params)
-  if not review_provider.is_enabled_for(params.agent) then
+  local is_manual = params.mode == "manual"
+  if not is_manual and not review_provider.is_enabled_for(params.agent) then
     -- Auto-accept: write result if the caller expects one, then advance queue.
     if params.result_path or (params.channel_id and params.channel_id ~= 0) then
       local content = params.content or ""
@@ -346,11 +348,8 @@ end
 ---@param file_path string  Absolute path to the file
 ---@return {ok: boolean, msg?: string, error?: string}
 function M.open_manual(file_path)
-  local active_agent = require("neph.internal.session").get_active()
-  if not review_provider.is_enabled_for(active_agent) then
-    return { ok = false, error = "Review provider not configured" }
-  end
-
+  -- Manual reviews always use vimdiff; no active agent required. The agent
+  -- check is only relevant for auto-triggered (pre/post-write) reviews.
   if type(file_path) ~= "string" or file_path == "" then
     return { ok = false, error = "invalid file_path" }
   end
@@ -365,7 +364,10 @@ function M.open_manual(file_path)
   if bufnr ~= -1 and vim.api.nvim_buf_is_valid(bufnr) then
     old_lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
   else
-    return { ok = false, error = "No buffer open for: " .. file_path }
+    -- File not in a buffer — load it so the review can compare buffer vs disk.
+    bufnr = vim.fn.bufadd(file_path)
+    vim.fn.bufload(bufnr)
+    old_lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
   end
 
   local new_lines = {}
@@ -387,7 +389,7 @@ function M.open_manual(file_path)
       end
     end
     if identical then
-      return { ok = false, error = "No changes to review" }
+      return { ok = false, error = "No changes: buffer matches disk" }
     end
   end
 

@@ -26,7 +26,7 @@ function M.resolve_for(agent_name)
   if type(agent_name) == "string" and agent_name ~= "" then
     local ok, agents = pcall(require, "neph.internal.agents")
     if ok then
-      local agent = agents.get_by_name(agent_name)
+      local agent = agents.get_registered_by_name(agent_name)
       if agent and agent.integration_pipeline then
         local p = from_name(agent.integration_pipeline.review_provider)
         if p then
