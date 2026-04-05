@@ -102,10 +102,14 @@ function M.validate_tools(def)
         error(string.format("neph: agent '%s' tools[%d] must be a table", name, i))
       end
       if type(spec.type) ~= "string" or not VALID_SPEC_TYPES[spec.type] then
-        error(string.format(
-          "neph: agent '%s' tools[%d] invalid type '%s' (expected symlink or json_merge)",
-          name, i, tostring(spec.type)
-        ))
+        error(
+          string.format(
+            "neph: agent '%s' tools[%d] invalid type '%s' (expected symlink or json_merge)",
+            name,
+            i,
+            tostring(spec.type)
+          )
+        )
       end
       if type(spec.src) ~= "string" or spec.src == "" then
         error(string.format("neph: agent '%s' tools[%d] missing 'src' string", name, i))

@@ -85,7 +85,7 @@ jobs:
             -c "lua require('plenary.test_harness').test_directory('tests/', {minimal_init='tests/minimal_init.lua', sequential=true})" \
             2>&1 || true)
           echo "$OUTPUT"
-          if echo "$OUTPUT" | grep -qP "Failed\s*:\s*[^0\s]|Errors\s*:\s*[^0\s]"; then
+          if echo "$OUTPUT" | sed 's/\x1b\[[0-9;]*m//g' | grep -qP "Failed\s*:\s*[1-9]|Errors\s*:\s*[1-9]"; then
             echo "::error::Lua tests reported failures or errors"
             exit 1
           fi

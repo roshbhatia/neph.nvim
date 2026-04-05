@@ -12,11 +12,11 @@ local log = require("neph.internal.log")
 -- ---------------------------------------------------------------------------
 
 local state = {
-  port = nil,          -- discovered port (integer)
-  job_id = nil,        -- curl jobstart id
+  port = nil, -- discovered port (integer)
+  job_id = nil, -- curl jobstart id
   retries = 0,
   retry_timer = nil,
-  on_event = nil,      -- callback: fn(event_type, data_table)
+  on_event = nil, -- callback: fn(event_type, data_table)
 }
 
 local MAX_RETRIES = 5
@@ -44,9 +44,7 @@ function M.discover_port()
       local p = tonumber(port)
       if p and p > 0 and p < 65536 then
         -- Validate the port with a quick GET /session
-        local check = vim.fn.system(
-          string.format("curl -sf --max-time 1 http://localhost:%d/session 2>/dev/null", p)
-        )
+        local check = vim.fn.system(string.format("curl -sf --max-time 1 http://localhost:%d/session 2>/dev/null", p))
         if vim.v.shell_error == 0 and check ~= "" then
           log.debug("opencode_sse", "discovered port %d", p)
           return p
@@ -66,11 +64,17 @@ end
 --- Parse a single SSE data line and call on_event if it contains a known event.
 ---@param line string  Raw SSE line (e.g. "data: {...}")
 local function handle_line(line)
-  if not state.on_event then return end
+  if not state.on_event then
+    return
+  end
   local json_str = line:match("^data:%s*(.+)$")
-  if not json_str then return end
+  if not json_str then
+    return
+  end
   local ok, decoded = pcall(vim.json.decode, json_str)
-  if not ok or type(decoded) ~= "table" then return end
+  if not ok or type(decoded) ~= "table" then
+    return
+  end
   local event_type = decoded.type or decoded.event
   if event_type then
     local ok2, err = pcall(state.on_event, event_type, decoded)
@@ -92,7 +96,9 @@ local function start_curl(port)
         -- SSE events are delimited by double newlines; process complete lines
         while true do
           local nl = buf:find("\n")
-          if not nl then break end
+          if not nl then
+            break
+          end
           local line = buf:sub(1, nl - 1)
           buf = buf:sub(nl + 1)
           if line ~= "" then

@@ -85,7 +85,6 @@ function M.handle_event(port, event_type, data)
         post_reply(port, perm_id, decision)
       end,
     })
-
   elseif event_type == "file.edited" then
     -- Agent finished writing — clear running state and reload buffers
     vim.g["opencode_running"] = nil
@@ -108,14 +107,18 @@ function M._apply_diff(file_path, diff_str)
   -- Write original content to a tempfile, apply the patch with `patch`
   local orig_f = io.open(file_path, "r")
   local orig_content = orig_f and orig_f:read("*all") or ""
-  if orig_f then orig_f:close() end
+  if orig_f then
+    orig_f:close()
+  end
 
   local tmp_orig = vim.fn.tempname()
   local tmp_patch = vim.fn.tempname()
   local tmp_out = tmp_orig .. ".patched"
 
   local fo = io.open(tmp_orig, "w")
-  if not fo then return nil end
+  if not fo then
+    return nil
+  end
   fo:write(orig_content)
   fo:close()
 
