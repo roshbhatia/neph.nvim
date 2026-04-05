@@ -60,13 +60,15 @@ describe('neph-cli review protocol (integration)', () => {
     expect(output.decision).toBe('accept');
   });
 
-  it('output is always { decision, content, reason? }', () => {
+  it('output is always { schema, decision, content, hunks, reason? }', () => {
     const { stdout } = run(
       JSON.stringify({ path: '/tmp/test.lua', content: 'hello' }),
       { NEPH_DRY_RUN: '1' },
     );
     const output = JSON.parse(stdout);
     const keys = Object.keys(output).sort();
-    expect(keys).toEqual(['content', 'decision', 'reason']);
+    expect(keys).toEqual(['content', 'decision', 'hunks', 'reason', 'schema']);
+    expect(output.schema).toBe('review/v1');
+    expect(Array.isArray(output.hunks)).toBe(true);
   });
 });

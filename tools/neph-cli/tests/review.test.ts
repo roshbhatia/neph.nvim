@@ -285,12 +285,14 @@ describe('runReview', () => {
   });
 
   describe('protocol shape', () => {
-    it('stdout is always { decision, content, reason? } — no agent-specific fields', async () => {
+    it('stdout is always { schema, decision, content, hunks, reason? } — no agent-specific fields', async () => {
       process.env.NEPH_DRY_RUN = '1';
       await runReview(makeOpts());
       const output = JSON.parse(stdoutSpy.mock.calls[0][0] as string);
       const keys = Object.keys(output).sort();
-      expect(keys).toEqual(['content', 'decision', 'reason']);
+      expect(keys).toEqual(['content', 'decision', 'hunks', 'reason', 'schema']);
+      expect(output.schema).toBe('review/v1');
+      expect(Array.isArray(output.hunks)).toBe(true);
     });
   });
 });
