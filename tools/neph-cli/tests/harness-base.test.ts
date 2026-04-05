@@ -7,7 +7,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const mockReadFileSync = vi.fn();
 const mockExecFileSync = vi.fn();
 
-vi.mock("node:fs", () => ({ readFileSync: (...args: any[]) => mockReadFileSync(...args) }));
+const mockExistsSync = vi.fn();
+vi.mock("node:fs", () => ({
+  readFileSync: (...args: any[]) => mockReadFileSync(...args),
+  existsSync: (...args: any[]) => mockExistsSync(...args),
+}));
 vi.mock("node:child_process", () => ({ execFileSync: (...args: any[]) => mockExecFileSync(...args) }));
 vi.mock("../../lib/log", () => ({ debug: vi.fn() }));
 
@@ -17,7 +21,7 @@ vi.mock("../../lib/neph-run", () => ({
   createPersistentQueue: vi.fn(() => ({ call: mockPqCall, close: mockPqClose })),
 }));
 
-import { ContentHelper, CupcakeHelper, createSessionSignals } from "../../lib/harness-base";
+import { ContentHelper, CupcakeHelper, createSessionSignals, isNvimAvailable } from "../../lib/harness-base";
 
 describe("ContentHelper.reconstructContent", () => {
   beforeEach(() => {
@@ -180,5 +184,44 @@ describe("createSessionSignals", () => {
     const signals = createSessionSignals("claude");
     signals.close();
     expect(mockPqClose).toHaveBeenCalled();
+  });
+});
+
+describe("isNvimAvailable", () => {
+  const origEnv = { ...process.env };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    delete process.env.NVIM;
+    delete process.env.NVIM_SOCKET_PATH;
+  });
+
+  afterEach(() => {
+    process.env.NVIM = origEnv.NVIM;
+    process.env.NVIM_SOCKET_PATH = origEnv.NVIM_SOCKET_PATH;
+  });
+
+  it("returns false when no NVIM env vars are set", () => {
+    expect(isNvimAvailable()).toBe(false);
+    expect(mockExistsSync).not.toHaveBeenCalled();
+  });
+
+  it("returns true when NVIM is set and socket exists", () => {
+    process.env.NVIM = "/tmp/nvim.12345/0";
+    mockExistsSync.mockReturnValue(true);
+    expect(isNvimAvailable()).toBe(true);
+  });
+
+  it("returns false when NVIM is set but socket does not exist", () => {
+    process.env.NVIM = "/tmp/nvim.99999/0";
+    mockExistsSync.mockReturnValue(false);
+    expect(isNvimAvailable()).toBe(false);
+  });
+
+  it("uses NVIM_SOCKET_PATH as fallback", () => {
+    process.env.NVIM_SOCKET_PATH = "/tmp/nvim.socket";
+    mockExistsSync.mockReturnValue(true);
+    expect(isNvimAvailable()).toBe(true);
+    expect(mockExistsSync).toHaveBeenCalledWith("/tmp/nvim.socket");
   });
 });

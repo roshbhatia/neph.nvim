@@ -52,6 +52,16 @@ function fakeSignals() {
   };
 }
 
+// Fake non-null transport — tells handlers Neovim is "connected"
+function fakeTransport() {
+  return {
+    executeLua: vi.fn().mockResolvedValue(null),
+    onNotification: vi.fn(),
+    getChannelId: vi.fn().mockResolvedValue(1),
+    close: vi.fn().mockResolvedValue(undefined),
+  } as any;
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   // Default: createSessionSignals returns a fresh fake signals object
@@ -67,6 +77,7 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 describe("runClaudeHook", () => {
+  const transport = fakeTransport();
   function invoke(event: Record<string, unknown>) {
     const chunks: string[] = [];
     const orig = process.stdout.write.bind(process.stdout);
@@ -74,7 +85,7 @@ describe("runClaudeHook", () => {
     return runIntegrationCommand(
       ["integration", "hook", "claude"],
       JSON.stringify(event),
-      null,
+      transport,
     ).then(() => {
       process.stdout.write = orig;
       return chunks.join("");
@@ -190,11 +201,25 @@ describe("runClaudeHook", () => {
     expect(JSON.parse(out)).toEqual({});
   });
 
+  it("passes through transparently when transport is null (no Neovim)", async () => {
+    const chunks: string[] = [];
+    const orig = process.stdout.write.bind(process.stdout);
+    process.stdout.write = ((c: any) => { chunks.push(c.toString()); return true; }) as any;
+    await runIntegrationCommand(
+      ["integration", "hook", "claude"],
+      JSON.stringify({ hook_event_name: "PreToolUse", tool_name: "Edit", tool_input: { file_path: "/tmp/x.lua" } }),
+      null,
+    );
+    process.stdout.write = orig;
+    expect(JSON.parse(chunks.join(""))).toEqual({});
+    expect(mockCupcakeEval).not.toHaveBeenCalled();
+  });
+
   it("invalid JSON stdin → outputs {}", async () => {
     const chunks: string[] = [];
     const orig = process.stdout.write.bind(process.stdout);
     process.stdout.write = ((c: any) => { chunks.push(c.toString()); return true; }) as any;
-    await runIntegrationCommand(["integration", "hook", "claude"], "not json", null);
+    await runIntegrationCommand(["integration", "hook", "claude"], "not json", fakeTransport());
     process.stdout.write = orig;
     expect(JSON.parse(chunks.join(""))).toEqual({});
   });
@@ -205,6 +230,7 @@ describe("runClaudeHook", () => {
 // ---------------------------------------------------------------------------
 
 describe("runGeminiHook", () => {
+  const transport = fakeTransport();
   function invoke(event: Record<string, unknown>) {
     const chunks: string[] = [];
     const orig = process.stdout.write.bind(process.stdout);
@@ -212,7 +238,7 @@ describe("runGeminiHook", () => {
     return runIntegrationCommand(
       ["integration", "hook", "gemini"],
       JSON.stringify(event),
-      null,
+      transport,
     ).then(() => {
       process.stdout.write = orig;
       return chunks.join("");
@@ -292,6 +318,7 @@ describe("runGeminiHook", () => {
 // ---------------------------------------------------------------------------
 
 describe("runCursorHook", () => {
+  const transport = fakeTransport();
   function invoke(event: Record<string, unknown>) {
     const chunks: string[] = [];
     const orig = process.stdout.write.bind(process.stdout);
@@ -299,7 +326,7 @@ describe("runCursorHook", () => {
     return runIntegrationCommand(
       ["integration", "hook", "cursor"],
       JSON.stringify(event),
-      null,
+      transport,
     ).then(() => {
       process.stdout.write = orig;
       return chunks.join("");

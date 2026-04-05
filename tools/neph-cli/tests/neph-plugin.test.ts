@@ -26,6 +26,7 @@ vi.mock('../../lib/neph-run', () => ({
 const mockCupcakeEval = vi.fn();
 const mockReconstructContent = vi.fn();
 
+const mockIsNvimAvailable = vi.fn(() => true);
 vi.mock('../../lib/harness-base', () => ({
   CupcakeHelper: {
     cupcakeEval: (...args: unknown[]) => mockCupcakeEval(...args),
@@ -33,6 +34,7 @@ vi.mock('../../lib/harness-base', () => ({
   ContentHelper: {
     reconstructContent: (...args: unknown[]) => mockReconstructContent(...args),
   },
+  isNvimAvailable: () => mockIsNvimAvailable(),
 }));
 
 import nephPluginDefault from '../../amp/neph-plugin';
@@ -78,6 +80,9 @@ function makeFakePQ() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+
+  // Default: isNvimAvailable returns true (Neovim is "connected")
+  mockIsNvimAvailable.mockReturnValue(true);
 
   // Default: createPersistentQueue returns a fresh fake PQ each call
   mockCreatePersistentQueue.mockImplementation(() => makeFakePQ());

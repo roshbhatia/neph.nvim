@@ -3,7 +3,7 @@ import * as path from "node:path";
 import * as readline from "node:readline/promises";
 import { runReview } from "./review";
 import { NvimTransport } from "./transport";
-import { CupcakeHelper, ContentHelper, createSessionSignals } from "../../lib/harness-base";
+import { CupcakeHelper, ContentHelper, createSessionSignals, isNvimAvailable } from "../../lib/harness-base";
 
 interface Integration {
   name: string;
@@ -311,6 +311,10 @@ function normalizeGeminiInput(stdin: string): GeminiHookPayload | null {
 }
 
 async function runGeminiHook(stdin: string, transport: NvimTransport | null): Promise<void> {
+  if (transport === null) {
+    process.stdout.write(JSON.stringify({ decision: "allow" }) + "\n");
+    return;
+  }
   const payload = normalizeGeminiInput(stdin);
   if (!payload) {
     process.stdout.write(JSON.stringify({ decision: "allow" }) + "\n");
@@ -416,7 +420,11 @@ async function runGeminiHook(stdin: string, transport: NvimTransport | null): Pr
 // Claude hook handler
 // ---------------------------------------------------------------------------
 
-async function runClaudeHook(stdin: string, _transport: NvimTransport | null): Promise<void> {
+async function runClaudeHook(stdin: string, transport: NvimTransport | null): Promise<void> {
+  if (transport === null) {
+    process.stdout.write("{}\n");
+    return;
+  }
   let event: Record<string, unknown>;
   try {
     event = JSON.parse(stdin);
@@ -536,7 +544,11 @@ async function runClaudeHook(stdin: string, _transport: NvimTransport | null): P
 // Codex hook handler — same pattern as Claude
 // ---------------------------------------------------------------------------
 
-async function runCodexHook(stdin: string, _transport: NvimTransport | null): Promise<void> {
+async function runCodexHook(stdin: string, transport: NvimTransport | null): Promise<void> {
+  if (transport === null) {
+    process.stdout.write("{}\n");
+    return;
+  }
   let event: Record<string, unknown>;
   try {
     event = JSON.parse(stdin);
@@ -653,7 +665,11 @@ async function runCodexHook(stdin: string, _transport: NvimTransport | null): Pr
 // Copilot hook handler
 // ---------------------------------------------------------------------------
 
-async function runCopilotHook(stdin: string, _transport: NvimTransport | null): Promise<void> {
+async function runCopilotHook(stdin: string, transport: NvimTransport | null): Promise<void> {
+  if (transport === null) {
+    process.stdout.write("{}\n");
+    return;
+  }
   let event: Record<string, unknown>;
   try {
     event = JSON.parse(stdin);
@@ -724,7 +740,11 @@ async function runCopilotHook(stdin: string, _transport: NvimTransport | null): 
 // Cursor hook handler
 // ---------------------------------------------------------------------------
 
-async function runCursorHook(stdin: string, _transport: NvimTransport | null): Promise<void> {
+async function runCursorHook(stdin: string, transport: NvimTransport | null): Promise<void> {
+  if (transport === null) {
+    process.stdout.write("{}\n");
+    return;
+  }
   let event: Record<string, unknown>;
   try {
     event = JSON.parse(stdin);

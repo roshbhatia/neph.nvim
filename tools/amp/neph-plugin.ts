@@ -7,7 +7,7 @@
 //   so all file interception must go through "tool.call".
 import { debug } from "../lib/log";
 import { uiSelect, uiInput, uiNotify, createPersistentQueue } from "../lib/neph-run";
-import { CupcakeHelper, ContentHelper } from "../lib/harness-base";
+import { CupcakeHelper, ContentHelper, isNvimAvailable } from "../lib/harness-base";
 
 function neph_plugin_default(amp: any) {
   // Persistent queue: one long-lived `neph connect` subprocess per session.
@@ -65,6 +65,11 @@ function neph_plugin_default(amp: any) {
     const input = event.input as Record<string, string>;
     const filePath = input.file_path ?? input.path ?? input.filepath;
     if (!filePath) return { action: "allow" };
+
+    // No Neovim reachable — pass through transparently
+    if (!isNvimAvailable()) {
+      return { action: "allow" };
+    }
 
     const content = ContentHelper.reconstructContent(filePath, input as Record<string, unknown>);
 

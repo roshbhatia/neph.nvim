@@ -2,7 +2,7 @@
 // Shared infrastructure for all neph agent harnesses.
 // Provides ContentHelper, CupcakeHelper, SessionHelper, and shared types.
 
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { debug } from "./log";
 import { createPersistentQueue } from "./neph-run";
@@ -147,6 +147,25 @@ export const CupcakeHelper = {
     }
   },
 };
+
+// ---------------------------------------------------------------------------
+// NvimGuard — detect whether a Neovim instance is reachable
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns true if a Neovim socket is reachable from this process.
+ * Uses the same env var lookup as neph-cli's index.ts.
+ * Synchronous and fast (no spawns, no network).
+ */
+export function isNvimAvailable(): boolean {
+  const socketPath = process.env.NVIM ?? process.env.NVIM_SOCKET_PATH;
+  if (!socketPath) return false;
+  try {
+    return existsSync(socketPath);
+  } catch {
+    return false;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // SessionHelper — lifecycle state signals to Neovim
