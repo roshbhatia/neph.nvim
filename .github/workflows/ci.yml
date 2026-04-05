@@ -31,6 +31,24 @@ jobs:
             task test
           '
 
+  # ── Hook sandbox e2e: no Neovim, no Cupcake, pure CLI contract ──────────────
+  hook-sandbox:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: tools/neph-cli/package-lock.json
+      - name: Install dependencies
+        run: npm ci --prefix tools/neph-cli
+      - name: Run hook sandbox e2e tests
+        run: cd tools/neph-cli && npx vitest run tests/integration/hook-sandbox.test.ts
+        env:
+          NVIM: ""
+          NVIM_SOCKET_PATH: ""
+
   # ── Lua tests: run against stable and nightly Neovim ────────────────────────
   lua-tests:
     runs-on: ubuntu-latest

@@ -56,6 +56,11 @@ tasks:
     cmds:
       - cd tools/neph-cli && npx vitest run tests/integration/  # Run neph-cli review integration tests via vitest
 
+  test:e2e:hooks:
+    desc: Sandbox e2e tests for hook handlers and integration toggle (no Neovim required)
+    cmds:
+      - cd tools/neph-cli && npx vitest run tests/integration/hook-sandbox.test.ts
+
   build:
     desc: Build all companion tools and install the neph CLI symlink
     cmds:
