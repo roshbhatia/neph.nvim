@@ -25,6 +25,7 @@ function M.get()
 end
 
 --- Transition to a new gate state.
+--- Calling set() with the current state is a no-op (idempotent).
 ---@param new_state neph.GateState
 function M.set(new_state)
   if not VALID_STATES[new_state] then
@@ -34,6 +35,7 @@ function M.set(new_state)
 end
 
 --- Release a hold or bypass, returning to normal state.
+--- No-op if already in normal state.
 function M.release()
   state = "normal"
 end
@@ -58,13 +60,16 @@ end
 
 --- Cycle: normal → hold → bypass → normal.
 --- Convenience for a single keymap that toggles through all modes.
+--- NOTE: callers are responsible for keeping gate_ui in sync after cycle()
+--- returns. Prefer neph.api.gate() which handles both gate state and gate_ui
+--- atomically. This function exists only for headless/test use cases.
 function M.cycle()
   if state == "normal" then
-    state = "hold"
+    M.set("hold")
   elseif state == "hold" then
-    state = "bypass"
+    M.set("bypass")
   else
-    state = "normal"
+    M.release()
   end
 end
 

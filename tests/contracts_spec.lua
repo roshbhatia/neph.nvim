@@ -218,6 +218,7 @@ describe("neph.contracts", function()
         is_visible = function() end,
         kill = function() end,
         cleanup_all = function() end,
+        send = function() end,
       }
     end
 

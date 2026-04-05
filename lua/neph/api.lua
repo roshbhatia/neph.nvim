@@ -189,34 +189,59 @@ function M.gate()
     require("neph.internal.review_queue").drain()
     vim.notify("Neph: gate released — draining pending reviews", vim.log.levels.INFO)
   else -- bypass
-    gate.set("normal")
+    gate.release()
     gate_ui.clear()
     vim.notify("Neph: review gate restored to normal", vim.log.levels.INFO)
   end
 end
 
 --- Set gate to hold mode explicitly.
+--- No-op (with notification) if gate is already in hold mode.
 function M.gate_hold()
+  local gate = require("neph.internal.gate")
+  if gate.is_hold() then
+    vim.notify("Neph: gate is already in hold mode", vim.log.levels.INFO)
+    return
+  end
   local win = non_floating_win()
-  require("neph.internal.gate").set("hold")
+  gate.set("hold")
   gate_ui.set("hold", win)
   vim.notify("Neph: reviews held", vim.log.levels.INFO)
 end
 
 --- Set gate to bypass mode explicitly (auto-accepts all writes without review).
+--- No-op (with notification) if gate is already in bypass mode.
 function M.gate_bypass()
+  local gate = require("neph.internal.gate")
+  if gate.is_bypass() then
+    vim.notify("Neph: gate is already in bypass mode", vim.log.levels.WARN)
+    return
+  end
   local win = non_floating_win()
-  require("neph.internal.gate").set("bypass")
+  gate.set("bypass")
   gate_ui.set("bypass", win)
   vim.notify("Neph: bypass mode — all writes auto-accepted without review", vim.log.levels.WARN)
 end
 
---- Release hold and drain accumulated reviews.
+--- Release hold or bypass, returning to normal state, and drain any accumulated reviews.
+--- No-op (with notification) if gate is already in normal state.
 function M.gate_release()
-  require("neph.internal.gate").release()
+  local gate = require("neph.internal.gate")
+  if gate.is_normal() then
+    vim.notify("Neph: gate is already in normal state", vim.log.levels.INFO)
+    return
+  end
+  local was_hold = gate.is_hold()
+  gate.release()
   gate_ui.clear()
-  require("neph.internal.review_queue").drain()
-  vim.notify("Neph: gate released", vim.log.levels.INFO)
+  -- Only drain the queue when releasing from hold — bypass discards reviews
+  -- rather than queuing them, so there is nothing to drain.
+  if was_hold then
+    require("neph.internal.review_queue").drain()
+    vim.notify("Neph: gate released — draining pending reviews", vim.log.levels.INFO)
+  else
+    vim.notify("Neph: gate released", vim.log.levels.INFO)
+  end
 end
 
 --- Return the current gate state string.

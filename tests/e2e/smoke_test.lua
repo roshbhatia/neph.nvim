@@ -27,6 +27,7 @@ return function(t)
           td.pane_id = nil
         end,
         cleanup_all = function() end,
+        send = function() end,
       }
       require("neph").setup({
         agents = { require("neph.agents.claude") },

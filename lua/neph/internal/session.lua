@@ -49,8 +49,6 @@ function M.setup(opts, backend_mod)
           local td = terminals[name]
           if td then
             if not backend.is_visible(td) then
-              td.pane_id = nil
-              td.win = nil
               td.stale_since = os.time()
               vim.g[name .. "_active"] = nil
               if active_terminal == name then
@@ -59,6 +57,41 @@ function M.setup(opts, backend_mod)
             elseif td.stale_since then
               td.stale_since = nil
             end
+          end
+        end
+      end,
+    })
+
+    -- Detect native (snacks) terminal processes that die unexpectedly.
+    -- When the agent process exits, Neovim fires TermClose on the terminal
+    -- buffer. Without this handler the window remains visually open and
+    -- is_visible() still returns true, so send() would keep trying to
+    -- chansend into a dead job and ready_queue entries would be drained
+    -- into the void.  Mark the terminal stale immediately so subsequent
+    -- send/focus calls treat the session as gone.
+    vim.api.nvim_create_autocmd("TermClose", {
+      group = augroup,
+      callback = function(ev)
+        local closed_buf = ev.buf
+        for name, td in pairs(terminals) do
+          if td and td.buf == closed_buf then
+            log.debug("session", "TermClose: agent process exited for %s (buf=%d)", name, closed_buf)
+            -- Cancel the ready-timer if it is still running.
+            if td.ready_timer then
+              pcall(td.ready_timer.stop, td.ready_timer)
+              pcall(td.ready_timer.close, td.ready_timer)
+              td.ready_timer = nil
+            end
+            -- Drop any queued sends that would target the dead channel.
+            ready_queue[name] = nil
+            -- Mark stale so all callers observe the dead state without a
+            -- backend.is_visible() round-trip.
+            td.stale_since = os.time()
+            vim.g[name .. "_active"] = nil
+            if active_terminal == name then
+              active_terminal = nil
+            end
+            break
           end
         end
       end,
@@ -77,6 +110,11 @@ function M.setup(opts, backend_mod)
           pcall(stale_timer.close, stale_timer)
           stale_timer = nil
         end
+        -- Reject all pending queued reviews BEFORE tearing down backend
+        -- so CLI callers receive a reject response before panes/channels close.
+        pcall(function()
+          require("neph.internal.review_queue").reject_all_pending("Neovim exiting")
+        end)
         -- Wrap backend.cleanup_all so failures don't block remaining teardown
         pcall(backend.cleanup_all, terminals)
         -- Clean up all pending timers
@@ -99,11 +137,6 @@ function M.setup(opts, backend_mod)
         pcall(function()
           require("neph.internal.gate_ui").clear()
         end)
-        -- Reject all pending queued reviews so CLI callers are not left hanging
-        -- until their 300-second timeout expires.
-        pcall(function()
-          require("neph.internal.review_queue").reject_all_pending("Neovim exiting")
-        end)
       end,
     })
 
@@ -121,8 +154,6 @@ function M.setup(opts, backend_mod)
               local td = terminals[name]
               if td then
                 if not backend.is_visible(td) then
-                  td.pane_id = nil
-                  td.win = nil
                   td.stale_since = os.time()
                   vim.g[name .. "_active"] = nil
                   if active_terminal == name then
@@ -261,14 +292,10 @@ function M.focus(termname)
     return
   end
   if not backend.is_visible(td) then
-    td.pane_id = nil
-    td.win = nil
     M.open(termname)
     return
   end
   if not backend.focus(td) then
-    td.pane_id = nil
-    td.win = nil
     M.open(termname)
     return
   end
@@ -322,6 +349,11 @@ function M.kill_session(termname)
     active_terminal = nil
   end
   vim.g[termname .. "_active"] = nil
+  -- Clear the stored last-prompt so a subsequent resend() on a new session
+  -- does not replay a prompt that belonged to the killed session.
+  pcall(function()
+    require("neph.internal.terminal").set_last_prompt(termname, nil)
+  end)
   -- Force-cleanup active review UI if it belongs to this agent
   pcall(function()
     require("neph.api.review").force_cleanup(termname)
@@ -354,30 +386,14 @@ function M.send(termname, text, opts)
 
   log.debug("session", "send: %s via terminal (len=%d, submit=%s)", termname, #text, tostring(opts.submit or false))
 
-  -- Default send: backend.send (WezTerm, Zellij) or native terminal via chansend
   if td.stale_since then
     log.debug("session", "send: %s skipped — terminal marked stale", termname)
     return
   end
-  if not td.pane_id and not td.win then
+  if not backend.is_visible(td) then
     return
   end
-  if backend.send then
-    backend.send(td, text, opts)
-    return
-  end
-  if td.buf and vim.api.nvim_buf_is_valid(td.buf) then
-    local ok, chan = pcall(function()
-      return vim.b[td.buf].terminal_job_id
-    end)
-    if not ok or not chan then
-      return
-    end
-    vim.fn.chansend(chan, text)
-    if opts.submit then
-      vim.fn.chansend(chan, "\n")
-    end
-  end
+  backend.send(td, text, opts)
 end
 
 function M.ensure_active_and_send(text)
@@ -451,11 +467,8 @@ function M.get_info(termname)
   return {
     name = termname,
     visible = backend.is_visible(td),
-    pane_id = td.pane_id,
     cmd = td.cmd,
     cwd = td.cwd,
-    win = td.win,
-    buf = td.buf,
   }
 end
 

@@ -1,4 +1,10 @@
 // @i-know-the-amp-plugin-api-is-wip-and-very-experimental-right-now
+// TODO(amp-sdk): Hook names ("session.start", "session.end", "agent.start",
+//   "agent.end", "tool.call") and their callback signatures are unverifiable
+//   against SDK types — @ampcode/plugin is marked external and has no .d.ts in
+//   node_modules. Verify against amp plugin documentation when the SDK stabilises.
+//   Known gaps: no "file.write" or "tool.pre"/"tool.post" hooks are available,
+//   so all file interception must go through "tool.call".
 import { readFileSync } from "node:fs";
 import { debug } from "../lib/log";
 import { review, uiSelect, uiInput, uiNotify, createPersistentQueue } from "../lib/neph-run";
@@ -30,6 +36,9 @@ function neph_plugin_default(amp: any) {
 
   amp.on("session.end", async () => {
     debug("amp", "session.end");
+    // Ensure amp_running is cleared if the agent end hook was never fired
+    // (e.g. session killed mid-agent). pq.call() queues before close() drains.
+    pq.call("unset", "amp_running");
     pq.close();
     // Create a fresh queue in case the session restarts in the same process
     pq = createPersistentQueue();
@@ -75,6 +84,9 @@ function neph_plugin_default(amp: any) {
     }
 
     try {
+      // tool.call fires before amp writes to disk — this is always pre_write.
+      // neph-run.ts does not forward a mode field; the Lua layer defaults to
+      // "pre_write" when mode is absent, which is correct here.
       const result = await review(filePath, content, "amp");
       if (result.decision === "reject") {
         const reason = result.reason ?? "User rejected changes";

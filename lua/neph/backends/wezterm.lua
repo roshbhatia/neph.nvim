@@ -109,12 +109,15 @@ local READY_POLL_MS = 200
 local READY_TIMEOUT_MS = 30000
 
 --- Poll `wezterm cli get-text` for a ready pattern in the pane output.
+--- Stores the timer handle on td.ready_timer so kill() can cancel it.
 ---@param td table  term_data (must have pane_id)
 ---@param pattern string  Lua pattern to match
 local function watch_for_ready(td, pattern)
   local attempts = 0
   local max_attempts = READY_TIMEOUT_MS / READY_POLL_MS
   local timer = vim.uv.new_timer()
+  -- Expose for cancellation by kill()
+  td.ready_timer = timer
 
   timer:start(
     READY_POLL_MS,
@@ -122,9 +125,13 @@ local function watch_for_ready(td, pattern)
     vim.schedule_wrap(function()
       attempts = attempts + 1
 
-      if not td.pane_id then
-        timer:stop()
-        timer:close()
+      -- Guard: kill() sets pane_id to nil and _killed to true before this
+      -- callback can observe either.  Check both so we bail without calling
+      -- on_ready on a terminal that has already been torn down.
+      if td._killed or not td.pane_id then
+        pcall(timer.stop, timer)
+        pcall(timer.close, timer)
+        td.ready_timer = nil
         return
       end
 
@@ -132,8 +139,9 @@ local function watch_for_ready(td, pattern)
       if vim.v.shell_error == 0 and text then
         for line in text:gmatch("[^\n]+") do
           if line:find(pattern) then
-            timer:stop()
-            timer:close()
+            pcall(timer.stop, timer)
+            pcall(timer.close, timer)
+            td.ready_timer = nil
             td.ready = true
             if td.on_ready then
               td.on_ready()
@@ -144,11 +152,15 @@ local function watch_for_ready(td, pattern)
       end
 
       if attempts >= max_attempts then
-        timer:stop()
-        timer:close()
-        td.ready = true
-        if td.on_ready then
-          td.on_ready()
+        pcall(timer.stop, timer)
+        pcall(timer.close, timer)
+        td.ready_timer = nil
+        -- Fail-open only if not killed
+        if not td._killed then
+          td.ready = true
+          if td.on_ready then
+            td.on_ready()
+          end
         end
       end
     end)
@@ -219,6 +231,9 @@ function M.open(termname, agent_config, cwd)
     name = termname,
     created_at = os.time(),
     ready = not agent_config.ready_pattern,
+    -- Set to true by kill() so queued schedule_wrap callbacks can detect that
+    -- the pane has been torn down and skip on_ready invocation.
+    _killed = false,
   }
   pane_errors[pane_id] = 0
 
@@ -274,6 +289,14 @@ function M.kill(term_data)
   if not term_data then
     return
   end
+  -- Mark killed before clearing pane_id so the watch_for_ready schedule_wrap
+  -- callback can detect teardown and skip the on_ready invocation.
+  term_data._killed = true
+  if term_data.ready_timer then
+    pcall(term_data.ready_timer.stop, term_data.ready_timer)
+    pcall(term_data.ready_timer.close, term_data.ready_timer)
+    term_data.ready_timer = nil
+  end
   if term_data.pane_id then
     pane_errors[term_data.pane_id] = nil
     kill_pane(term_data.pane_id)
@@ -286,6 +309,12 @@ function M.cleanup_all(terminals)
     return
   end
   for _, td in pairs(terminals) do
+    td._killed = true
+    if td.ready_timer then
+      pcall(td.ready_timer.stop, td.ready_timer)
+      pcall(td.ready_timer.close, td.ready_timer)
+      td.ready_timer = nil
+    end
     if td.pane_id then
       kill_pane(td.pane_id)
     end

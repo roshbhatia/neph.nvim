@@ -108,6 +108,7 @@ return function(t)
       end,
       kill = function() end,
       cleanup_all = function() end,
+      send = function() end,
     },
     review_provider = require("neph.reviewers.vimdiff"),
   })

@@ -16,7 +16,7 @@ local INDICATORS = {
   bypass = "%#DiagnosticError# 󰈑 NEPH BYPASS %*",
 }
 
----@param gate_state string  "hold" | "bypass"
+---@param gate_state neph.GateState  "hold" | "bypass" (ignored for "normal")
 ---@param win? integer  window handle (defaults to current window)
 function M.set(gate_state, win)
   local indicator = INDICATORS[gate_state]

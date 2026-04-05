@@ -1,5 +1,6 @@
 import * as crypto from 'node:crypto';
 import { NvimTransport } from './transport';
+import type { HunkResult } from '../../lib/neph-run';
 
 const RPC_CALL = 'return require("neph.rpc").request(...)';
 
@@ -16,8 +17,10 @@ export interface ReviewInput {
 }
 
 export interface ReviewEnvelope {
-  decision: string;
+  schema: 'review/v1';
+  decision: 'accept' | 'reject' | 'partial';
   content: string;
+  hunks: HunkResult[];
   reason?: string;
 }
 
@@ -26,7 +29,7 @@ export interface ReviewEnvelope {
  *
  * Protocol:
  *   stdin:  { path: string, content: string }
- *   stdout: { decision: "accept"|"reject"|"partial", content: string, reason?: string }
+ *   stdout: { schema: "review/v1", decision: "accept"|"reject"|"partial", content: string, hunks: HunkResult[], reason?: string }
  *
  * Exit codes: 0 = accept/partial, 2 = reject, 3 = timeout
  */
@@ -49,7 +52,7 @@ export async function runReview(opts: ReviewOptions): Promise<number> {
 
   // Dry-run mode
   if (process.env.NEPH_DRY_RUN === '1') {
-    const envelope: ReviewEnvelope = { decision: 'accept', content: input.content, reason: 'Dry-run auto-accept' };
+    const envelope: ReviewEnvelope = { schema: 'review/v1', decision: 'accept', content: input.content, hunks: [], reason: 'Dry-run auto-accept' };
     process.stdout.write(JSON.stringify(envelope) + '\n');
     return 0;
   }
@@ -57,7 +60,7 @@ export async function runReview(opts: ReviewOptions): Promise<number> {
   // No socket — fail-open with warning
   if (!transport) {
     process.stderr.write('neph review: WARNING — no Neovim socket found, auto-accepting\n');
-    const envelope: ReviewEnvelope = { decision: 'accept', content: input.content, reason: 'No Neovim connection' };
+    const envelope: ReviewEnvelope = { schema: 'review/v1', decision: 'accept', content: input.content, hunks: [], reason: 'No Neovim connection' };
     process.stdout.write(JSON.stringify(envelope) + '\n');
     return 0;
   }
@@ -88,7 +91,7 @@ export async function runReview(opts: ReviewOptions): Promise<number> {
     channelId = await transport.getChannelId();
   } catch (err) {
     process.stderr.write(`neph review: failed to get channel id: ${err}\n`);
-    const envelope: ReviewEnvelope = { decision: 'accept', content: input.content, reason: 'RPC error (fail-open)' };
+    const envelope: ReviewEnvelope = { schema: 'review/v1', decision: 'accept', content: input.content, hunks: [], reason: 'RPC error (fail-open)' };
     process.stdout.write(JSON.stringify(envelope) + '\n');
     await transport.close();
     return 0;
@@ -107,15 +110,21 @@ export async function runReview(opts: ReviewOptions): Promise<number> {
         const payload = args[0] as Record<string, unknown> | undefined;
         if (!payload || payload.request_id !== requestId) return;
 
-        const decision = typeof payload.decision === 'string' ? payload.decision : 'accept';
+        const decision = (typeof payload.decision === 'string' ? payload.decision : 'accept') as ReviewEnvelope['decision'];
         // content from the notification arrives as `unknown`; coerce to string
         // defensively so that JSON.stringify cannot encounter a circular ref or
         // non-serializable value from a misbehaving Neovim plugin.
         const rawContent = payload.content;
         const content = typeof rawContent === 'string' ? rawContent : JSON.stringify(rawContent) ?? input.content;
+        // hunks from the notification: Lua always sends an array; fall back to []
+        // if the field is absent or not an array (e.g. old Neovim plugin version).
+        const rawHunks = payload.hunks;
+        const hunks: HunkResult[] = Array.isArray(rawHunks) ? rawHunks as HunkResult[] : [];
         const envelope: ReviewEnvelope = {
+          schema: 'review/v1',
           decision,
           content,
+          hunks,
           reason: typeof payload.reason === 'string' ? payload.reason : undefined,
         };
 
@@ -123,7 +132,7 @@ export async function runReview(opts: ReviewOptions): Promise<number> {
           process.stdout.write(JSON.stringify(envelope) + '\n');
         } catch (serializeErr) {
           process.stderr.write(`neph review: failed to serialize envelope: ${serializeErr}\n`);
-          const fallback: ReviewEnvelope = { decision: 'accept', content: input.content, reason: 'serialize error (fail-open)' };
+          const fallback: ReviewEnvelope = { schema: 'review/v1', decision: 'accept', content: input.content, hunks: [], reason: 'serialize error (fail-open)' };
           process.stdout.write(JSON.stringify(fallback) + '\n');
         }
         await cleanup();
@@ -150,7 +159,7 @@ export async function runReview(opts: ReviewOptions): Promise<number> {
       // Check if auto-completed (no hunks)
       const rpcResult = result as { ok?: boolean; msg?: string } | undefined;
       if (rpcResult?.ok && rpcResult?.msg === 'No changes') {
-        const envelope: ReviewEnvelope = { decision: 'accept', content: input.content };
+        const envelope: ReviewEnvelope = { schema: 'review/v1', decision: 'accept', content: input.content, hunks: [] };
         process.stdout.write(JSON.stringify(envelope) + '\n');
         await cleanup();
         resolve(0);
@@ -159,7 +168,7 @@ export async function runReview(opts: ReviewOptions): Promise<number> {
       // review is in progress — remain pending and wait for neph:review_done.
     }).catch(async (err) => {
       process.stderr.write(`neph review: RPC error: ${err}\n`);
-      const envelope: ReviewEnvelope = { decision: 'accept', content: input.content, reason: 'RPC error (fail-open)' };
+      const envelope: ReviewEnvelope = { schema: 'review/v1', decision: 'accept', content: input.content, hunks: [], reason: 'RPC error (fail-open)' };
       process.stdout.write(JSON.stringify(envelope) + '\n');
       await cleanup();
       resolve(0); // fail-open

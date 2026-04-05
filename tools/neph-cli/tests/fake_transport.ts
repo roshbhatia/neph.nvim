@@ -1,5 +1,25 @@
 import { NvimTransport } from '../src/transport';
 
+// ---------------------------------------------------------------------------
+// Shared review-stdin factory
+// ---------------------------------------------------------------------------
+
+/**
+ * Build the JSON string that neph review / runReview expects on stdin.
+ * Override any field to exercise validation branches.
+ */
+export function makeReviewStdin(overrides: Partial<{
+  path: string;
+  content: string;
+  agent: string;
+}> = {}): string {
+  return JSON.stringify({
+    path: '/tmp/test.lua',
+    content: 'hello world',
+    ...overrides,
+  });
+}
+
 export class FakeTransport implements NvimTransport {
   public calls: { code: string, args: unknown[] }[] = [];
   public notifications: { [event: string]: ((args: unknown[]) => void)[] } = {};

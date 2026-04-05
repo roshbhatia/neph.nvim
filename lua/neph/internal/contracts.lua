@@ -32,7 +32,7 @@ local REMOVED_FIELDS = {
   integration = "integration is no longer supported; use type = 'hook' or type = 'terminal' instead",
 }
 
-local BACKEND_REQUIRED_METHODS = { "setup", "open", "focus", "hide", "is_visible", "kill", "cleanup_all" }
+local BACKEND_REQUIRED_METHODS = { "setup", "open", "focus", "hide", "is_visible", "kill", "cleanup_all", "send" }
 
 ---@param def table
 function M.validate_agent(def)
