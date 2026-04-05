@@ -10,7 +10,7 @@
       flake-utils,
       ...
     }:
-    flake-utils.lib.eachDefaultSystem (
+    (flake-utils.lib.eachDefaultSystem (
       system:
       let
         pkgs = import nixpkgs { inherit system; };
@@ -57,5 +57,11 @@
           '';
         };
       }
-    );
+    ))
+    // {
+      # home-manager module — use with:
+      #   imports = [ inputs.neph-nvim.homeManagerModules.default ];
+      #   programs.neph.enable = true;
+      homeManagerModules.default = import ./nix/hm-module.nix;
+    };
 }

@@ -2,16 +2,19 @@
   "hooks": {
     "afterFileEdit": [
       {
+        "_kind": "lifecycle",
         "command": "neph integration hook cursor"
       }
     ],
     "beforeShellExecution": [
       {
+        "_kind": "lifecycle",
         "command": "neph integration hook cursor"
       }
     ],
     "beforeMCPExecution": [
       {
+        "_kind": "lifecycle",
         "command": "neph integration hook cursor"
       }
     ]

@@ -2,6 +2,7 @@
   "hooks": {
     "SessionStart": [
       {
+        "_kind": "lifecycle",
         "hooks": [
           {
             "type": "command",
@@ -14,6 +15,7 @@
     ],
     "SessionEnd": [
       {
+        "_kind": "lifecycle",
         "hooks": [
           {
             "type": "command",
@@ -26,6 +28,7 @@
     ],
     "BeforeAgent": [
       {
+        "_kind": "lifecycle",
         "hooks": [
           {
             "type": "command",
@@ -38,6 +41,7 @@
     ],
     "AfterAgent": [
       {
+        "_kind": "lifecycle",
         "hooks": [
           {
             "type": "command",
@@ -50,6 +54,7 @@
     ],
     "BeforeTool": [
       {
+        "_kind": "review",
         "matcher": "write_file|edit_file|replace",
         "hooks": [
           {
@@ -63,6 +68,7 @@
     ],
     "AfterTool": [
       {
+        "_kind": "review",
         "matcher": "write_file|edit_file|replace",
         "hooks": [
           {

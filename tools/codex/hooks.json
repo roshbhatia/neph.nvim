@@ -2,6 +2,7 @@
   "hooks": {
     "PreToolUse": [
       {
+        "_kind": "review",
         "matcher": "edit|write|create",
         "hooks": [
           {
@@ -13,6 +14,7 @@
     ],
     "PostToolUse": [
       {
+        "_kind": "review",
         "matcher": "edit|write|create",
         "hooks": [
           {
@@ -24,6 +26,7 @@
     ],
     "UserPromptSubmit": [
       {
+        "_kind": "lifecycle",
         "hooks": [
           {
             "type": "command",
@@ -34,6 +37,7 @@
     ],
     "Stop": [
       {
+        "_kind": "lifecycle",
         "hooks": [
           {
             "type": "command",
