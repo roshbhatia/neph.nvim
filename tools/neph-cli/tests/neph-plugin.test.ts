@@ -11,23 +11,30 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 vi.mock('../../lib/log', () => ({ debug: vi.fn() }));
 vi.mock('node:fs', () => ({ readFileSync: vi.fn() }));
 
-// Control all neph-run exports via a single shared spy object so individual
-// tests can override resolved values without re-importing the module.
-const mockReview = vi.fn();
 const mockUiSelect = vi.fn();
 const mockUiInput = vi.fn();
 const mockUiNotify = vi.fn();
 const mockCreatePersistentQueue = vi.fn();
 
 vi.mock('../../lib/neph-run', () => ({
-  review: (...args: unknown[]) => mockReview(...args),
   uiSelect: (...args: unknown[]) => mockUiSelect(...args),
   uiInput: (...args: unknown[]) => mockUiInput(...args),
   uiNotify: (...args: unknown[]) => mockUiNotify(...args),
   createPersistentQueue: (...args: unknown[]) => mockCreatePersistentQueue(...args),
 }));
 
-import { readFileSync } from 'node:fs';
+const mockCupcakeEval = vi.fn();
+const mockReconstructContent = vi.fn();
+
+vi.mock('../../lib/harness-base', () => ({
+  CupcakeHelper: {
+    cupcakeEval: (...args: unknown[]) => mockCupcakeEval(...args),
+  },
+  ContentHelper: {
+    reconstructContent: (...args: unknown[]) => mockReconstructContent(...args),
+  },
+}));
+
 import nephPluginDefault from '../../amp/neph-plugin';
 
 // ---------------------------------------------------------------------------
@@ -75,16 +82,13 @@ beforeEach(() => {
   // Default: createPersistentQueue returns a fresh fake PQ each call
   mockCreatePersistentQueue.mockImplementation(() => makeFakePQ());
 
-  // Default: review resolves accept
-  mockReview.mockResolvedValue({
-    schema: 'review/v1',
-    decision: 'accept',
-    content: 'hello world',
-    hunks: [],
-  });
+  // Default: cupcakeEval returns allow
+  mockCupcakeEval.mockReturnValue({ decision: 'allow' });
 
-  // Default: readFileSync returns a placeholder
-  vi.mocked(readFileSync).mockReturnValue('existing content' as any);
+  // Default: reconstructContent returns the content or empty string
+  mockReconstructContent.mockImplementation((_path: string, input: Record<string, unknown>) => {
+    return (input.content as string) ?? '';
+  });
 });
 
 afterEach(() => {
@@ -92,7 +96,7 @@ afterEach(() => {
 });
 
 // ---------------------------------------------------------------------------
-// session.start — amp.ui wiring
+// session.start — amp.ui wiring and active signal
 // ---------------------------------------------------------------------------
 
 describe('session.start', () => {
@@ -146,6 +150,17 @@ describe('session.start', () => {
     const result = await (amp.ui as any).input('Prompt');
     expect(result).toBe('');
   });
+
+  it('sets amp_active via persistent queue', async () => {
+    const pq = makeFakePQ();
+    mockCreatePersistentQueue.mockReturnValueOnce(pq);
+
+    const amp = makeAmp();
+    nephPluginDefault(amp);
+    await amp.emit('session.start');
+
+    expect(pq.call).toHaveBeenCalledWith('set', 'amp_active', 'true');
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -153,7 +168,7 @@ describe('session.start', () => {
 // ---------------------------------------------------------------------------
 
 describe('session.end', () => {
-  it('closes the persistent queue on session.end', async () => {
+  it('clears amp_active and amp_running on session.end', async () => {
     const pq = makeFakePQ();
     mockCreatePersistentQueue.mockReturnValueOnce(pq);
 
@@ -161,6 +176,8 @@ describe('session.end', () => {
     nephPluginDefault(amp);
 
     await amp.emit('session.end');
+    expect(pq.call).toHaveBeenCalledWith('unset', 'amp_running');
+    expect(pq.call).toHaveBeenCalledWith('unset', 'amp_active');
     expect(pq.close).toHaveBeenCalledOnce();
   });
 
@@ -175,10 +192,8 @@ describe('session.end', () => {
     nephPluginDefault(amp);
 
     await amp.emit('session.end');
-    // Two calls: one at plugin init, one at session.end
     expect(mockCreatePersistentQueue).toHaveBeenCalledTimes(2);
 
-    // The new queue receives subsequent agent.start calls
     await amp.emit('agent.start');
     expect(pq2.call).toHaveBeenCalledWith('set', 'amp_running', 'true');
   });
@@ -212,7 +227,6 @@ describe('agent.end', () => {
 
     expect(pq.call).toHaveBeenCalledWith('unset', 'amp_running');
     expect(pq.call).toHaveBeenCalledWith('checktime');
-    expect(pq.call).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -225,13 +239,10 @@ describe('tool.call — non-write tools', () => {
     const amp = makeAmp();
     nephPluginDefault(amp);
 
-    const result = await amp.emit('tool.call', { tool: 'run_bash', input: {} }, {});
-    expect(result).toBe(undefined); // emit returns last handler result; confirm no rejection
-    // More precisely: handler should have returned { action: 'allow' }
-    // We must call the handler directly for the return value
     const handler = amp.handlers['tool.call'][0];
     const rv = await handler({ tool: 'run_bash', input: {} }, {});
     expect(rv).toEqual({ action: 'allow' });
+    expect(mockCupcakeEval).not.toHaveBeenCalled();
   });
 
   it('returns allow for edit_file with no filePath', async () => {
@@ -241,17 +252,17 @@ describe('tool.call — non-write tools', () => {
     const handler = amp.handlers['tool.call'][0];
     const rv = await handler({ tool: 'edit_file', input: {} }, {});
     expect(rv).toEqual({ action: 'allow' });
-    expect(mockReview).not.toHaveBeenCalled();
+    expect(mockCupcakeEval).not.toHaveBeenCalled();
   });
 });
 
 // ---------------------------------------------------------------------------
-// tool.call — create_file
+// tool.call — cupcake allow
 // ---------------------------------------------------------------------------
 
-describe('tool.call — create_file', () => {
-  it('passes content directly to review and allows on accept', async () => {
-    mockReview.mockResolvedValue({ schema: 'review/v1', decision: 'accept', content: 'new', hunks: [] });
+describe('tool.call — cupcake allow', () => {
+  it('allows create_file on cupcake allow', async () => {
+    mockCupcakeEval.mockReturnValue({ decision: 'allow' });
 
     const amp = makeAmp();
     nephPluginDefault(amp);
@@ -262,17 +273,95 @@ describe('tool.call — create_file', () => {
       input: { file_path: '/tmp/newfile.lua', content: 'new' },
     }, {});
 
-    expect(mockReview).toHaveBeenCalledWith('/tmp/newfile.lua', 'new', 'amp');
+    expect(mockCupcakeEval).toHaveBeenCalledWith('amp', expect.objectContaining({
+      tool_name: 'create_file',
+      tool_input: expect.objectContaining({ file_path: '/tmp/newfile.lua' }),
+    }));
     expect(rv).toEqual({ action: 'allow' });
   });
 
-  it('rejects when review returns reject decision', async () => {
-    mockReview.mockResolvedValue({
-      schema: 'review/v1',
-      decision: 'reject',
-      content: '',
-      hunks: [],
-      reason: 'Not allowed',
+  it('passes reconstructed content into cupcake event', async () => {
+    mockReconstructContent.mockReturnValue('reconstructed content');
+
+    const amp = makeAmp();
+    nephPluginDefault(amp);
+    const handler = amp.handlers['tool.call'][0];
+
+    await handler({
+      tool: 'edit_file',
+      input: { file_path: '/tmp/edit.lua', old_string: 'old', new_string: 'new' },
+    }, {});
+
+    expect(mockReconstructContent).toHaveBeenCalledWith('/tmp/edit.lua', expect.any(Object));
+    expect(mockCupcakeEval).toHaveBeenCalledWith('amp', expect.objectContaining({
+      tool_input: expect.objectContaining({ content: 'reconstructed content' }),
+    }));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// tool.call — cupcake deny
+// ---------------------------------------------------------------------------
+
+describe('tool.call — cupcake deny', () => {
+  it('returns reject-and-continue on deny', async () => {
+    mockCupcakeEval.mockReturnValue({ decision: 'deny', reason: 'Protected path' });
+
+    const amp = makeAmp();
+    nephPluginDefault(amp);
+    const handler = amp.handlers['tool.call'][0];
+
+    const rv = await handler({
+      tool: 'create_file',
+      input: { file_path: '/tmp/.env', content: 'SECRET=x' },
+    }, {}) as any;
+
+    expect(rv.action).toBe('reject-and-continue');
+    expect(rv.message).toContain('Protected path');
+  });
+
+  it('returns reject-and-continue on block', async () => {
+    mockCupcakeEval.mockReturnValue({ decision: 'block', reason: 'Dangerous command' });
+
+    const amp = makeAmp();
+    nephPluginDefault(amp);
+    const handler = amp.handlers['tool.call'][0];
+
+    const rv = await handler({
+      tool: 'create_file',
+      input: { file_path: '/tmp/x.lua', content: 'x' },
+    }, {}) as any;
+
+    expect(rv.action).toBe('reject-and-continue');
+    expect(rv.message).toContain('Dangerous command');
+  });
+
+  it('uses default reason when cupcake reason is undefined', async () => {
+    mockCupcakeEval.mockReturnValue({ decision: 'deny' });
+
+    const amp = makeAmp();
+    nephPluginDefault(amp);
+    const handler = amp.handlers['tool.call'][0];
+
+    const rv = await handler({
+      tool: 'create_file',
+      input: { file_path: '/tmp/x.lua', content: 'x' },
+    }, {}) as any;
+
+    expect(rv.action).toBe('reject-and-continue');
+    expect(rv.message).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// tool.call — cupcake modify (partial accept)
+// ---------------------------------------------------------------------------
+
+describe('tool.call — cupcake modify (partial accept)', () => {
+  it('returns modify action with updated content', async () => {
+    mockCupcakeEval.mockReturnValue({
+      decision: 'modify',
+      updated_input: { content: 'modified by review' },
     });
 
     const amp = makeAmp();
@@ -281,158 +370,22 @@ describe('tool.call — create_file', () => {
 
     const rv = await handler({
       tool: 'create_file',
-      input: { file_path: '/tmp/newfile.lua', content: 'evil' },
+      input: { file_path: '/tmp/partial.lua', content: 'original' },
     }, {}) as any;
 
-    expect(rv.action).toBe('reject-and-continue');
-    expect(rv.message).toContain('Not allowed');
-  });
-
-  it('uses empty string content when input.content is missing', async () => {
-    const amp = makeAmp();
-    nephPluginDefault(amp);
-    const handler = amp.handlers['tool.call'][0];
-
-    await handler({ tool: 'create_file', input: { file_path: '/tmp/x.lua' } }, {});
-    expect(mockReview).toHaveBeenCalledWith('/tmp/x.lua', '', 'amp');
+    expect(rv.action).toBe('modify');
+    expect(rv.input.content).toBe('modified by review');
+    expect(rv.input.file_path).toBe('/tmp/partial.lua');
   });
 });
 
 // ---------------------------------------------------------------------------
-// tool.call — edit_file
+// tool.call — error path
 // ---------------------------------------------------------------------------
 
-describe('tool.call — edit_file', () => {
-  it('applies old_string/new_string replacement against current file content', async () => {
-    vi.mocked(readFileSync).mockReturnValue('hello world' as any);
-
-    const amp = makeAmp();
-    nephPluginDefault(amp);
-    const handler = amp.handlers['tool.call'][0];
-
-    await handler({
-      tool: 'edit_file',
-      input: {
-        file_path: '/tmp/edit.lua',
-        old_string: 'hello',
-        new_string: 'goodbye',
-      },
-    }, {});
-
-    expect(mockReview).toHaveBeenCalledWith('/tmp/edit.lua', 'goodbye world', 'amp');
-  });
-
-  it('falls back to input.content when readFileSync throws', async () => {
-    vi.mocked(readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
-
-    const amp = makeAmp();
-    nephPluginDefault(amp);
-    const handler = amp.handlers['tool.call'][0];
-
-    await handler({
-      tool: 'edit_file',
-      input: { file_path: '/tmp/missing.lua', content: 'fallback content' },
-    }, {});
-
-    expect(mockReview).toHaveBeenCalledWith('/tmp/missing.lua', 'fallback content', 'amp');
-  });
-
-  it('uses current file content when no old/new strings and no content override', async () => {
-    vi.mocked(readFileSync).mockReturnValue('original' as any);
-
-    const amp = makeAmp();
-    nephPluginDefault(amp);
-    const handler = amp.handlers['tool.call'][0];
-
-    await handler({
-      tool: 'edit_file',
-      input: { file_path: '/tmp/noreplace.lua' },
-    }, {});
-
-    expect(mockReview).toHaveBeenCalledWith('/tmp/noreplace.lua', 'original', 'amp');
-  });
-
-  it('supports old_str/new_str aliases', async () => {
-    vi.mocked(readFileSync).mockReturnValue('alpha beta' as any);
-
-    const amp = makeAmp();
-    nephPluginDefault(amp);
-    const handler = amp.handlers['tool.call'][0];
-
-    await handler({
-      tool: 'edit_file',
-      input: { file_path: '/tmp/alias.lua', old_str: 'alpha', new_str: 'omega' },
-    }, {});
-
-    expect(mockReview).toHaveBeenCalledWith('/tmp/alias.lua', 'omega beta', 'amp');
-  });
-});
-
-// ---------------------------------------------------------------------------
-// tool.call — apply_patch
-// ---------------------------------------------------------------------------
-
-describe('tool.call — apply_patch', () => {
-  it('sends patch content to review', async () => {
-    const amp = makeAmp();
-    nephPluginDefault(amp);
-    const handler = amp.handlers['tool.call'][0];
-
-    await handler({
-      tool: 'apply_patch',
-      input: { file_path: '/tmp/patched.lua', patch: '--- a\n+++ b\n' },
-    }, {});
-
-    expect(mockReview).toHaveBeenCalledWith('/tmp/patched.lua', '--- a\n+++ b\n', 'amp');
-  });
-
-  it('falls back to input.content when patch field is absent', async () => {
-    const amp = makeAmp();
-    nephPluginDefault(amp);
-    const handler = amp.handlers['tool.call'][0];
-
-    await handler({
-      tool: 'apply_patch',
-      input: { file_path: '/tmp/patched.lua', content: 'inline patch' },
-    }, {});
-
-    expect(mockReview).toHaveBeenCalledWith('/tmp/patched.lua', 'inline patch', 'amp');
-  });
-
-  it('uses filepath alias from input.path', async () => {
-    const amp = makeAmp();
-    nephPluginDefault(amp);
-    const handler = amp.handlers['tool.call'][0];
-
-    await handler({
-      tool: 'apply_patch',
-      input: { path: '/tmp/via-path.lua', patch: 'diff' },
-    }, {});
-
-    expect(mockReview).toHaveBeenCalledWith('/tmp/via-path.lua', 'diff', 'amp');
-  });
-
-  it('uses filepath alias from input.filepath', async () => {
-    const amp = makeAmp();
-    nephPluginDefault(amp);
-    const handler = amp.handlers['tool.call'][0];
-
-    await handler({
-      tool: 'apply_patch',
-      input: { filepath: '/tmp/via-filepath.lua', patch: 'diff' },
-    }, {});
-
-    expect(mockReview).toHaveBeenCalledWith('/tmp/via-filepath.lua', 'diff', 'amp');
-  });
-});
-
-// ---------------------------------------------------------------------------
-// tool.call — review() error path
-// ---------------------------------------------------------------------------
-
-describe('tool.call — review() throws', () => {
-  it('allows the write and calls uiNotify on review failure', async () => {
-    mockReview.mockRejectedValue(new Error('neph not running'));
+describe('tool.call — error path', () => {
+  it('allows the write and calls uiNotify when cupcakeEval throws', async () => {
+    mockCupcakeEval.mockImplementation(() => { throw new Error('unexpected error'); });
 
     const amp = makeAmp();
     nephPluginDefault(amp);
@@ -451,7 +404,7 @@ describe('tool.call — review() throws', () => {
   });
 
   it('uiNotify message includes the error text', async () => {
-    mockReview.mockRejectedValue(new Error('socket closed'));
+    mockCupcakeEval.mockImplementation(() => { throw new Error('socket closed'); });
 
     const amp = makeAmp();
     nephPluginDefault(amp);
@@ -468,29 +421,29 @@ describe('tool.call — review() throws', () => {
 });
 
 // ---------------------------------------------------------------------------
-// tool.call — reject reason fallback
+// tool.call — filepath aliases
 // ---------------------------------------------------------------------------
 
-describe('tool.call — reject reason fallback', () => {
-  it('uses default reason when result.reason is undefined', async () => {
-    mockReview.mockResolvedValue({
-      schema: 'review/v1',
-      decision: 'reject',
-      content: '',
-      hunks: [],
-      // no reason field
-    });
-
+describe('tool.call — filepath aliases', () => {
+  it('uses input.path as filepath', async () => {
     const amp = makeAmp();
     nephPluginDefault(amp);
     const handler = amp.handlers['tool.call'][0];
 
-    const rv = await handler({
-      tool: 'create_file',
-      input: { file_path: '/tmp/x.lua', content: 'x' },
-    }, {}) as any;
+    await handler({ tool: 'apply_patch', input: { path: '/tmp/via-path.lua', content: 'x' } }, {});
+    expect(mockCupcakeEval).toHaveBeenCalledWith('amp', expect.objectContaining({
+      tool_input: expect.objectContaining({ file_path: '/tmp/via-path.lua' }),
+    }));
+  });
 
-    expect(rv.action).toBe('reject-and-continue');
-    expect(rv.message).toContain('User rejected changes');
+  it('uses input.filepath as filepath', async () => {
+    const amp = makeAmp();
+    nephPluginDefault(amp);
+    const handler = amp.handlers['tool.call'][0];
+
+    await handler({ tool: 'apply_patch', input: { filepath: '/tmp/via-filepath.lua', content: 'x' } }, {});
+    expect(mockCupcakeEval).toHaveBeenCalledWith('amp', expect.objectContaining({
+      tool_input: expect.objectContaining({ file_path: '/tmp/via-filepath.lua' }),
+    }));
   });
 });

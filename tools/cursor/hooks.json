@@ -2,7 +2,17 @@
   "hooks": {
     "afterFileEdit": [
       {
-        "command": "cupcake eval --harness cursor"
+        "command": "neph integration hook cursor"
+      }
+    ],
+    "beforeShellExecution": [
+      {
+        "command": "neph integration hook cursor"
+      }
+    ],
+    "beforeMCPExecution": [
+      {
+        "command": "neph integration hook cursor"
       }
     ]
   }

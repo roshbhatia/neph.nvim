@@ -39,6 +39,9 @@ end
 ---@param data table  Decoded event payload
 function M.handle_event(port, event_type, data)
   if event_type == "permission.asked" then
+    -- Agent is actively working — signal running state
+    vim.g["opencode_running"] = true
+
     -- Only intercept file-edit permissions
     local permission = data.properties and data.properties.permission
     if permission ~= "edit" then
@@ -84,7 +87,8 @@ function M.handle_event(port, event_type, data)
     })
 
   elseif event_type == "file.edited" then
-    -- Trigger buffer reload for any opencode-edited file
+    -- Agent finished writing — clear running state and reload buffers
+    vim.g["opencode_running"] = nil
     vim.schedule(function()
       vim.cmd("checktime")
     end)

@@ -5,7 +5,22 @@
       "filter": {
         "toolNames": ["edit", "create"]
       },
-      "command": "cupcake eval --harness copilot"
+      "command": "neph integration hook copilot"
+    },
+    {
+      "event": "postToolUse",
+      "filter": {
+        "toolNames": ["edit", "create"]
+      },
+      "command": "neph integration hook copilot"
+    },
+    {
+      "event": "sessionStart",
+      "command": "neph integration hook copilot"
+    },
+    {
+      "event": "sessionEnd",
+      "command": "neph integration hook copilot"
     }
   ]
 }

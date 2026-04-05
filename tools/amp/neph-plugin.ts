@@ -5,9 +5,9 @@
 //   node_modules. Verify against amp plugin documentation when the SDK stabilises.
 //   Known gaps: no "file.write" or "tool.pre"/"tool.post" hooks are available,
 //   so all file interception must go through "tool.call".
-import { readFileSync } from "node:fs";
 import { debug } from "../lib/log";
-import { review, uiSelect, uiInput, uiNotify, createPersistentQueue } from "../lib/neph-run";
+import { uiSelect, uiInput, uiNotify, createPersistentQueue } from "../lib/neph-run";
+import { CupcakeHelper, ContentHelper } from "../lib/harness-base";
 
 function neph_plugin_default(amp: any) {
   // Persistent queue: one long-lived `neph connect` subprocess per session.
@@ -32,6 +32,8 @@ function neph_plugin_default(amp: any) {
         return (await uiInput(title, placeholder)) ?? "";
       },
     };
+
+    pq.call("set", "amp_active", "true");
   });
 
   amp.on("session.end", async () => {
@@ -39,6 +41,7 @@ function neph_plugin_default(amp: any) {
     // Ensure amp_running is cleared if the agent end hook was never fired
     // (e.g. session killed mid-agent). pq.call() queues before close() drains.
     pq.call("unset", "amp_running");
+    pq.call("unset", "amp_active");
     pq.close();
     // Create a fresh queue in case the session restarts in the same process
     pq = createPersistentQueue();
@@ -63,45 +66,38 @@ function neph_plugin_default(amp: any) {
     const filePath = input.file_path ?? input.path ?? input.filepath;
     if (!filePath) return { action: "allow" };
 
-    let content: string;
-    if (tool === "create_file") {
-      content = input.content ?? "";
-    } else if (tool === "edit_file") {
-      try {
-        const current = readFileSync(filePath, "utf-8");
-        const oldStr = input.old_string ?? input.old_str;
-        const newStr = input.new_string ?? input.new_str;
-        if (oldStr !== undefined && newStr !== undefined) {
-          content = current.replace(oldStr, newStr);
-        } else {
-          content = input.content ?? current;
-        }
-      } catch {
-        content = input.content ?? "";
-      }
-    } else {
-      content = input.patch ?? input.content ?? "";
-    }
+    const content = ContentHelper.reconstructContent(filePath, input as Record<string, unknown>);
+
+    const cupcakeEvent = {
+      hook_event_name: "tool.call",
+      tool_name: tool,
+      tool_input: { file_path: filePath, content },
+      session_id: process.pid.toString(),
+      cwd: process.cwd(),
+    };
 
     try {
-      // tool.call fires before amp writes to disk — this is always pre_write.
-      // neph-run.ts does not forward a mode field; the Lua layer defaults to
-      // "pre_write" when mode is absent, which is correct here.
-      const result = await review(filePath, content, "amp");
-      if (result.decision === "reject") {
-        const reason = result.reason ?? "User rejected changes";
+      const decision = CupcakeHelper.cupcakeEval("amp", cupcakeEvent);
+
+      if (decision.decision === "deny" || decision.decision === "block") {
+        const reason = decision.reason ?? "Cupcake policy denied";
         return {
           action: "reject-and-continue",
-          message: `Write rejected by neph review: ${reason}`,
+          message: `Write rejected by neph policy: ${reason}`,
         };
       }
+
+      if (decision.decision === "modify" && decision.updated_input?.content !== undefined) {
+        return {
+          action: "modify",
+          input: { ...input, content: decision.updated_input.content },
+        };
+      }
+
       return { action: "allow" };
     } catch (e) {
-      debug("amp", `Review failed: ${e}`);
-      // Notify Neovim so the user knows review was skipped rather than silently
-      // allowing the write. uiNotify is fire-and-forget; if neph is also
-      // unreachable it will swallow the error internally.
-      uiNotify(`neph review failed for ${filePath} — allowing write: ${e}`, "warn");
+      debug("amp", `Cupcake eval failed: ${e}`);
+      uiNotify(`neph policy check failed for ${filePath} — allowing write: ${e}`, "warn");
       return { action: "allow" };
     }
   });

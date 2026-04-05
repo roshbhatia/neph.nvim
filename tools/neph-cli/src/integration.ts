@@ -3,6 +3,7 @@ import * as path from "node:path";
 import * as readline from "node:readline/promises";
 import { runReview } from "./review";
 import { NvimTransport } from "./transport";
+import { CupcakeHelper, ContentHelper, createSessionSignals } from "../../lib/harness-base";
 
 interface Integration {
   name: string;
@@ -46,6 +47,14 @@ const INTEGRATIONS: Integration[] = [
     configPath: () => path.join(process.cwd(), ".copilot", "hooks.json"),
     templatePath: path.join(TOOLS_ROOT, "copilot", "hooks.json"),
     kind: "copilot",
+    requiresCupcake: true,
+  },
+  {
+    name: "codex",
+    label: "Codex",
+    configPath: () => path.join(process.env.HOME ?? "~", ".codex", "hooks.json"),
+    templatePath: path.join(TOOLS_ROOT, "codex", "hooks.json"),
+    kind: "hooks",
     requiresCupcake: true,
   },
   {
@@ -280,7 +289,12 @@ function integrationEnabled(integration: Integration): boolean {
   return integration.kind === "copilot" ? copilotEnabled(existing, template) : hooksEnabled(existing, template);
 }
 
+// ---------------------------------------------------------------------------
+// Gemini hook handler
+// ---------------------------------------------------------------------------
+
 type GeminiHookPayload = {
+  hook_event_name?: string;
   toolName?: string;
   toolInput?: any;
   tool_name?: string;
@@ -296,90 +310,456 @@ function normalizeGeminiInput(stdin: string): GeminiHookPayload | null {
   }
 }
 
-function reconstructGeminiContent(toolName: string, toolInput: any): { path?: string; content?: string } | null {
-  const filePath = toolInput?.file_path || toolInput?.filepath;
-  if (!filePath) return null;
-  if (toolName === "write_file") {
-    return { path: path.resolve(filePath), content: toolInput?.content ?? "" };
-  }
-  if (toolName === "edit_file" || toolName === "replace") {
-    const oldStr = toolInput?.old_string ?? toolInput?.old_str ?? "";
-    const newStr = toolInput?.new_string ?? toolInput?.new_str ?? "";
-    let current = "";
-    try {
-      current = fs.readFileSync(path.resolve(filePath), "utf-8");
-    } catch {
-      return { path: path.resolve(filePath), content: newStr };
-    }
-    if (oldStr && !current.includes(oldStr)) {
-      return { path: path.resolve(filePath), content: current };
-    }
-    const replaceAll = toolInput?.replace_all === true;
-    const content = oldStr
-      ? replaceAll
-        ? current.replaceAll(oldStr, newStr)
-        : current.replace(oldStr, newStr)
-      : current;
-    return { path: path.resolve(filePath), content };
-  }
-  return null;
-}
-
 async function runGeminiHook(stdin: string, transport: NvimTransport | null): Promise<void> {
   const payload = normalizeGeminiInput(stdin);
   if (!payload) {
     process.stdout.write(JSON.stringify({ decision: "allow" }) + "\n");
     return;
   }
+
+  const hookName = payload.hook_event_name;
+  const signals = createSessionSignals("gemini");
+
+  // Lifecycle events
+  if (hookName === "SessionStart") {
+    signals.setActive();
+    signals.close();
+    process.stdout.write(JSON.stringify({ decision: "allow" }) + "\n");
+    return;
+  }
+  if (hookName === "SessionEnd") {
+    signals.unsetActive();
+    signals.close();
+    process.stdout.write(JSON.stringify({ decision: "allow" }) + "\n");
+    return;
+  }
+  if (hookName === "BeforeAgent") {
+    signals.setRunning();
+    signals.close();
+    process.stdout.write(JSON.stringify({ decision: "allow" }) + "\n");
+    return;
+  }
+  if (hookName === "AfterAgent") {
+    signals.unsetRunning();
+    signals.checktime();
+    signals.close();
+    process.stdout.write(JSON.stringify({ decision: "allow" }) + "\n");
+    return;
+  }
+  if (hookName === "AfterTool") {
+    signals.checktime();
+    signals.close();
+    process.stdout.write(JSON.stringify({ decision: "allow" }) + "\n");
+    return;
+  }
+
+  signals.close();
+
   const toolName = payload.tool_name || payload.toolName;
   const toolInput = payload.tool_input || payload.toolInput || {};
   if (!toolName) {
     process.stdout.write(JSON.stringify({ decision: "allow" }) + "\n");
     return;
   }
-  const normalized = reconstructGeminiContent(toolName, toolInput);
-  if (!normalized || !normalized.path) {
+
+  const filePath = toolInput?.file_path || toolInput?.filepath;
+  if (!filePath) {
     process.stdout.write(JSON.stringify({ decision: "allow" }) + "\n");
     return;
   }
-  const stdinPayload = JSON.stringify({ path: normalized.path, content: normalized.content ?? "" });
-  const originalWrite = process.stdout.write.bind(process.stdout);
-  const chunks: string[] = [];
-  process.stdout.write = ((chunk: any) => {
-    chunks.push(chunk.toString());
-    return true;
-  }) as any;
-  let exitCode = 0;
-  try {
-    exitCode = await runReview({ stdin: stdinPayload, timeout: 300, transport });
-  } finally {
-    process.stdout.write = originalWrite;
-  }
-  const output = chunks.join("").trim();
-  let envelope: any = null;
-  try {
-    envelope = output ? JSON.parse(output) : null;
-  } catch {
-    envelope = null;
-  }
-  if (exitCode === 2 || (envelope && envelope.decision === "reject")) {
-    process.stdout.write(JSON.stringify({ decision: "deny", reason: "Review rejected" }) + "\n");
+
+  const resolvedPath = path.resolve(filePath);
+  const content = ContentHelper.reconstructContent(resolvedPath, toolInput as Record<string, unknown>);
+
+  const cupcakeEvent = {
+    hook_event_name: "BeforeTool",
+    tool_name: toolName,
+    tool_input: { file_path: resolvedPath, content },
+    session_id: process.pid.toString(),
+    cwd: process.cwd(),
+  };
+
+  const decision = CupcakeHelper.cupcakeEval("gemini", cupcakeEvent);
+
+  if (decision.decision === "deny" || decision.decision === "block") {
+    process.stdout.write(
+      JSON.stringify({ decision: "deny", reason: decision.reason ?? "Policy denied" }) + "\n",
+    );
     return;
   }
-  if (exitCode === 3) {
-    process.stdout.write(JSON.stringify({ decision: "deny", reason: "Review timed out" }) + "\n");
-    return;
-  }
-  if (toolName === "write_file" && envelope && envelope.content) {
+
+  if (decision.decision === "modify" && decision.updated_input?.content !== undefined) {
     process.stdout.write(
       JSON.stringify({
         decision: "allow",
-        hookSpecificOutput: { tool_input: { ...toolInput, content: envelope.content } },
+        hookSpecificOutput: { tool_input: { ...toolInput, content: decision.updated_input.content } },
       }) + "\n",
     );
     return;
   }
+
+  // allow — for write_file, thread back any modified content from Cupcake review
+  if (toolName === "write_file" && decision.updated_input?.content !== undefined) {
+    process.stdout.write(
+      JSON.stringify({
+        decision: "allow",
+        hookSpecificOutput: { tool_input: { ...toolInput, content: decision.updated_input.content } },
+      }) + "\n",
+    );
+    return;
+  }
+
   process.stdout.write(JSON.stringify({ decision: "allow" }) + "\n");
+}
+
+// ---------------------------------------------------------------------------
+// Claude hook handler
+// ---------------------------------------------------------------------------
+
+async function runClaudeHook(stdin: string, _transport: NvimTransport | null): Promise<void> {
+  let event: Record<string, unknown>;
+  try {
+    event = JSON.parse(stdin);
+  } catch {
+    process.stdout.write("{}\n");
+    return;
+  }
+
+  const hookName = event.hook_event_name as string | undefined;
+  const signals = createSessionSignals("claude");
+
+  // Lifecycle events
+  if (hookName === "SessionStart") {
+    signals.setActive();
+    signals.close();
+    process.stdout.write("{}\n");
+    return;
+  }
+  if (hookName === "SessionEnd") {
+    signals.unsetActive();
+    signals.close();
+    process.stdout.write("{}\n");
+    return;
+  }
+  if (hookName === "UserPromptSubmit") {
+    signals.setRunning();
+    signals.close();
+    process.stdout.write("{}\n");
+    return;
+  }
+  if (hookName === "Stop") {
+    signals.unsetRunning();
+    signals.checktime();
+    signals.close();
+    process.stdout.write("{}\n");
+    return;
+  }
+
+  signals.close();
+
+  if (hookName === "PostToolUse") {
+    const newSignals = createSessionSignals("claude");
+    newSignals.checktime();
+    newSignals.close();
+    process.stdout.write("{}\n");
+    return;
+  }
+
+  if (hookName === "PreToolUse") {
+    const toolName = event.tool_name as string | undefined;
+    const toolInput = (event.tool_input ?? {}) as Record<string, unknown>;
+    const filePath = (toolInput.file_path ?? toolInput.path) as string | undefined;
+
+    if (!filePath) {
+      process.stdout.write(
+        JSON.stringify({
+          hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "allow" },
+        }) + "\n",
+      );
+      return;
+    }
+
+    const resolvedPath = path.resolve(filePath);
+    const content = ContentHelper.reconstructContent(resolvedPath, toolInput);
+
+    const cupcakeEvent = {
+      ...event,
+      tool_input: { ...toolInput, file_path: resolvedPath, content },
+    };
+
+    const decision = CupcakeHelper.cupcakeEval("claude", cupcakeEvent);
+
+    if (decision.decision === "deny" || decision.decision === "block") {
+      process.stdout.write(
+        JSON.stringify({
+          hookSpecificOutput: {
+            hookEventName: "PreToolUse",
+            permissionDecision: "deny",
+            reason: decision.reason,
+          },
+        }) + "\n",
+      );
+      return;
+    }
+
+    if (decision.decision === "modify" && decision.updated_input !== undefined) {
+      process.stdout.write(
+        JSON.stringify({
+          hookSpecificOutput: {
+            hookEventName: "PreToolUse",
+            permissionDecision: "allow",
+            updatedInput: {
+              ...toolInput,
+              ...(decision.updated_input.content !== undefined
+                ? { content: decision.updated_input.content }
+                : {}),
+            },
+          },
+        }) + "\n",
+      );
+      return;
+    }
+
+    process.stdout.write(
+      JSON.stringify({
+        hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "allow" },
+      }) + "\n",
+    );
+    return;
+  }
+
+  // Pass-through for unknown hook names
+  process.stdout.write("{}\n");
+}
+
+// ---------------------------------------------------------------------------
+// Codex hook handler — same pattern as Claude
+// ---------------------------------------------------------------------------
+
+async function runCodexHook(stdin: string, _transport: NvimTransport | null): Promise<void> {
+  let event: Record<string, unknown>;
+  try {
+    event = JSON.parse(stdin);
+  } catch {
+    process.stdout.write("{}\n");
+    return;
+  }
+
+  const hookName = event.hook_event_name as string | undefined;
+  const signals = createSessionSignals("codex");
+
+  if (hookName === "SessionStart") {
+    signals.setActive();
+    signals.close();
+    process.stdout.write("{}\n");
+    return;
+  }
+  if (hookName === "SessionEnd") {
+    signals.unsetActive();
+    signals.close();
+    process.stdout.write("{}\n");
+    return;
+  }
+  if (hookName === "UserPromptSubmit") {
+    signals.setRunning();
+    signals.close();
+    process.stdout.write("{}\n");
+    return;
+  }
+  if (hookName === "Stop") {
+    signals.unsetRunning();
+    signals.checktime();
+    signals.close();
+    process.stdout.write("{}\n");
+    return;
+  }
+
+  signals.close();
+
+  if (hookName === "PostToolUse") {
+    const newSignals = createSessionSignals("codex");
+    newSignals.checktime();
+    newSignals.close();
+    process.stdout.write("{}\n");
+    return;
+  }
+
+  if (hookName === "PreToolUse") {
+    const toolInput = (event.tool_input ?? {}) as Record<string, unknown>;
+    const filePath = (toolInput.file_path ?? toolInput.path) as string | undefined;
+
+    if (!filePath) {
+      process.stdout.write(
+        JSON.stringify({
+          hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "allow" },
+        }) + "\n",
+      );
+      return;
+    }
+
+    const resolvedPath = path.resolve(filePath);
+    const content = ContentHelper.reconstructContent(resolvedPath, toolInput);
+
+    const cupcakeEvent = {
+      ...event,
+      tool_input: { ...toolInput, file_path: resolvedPath, content },
+    };
+
+    const decision = CupcakeHelper.cupcakeEval("codex", cupcakeEvent);
+
+    if (decision.decision === "deny" || decision.decision === "block") {
+      process.stdout.write(
+        JSON.stringify({
+          hookSpecificOutput: {
+            hookEventName: "PreToolUse",
+            permissionDecision: "deny",
+            reason: decision.reason,
+          },
+        }) + "\n",
+      );
+      return;
+    }
+
+    if (decision.decision === "modify" && decision.updated_input !== undefined) {
+      process.stdout.write(
+        JSON.stringify({
+          hookSpecificOutput: {
+            hookEventName: "PreToolUse",
+            permissionDecision: "allow",
+            updatedInput: {
+              ...toolInput,
+              ...(decision.updated_input.content !== undefined
+                ? { content: decision.updated_input.content }
+                : {}),
+            },
+          },
+        }) + "\n",
+      );
+      return;
+    }
+
+    process.stdout.write(
+      JSON.stringify({
+        hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "allow" },
+      }) + "\n",
+    );
+    return;
+  }
+
+  process.stdout.write("{}\n");
+}
+
+// ---------------------------------------------------------------------------
+// Copilot hook handler
+// ---------------------------------------------------------------------------
+
+async function runCopilotHook(stdin: string, _transport: NvimTransport | null): Promise<void> {
+  let event: Record<string, unknown>;
+  try {
+    event = JSON.parse(stdin);
+  } catch {
+    process.stdout.write("{}\n");
+    return;
+  }
+
+  const hookName = event.hook_event_name as string | undefined;
+  const signals = createSessionSignals("copilot");
+
+  if (hookName === "sessionStart") {
+    signals.setActive();
+    signals.close();
+    process.stdout.write("{}\n");
+    return;
+  }
+  if (hookName === "sessionEnd") {
+    signals.unsetActive();
+    signals.close();
+    process.stdout.write("{}\n");
+    return;
+  }
+
+  signals.close();
+
+  if (hookName === "postToolUse") {
+    const newSignals = createSessionSignals("copilot");
+    newSignals.checktime();
+    newSignals.close();
+    process.stdout.write("{}\n");
+    return;
+  }
+
+  if (hookName === "preToolUse") {
+    const toolInput = (event.tool_input ?? {}) as Record<string, unknown>;
+    const filePath = (toolInput.file_path ?? toolInput.path) as string | undefined;
+
+    if (!filePath) {
+      process.stdout.write(JSON.stringify({ permissionDecision: "allow" }) + "\n");
+      return;
+    }
+
+    const resolvedPath = path.resolve(filePath);
+    const content = ContentHelper.reconstructContent(resolvedPath, toolInput);
+
+    const cupcakeEvent = {
+      ...event,
+      tool_input: { ...toolInput, file_path: resolvedPath, content },
+    };
+
+    const decision = CupcakeHelper.cupcakeEval("copilot", cupcakeEvent);
+
+    if (decision.decision === "deny" || decision.decision === "block") {
+      process.stdout.write(JSON.stringify({ permissionDecision: "deny" }) + "\n");
+      return;
+    }
+
+    // Copilot does not support updatedInput — modify degrades to allow
+    process.stdout.write(JSON.stringify({ permissionDecision: "allow" }) + "\n");
+    return;
+  }
+
+  process.stdout.write("{}\n");
+}
+
+// ---------------------------------------------------------------------------
+// Cursor hook handler
+// ---------------------------------------------------------------------------
+
+async function runCursorHook(stdin: string, _transport: NvimTransport | null): Promise<void> {
+  let event: Record<string, unknown>;
+  try {
+    event = JSON.parse(stdin);
+  } catch {
+    process.stdout.write("{}\n");
+    return;
+  }
+
+  const hookName = event.hook_event_name as string | undefined;
+
+  // afterFileEdit: file is already written — checktime only, no review possible
+  if (hookName === "afterFileEdit") {
+    const signals = createSessionSignals("cursor");
+    signals.checktime();
+    signals.close();
+    process.stdout.write("{}\n");
+    return;
+  }
+
+  // beforeShellExecution / beforeMCPExecution: gate via Cupcake policy
+  if (hookName === "beforeShellExecution" || hookName === "beforeMCPExecution") {
+    const decision = CupcakeHelper.cupcakeEval("cursor", event);
+
+    if (decision.decision === "deny" || decision.decision === "block") {
+      process.stdout.write(
+        JSON.stringify({ permission: "deny", reason: decision.reason }) + "\n",
+      );
+      return;
+    }
+
+    process.stdout.write(JSON.stringify({ permission: "allow" }) + "\n");
+    return;
+  }
+
+  process.stdout.write("{}\n");
 }
 
 export async function runIntegrationCommand(
@@ -395,10 +775,11 @@ export async function runIntegrationCommand(
 
   if (sub === "hook") {
     const name = args[2];
-    if (name === "gemini") {
-      await runGeminiHook(stdin, transport);
-      return;
-    }
+    if (name === "gemini") { await runGeminiHook(stdin, transport); return; }
+    if (name === "claude") { await runClaudeHook(stdin, transport); return; }
+    if (name === "codex")  { await runCodexHook(stdin, transport); return; }
+    if (name === "copilot") { await runCopilotHook(stdin, transport); return; }
+    if (name === "cursor") { await runCursorHook(stdin, transport); return; }
     process.stderr.write(`Unknown integration hook: ${name}\n`);
     process.exit(1);
   }

@@ -1,0 +1,46 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "edit|write|create",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "neph integration hook codex"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "edit|write|create",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "neph integration hook codex"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "neph integration hook codex"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "neph integration hook codex"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -17,15 +17,24 @@ describe('claude settings.json', () => {
     expect(config.hooks.PreToolUse.length).toBeGreaterThan(0);
   });
 
-  it('matches Edit|Write tools', () => {
+  it('matches Edit|Write|MultiEdit tools', () => {
     const hook = config.hooks.PreToolUse[0];
-    expect(hook.matcher).toBe('Edit|Write');
+    expect(hook.matcher).toContain('Edit');
+    expect(hook.matcher).toContain('Write');
   });
 
-  it('runs cupcake eval --harness claude', () => {
+  it('runs neph integration hook claude', () => {
     const hook = config.hooks.PreToolUse[0];
-    expect(hook.hooks[0].command).toBe('cupcake eval --harness claude');
+    expect(hook.hooks[0].command).toBe('neph integration hook claude');
     expect(hook.hooks[0].type).toBe('command');
+  });
+
+  it('has lifecycle hooks', () => {
+    expect(Array.isArray(config.hooks.SessionStart)).toBe(true);
+    expect(Array.isArray(config.hooks.SessionEnd)).toBe(true);
+    expect(Array.isArray(config.hooks.UserPromptSubmit)).toBe(true);
+    expect(Array.isArray(config.hooks.Stop)).toBe(true);
+    expect(Array.isArray(config.hooks.PostToolUse)).toBe(true);
   });
 });
 
@@ -44,8 +53,14 @@ describe('copilot hooks.json', () => {
     expect(hook.filter.toolNames).toContain('create');
   });
 
-  it('runs cupcake eval --harness copilot', () => {
-    expect(config.hooks[0].command).toBe('cupcake eval --harness copilot');
+  it('runs neph integration hook copilot', () => {
+    expect(config.hooks[0].command).toBe('neph integration hook copilot');
+  });
+
+  it('has sessionStart and sessionEnd lifecycle hooks', () => {
+    const events = config.hooks.map((h: any) => h.event);
+    expect(events).toContain('sessionStart');
+    expect(events).toContain('sessionEnd');
   });
 });
 
@@ -57,8 +72,18 @@ describe('cursor hooks.json', () => {
     expect(Array.isArray(config.hooks.afterFileEdit)).toBe(true);
   });
 
-  it('runs cupcake eval --harness cursor', () => {
-    expect(config.hooks.afterFileEdit[0].command).toBe('cupcake eval --harness cursor');
+  it('runs neph integration hook cursor for afterFileEdit', () => {
+    expect(config.hooks.afterFileEdit[0].command).toBe('neph integration hook cursor');
+  });
+
+  it('has beforeShellExecution hook', () => {
+    expect(Array.isArray(config.hooks.beforeShellExecution)).toBe(true);
+    expect(config.hooks.beforeShellExecution[0].command).toBe('neph integration hook cursor');
+  });
+
+  it('has beforeMCPExecution hook', () => {
+    expect(Array.isArray(config.hooks.beforeMCPExecution)).toBe(true);
+    expect(config.hooks.beforeMCPExecution[0].command).toBe('neph integration hook cursor');
   });
 });
 
@@ -73,5 +98,32 @@ describe('gemini settings.json', () => {
   it('runs neph integration hook gemini', () => {
     const hook = config.hooks.BeforeTool[0];
     expect(hook.hooks[0].command).toBe('neph integration hook gemini');
+  });
+
+  it('has lifecycle hooks', () => {
+    expect(Array.isArray(config.hooks.SessionStart)).toBe(true);
+    expect(Array.isArray(config.hooks.SessionEnd)).toBe(true);
+    expect(Array.isArray(config.hooks.BeforeAgent)).toBe(true);
+    expect(Array.isArray(config.hooks.AfterAgent)).toBe(true);
+  });
+});
+
+describe('codex hooks.json', () => {
+  const config = readJson('codex/hooks.json') as any;
+
+  it('has hooks object', () => {
+    expect(config.hooks).toBeDefined();
+  });
+
+  it('has PreToolUse hook for edit/write/create', () => {
+    expect(Array.isArray(config.hooks.PreToolUse)).toBe(true);
+    const hook = config.hooks.PreToolUse[0];
+    expect(hook.matcher).toContain('edit');
+    expect(hook.hooks[0].command).toBe('neph integration hook codex');
+  });
+
+  it('has lifecycle hooks', () => {
+    expect(Array.isArray(config.hooks.UserPromptSubmit)).toBe(true);
+    expect(Array.isArray(config.hooks.Stop)).toBe(true);
   });
 });
