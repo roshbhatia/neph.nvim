@@ -59,12 +59,14 @@ vim.api.nvim_create_autocmd("VimLeavePre", {
     local ok, envelope = pcall(function()
       return ar.session.finalize()
     end)
-    if ok and envelope then
-      if ar.mode == "post_write" then
-        pcall(M._apply_post_write, ar.file_path, envelope, ar.old_lines)
-      end
-      M.write_result(ar.result_path, ar.channel_id, ar.request_id, envelope)
+    if not ok or not envelope then
+      -- Synthesize a reject envelope so the CLI caller is never left hanging.
+      envelope = { schema = "review/v1", decision = "reject", content = "", hunks = {}, reason = "Neovim exiting" }
     end
+    if ar.mode == "post_write" then
+      pcall(M._apply_post_write, ar.file_path, envelope, ar.old_lines)
+    end
+    M.write_result(ar.result_path, ar.channel_id, ar.request_id, envelope)
     pcall(review_queue.on_complete, ar.request_id)
   end,
 })
@@ -82,10 +84,14 @@ function M.force_cleanup(agent_name)
   active_review = nil
   pcall(ar.session.reject_all_remaining, "Agent killed")
   local ok, envelope = pcall(ar.session.finalize)
-  if ok then
-    M.write_result(ar.result_path, ar.channel_id, ar.request_id, envelope)
+  if not ok or not envelope then
+    envelope = { schema = "review/v1", decision = "reject", content = "", hunks = {}, reason = "Agent killed" }
   end
-  pcall(ui.cleanup, ar.ui_state)
+  M.write_result(ar.result_path, ar.channel_id, ar.request_id, envelope)
+  local cleanup_ok, cleanup_err = pcall(ui.cleanup, ar.ui_state)
+  if not cleanup_ok then
+    log.warn("review", "force_cleanup ui.cleanup error: %s", tostring(cleanup_err))
+  end
   local orig = ar.ui_state and ar.ui_state.originating
   if orig then
     vim.schedule(function()
@@ -185,9 +191,11 @@ function M._open_immediate(params)
 
   if session.get_total_hunks() == 0 then
     local ok, envelope = pcall(session.finalize)
-    if ok and envelope then
-      M.write_result(result_path, channel_id, request_id, envelope)
+    if not ok or not envelope then
+      -- No hunks = treat as accept (content unchanged).
+      envelope = { schema = "review/v1", decision = "accept", content = table.concat(new_lines, "\n"), hunks = {} }
     end
+    M.write_result(result_path, channel_id, request_id, envelope)
     review_queue.on_complete(request_id)
     return { ok = true, msg = "No changes" }
   end
@@ -489,7 +497,10 @@ function M.write_result(path, channel_id, request_id, envelope)
   end
 
   if channel_id and channel_id ~= 0 then
-    pcall(vim.rpcnotify, channel_id, "neph:review_done", envelope)
+    local rpc_ok, rpc_err = pcall(vim.rpcnotify, channel_id, "neph:review_done", envelope)
+    if not rpc_ok then
+      log.warn("review", "rpcnotify neph:review_done failed (channel %d): %s", channel_id, tostring(rpc_err))
+    end
   end
 end
 

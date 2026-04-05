@@ -479,9 +479,8 @@ function M.start_review(session, ui_state, on_done)
     local ok, envelope = pcall(session.finalize)
     if not ok then
       vim.notify("Neph: review finalize error: " .. tostring(envelope), vim.log.levels.ERROR)
-      local review_queue = require("neph.internal.review_queue")
-      review_queue.on_complete(ui_state.request_id or "")
-      return
+      -- Synthesize a reject envelope so the CLI caller is never left hanging.
+      envelope = { schema = "review/v1", decision = "reject", content = "", hunks = {}, reason = "finalize error" }
     end
     on_done(envelope)
   end

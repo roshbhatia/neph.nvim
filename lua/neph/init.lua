@@ -61,7 +61,11 @@ function M.setup(opts)
   -- but do not spawn a second server or overwrite a working socket path.
   local channel = require("neph.internal.channel")
   if channel.is_connected() then
-    -- Socket is already live; nothing to do.
+    -- Socket is already live. If socket_path() fell back to servername (i.e.
+    -- _socket_path is still ""), pin it now so future reads skip the fallback.
+    if vim.v.servername and vim.v.servername ~= "" and channel.socket_path() == vim.v.servername then
+      channel.set_socket_path(vim.v.servername)
+    end
   elseif vim.v.servername and vim.v.servername ~= "" then
     -- Primary server is running; record it so backends can use it.
     channel.set_socket_path(vim.v.servername)
