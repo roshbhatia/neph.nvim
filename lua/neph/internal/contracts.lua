@@ -84,6 +84,7 @@ function M.validate_agent(def)
 end
 
 local VALID_FILE_MODES = { create_only = true, overwrite = true }
+local VALID_SPEC_TYPES = { symlink = true, json_merge = true }
 
 ---@param def table  AgentDef with a tools field
 function M.validate_tools(def)
@@ -93,6 +94,30 @@ function M.validate_tools(def)
     error(string.format("neph: agent '%s' field 'tools' must be table, got %s", name, type(tools)))
   end
 
+  -- Flat-array format: tools = { {type="symlink", src=..., dst=...}, ... }
+  -- This is the format consumed by tools.lua install_agent().
+  if tools[1] ~= nil then
+    for i, spec in ipairs(tools) do
+      if type(spec) ~= "table" then
+        error(string.format("neph: agent '%s' tools[%d] must be a table", name, i))
+      end
+      if type(spec.type) ~= "string" or not VALID_SPEC_TYPES[spec.type] then
+        error(string.format(
+          "neph: agent '%s' tools[%d] invalid type '%s' (expected symlink or json_merge)",
+          name, i, tostring(spec.type)
+        ))
+      end
+      if type(spec.src) ~= "string" or spec.src == "" then
+        error(string.format("neph: agent '%s' tools[%d] missing 'src' string", name, i))
+      end
+      if type(spec.dst) ~= "string" or spec.dst == "" then
+        error(string.format("neph: agent '%s' tools[%d] missing 'dst' string", name, i))
+      end
+    end
+    return
+  end
+
+  -- Sub-key format (legacy): tools = { symlinks = {...}, merges = {...}, ... }
   if tools.symlinks ~= nil then
     if type(tools.symlinks) ~= "table" then
       error(string.format("neph: agent '%s' tools.symlinks must be table", name))

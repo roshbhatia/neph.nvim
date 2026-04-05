@@ -138,19 +138,23 @@ local function on_file_changed(filepath)
     return
   end
 
-  local config = require("neph.config").current
-  local review_cfg = type(config.review) == "table" and config.review or {}
-  if review_cfg.pending_notify == false then
+  -- Skip if this file was recently reviewed (e.g. by a hook-based agent).
+  -- Check before notifying so the user does not see a spurious toast for a
+  -- file whose review was already handled by the hook path.
+  if review_queue.was_recently_reviewed(filepath) then
     return
   end
 
-  local rel = vim.fn.fnamemodify(filepath, ":.")
-  local msg_suffix = review_queue.get_active() and "review queued" or "opening review"
-  vim.notify(string.format("Agent changed: %s — %s", rel, msg_suffix), vim.log.levels.INFO)
+  local config = require("neph.config").current
+  local review_cfg = type(config.review) == "table" and config.review or {}
 
-  -- Skip if this file was recently reviewed (e.g. by a hook-based agent)
-  if review_queue.was_recently_reviewed(filepath) then
-    return
+  -- Notify only when pending_notify is not explicitly disabled.
+  -- Separating the notify from the enqueue means pending_notify = false only
+  -- suppresses the toast; the review is still enqueued and shown to the user.
+  if review_cfg.pending_notify ~= false then
+    local rel = vim.fn.fnamemodify(filepath, ":.")
+    local msg_suffix = review_queue.get_active() and "review queued" or "opening review"
+    vim.notify(string.format("Agent changed: %s — %s", rel, msg_suffix), vim.log.levels.INFO)
   end
 
   -- Enqueue a post-write review, tagged with the active agent so

@@ -6,6 +6,8 @@
 
 local M = {}
 
+local log = require("neph.internal.log")
+
 local state = {
   win = nil,
   previous_winbar = nil,
@@ -46,9 +48,12 @@ function M.set(gate_state, win)
     new_winbar = indicator
   end
 
-  pcall(function()
+  local ok, err = pcall(function()
     vim.wo[win].winbar = new_winbar
   end)
+  if not ok then
+    log.warn("gate_ui", "failed to set winbar: %s", tostring(err))
+  end
 end
 
 --- Clear the gate indicator and restore the previous winbar value.
@@ -62,9 +67,12 @@ function M.clear()
   state.previous_winbar = nil
 
   if vim.api.nvim_win_is_valid(win) then
-    pcall(function()
+    local ok, err = pcall(function()
       vim.wo[win].winbar = prev
     end)
+    if not ok then
+      log.warn("gate_ui", "failed to restore winbar: %s", tostring(err))
+    end
   end
 end
 

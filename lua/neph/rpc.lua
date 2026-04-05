@@ -84,6 +84,128 @@ local dispatch = {
     local root = require("neph.internal.tools")._plugin_root()
     return require("neph.internal.tools").preview(root, agents)
   end,
+  -- Review control handlers — allow CLI callers to drive a live review session.
+  ["review.status"] = function(_)
+    local review = require("neph.api.review")
+    local ar = review._active_review()
+    if not ar then
+      return { active = false }
+    end
+    local tally = ar.session.get_tally()
+    return {
+      active = true,
+      file = ar.file_path,
+      total = ar.session.get_total_hunks(),
+      accepted = tally.accepted,
+      rejected = tally.rejected,
+      undecided = tally.undecided,
+    }
+  end,
+  ["review.accept"] = function(p)
+    local review = require("neph.api.review")
+    local ar = review._active_review()
+    if not ar then
+      return { ok = false, error = "No active review" }
+    end
+    local idx = p.idx
+    if not idx then
+      idx = ar.session.next_undecided(1)
+    end
+    if not idx then
+      return { ok = false, error = "No undecided hunks" }
+    end
+    local ok = ar.session.accept_at(idx)
+    if not ok then
+      return { ok = false, error = "Invalid hunk index: " .. tostring(idx) }
+    end
+    if ar.ui_state.refresh then
+      ar.ui_state.refresh()
+    end
+    local next_idx = ar.session.next_undecided(idx + 1)
+    return { ok = true, idx = idx, next = next_idx }
+  end,
+  ["review.reject"] = function(p)
+    local review = require("neph.api.review")
+    local ar = review._active_review()
+    if not ar then
+      return { ok = false, error = "No active review" }
+    end
+    local idx = p.idx
+    if not idx then
+      idx = ar.session.next_undecided(1)
+    end
+    if not idx then
+      return { ok = false, error = "No undecided hunks" }
+    end
+    local ok = ar.session.reject_at(idx, p.reason)
+    if not ok then
+      return { ok = false, error = "Invalid hunk index: " .. tostring(idx) }
+    end
+    if ar.ui_state.refresh then
+      ar.ui_state.refresh()
+    end
+    local next_idx = ar.session.next_undecided(idx + 1)
+    return { ok = true, idx = idx, next = next_idx }
+  end,
+  ["review.accept_all"] = function(_)
+    local review = require("neph.api.review")
+    local ar = review._active_review()
+    if not ar then
+      return { ok = false, error = "No active review" }
+    end
+    local tally_before = ar.session.get_tally()
+    ar.session.accept_all_remaining()
+    if ar.ui_state.refresh then
+      ar.ui_state.refresh()
+    end
+    return { ok = true, count = tally_before.undecided }
+  end,
+  ["review.reject_all"] = function(p)
+    local review = require("neph.api.review")
+    local ar = review._active_review()
+    if not ar then
+      return { ok = false, error = "No active review" }
+    end
+    local tally_before = ar.session.get_tally()
+    ar.session.reject_all_remaining(p.reason)
+    if ar.ui_state.refresh then
+      ar.ui_state.refresh()
+    end
+    return { ok = true, count = tally_before.undecided }
+  end,
+  ["review.submit"] = function(_)
+    local review = require("neph.api.review")
+    local ar = review._active_review()
+    if not ar then
+      return { ok = false, error = "No active review" }
+    end
+    if ar.ui_state.finalize then
+      vim.schedule(function()
+        ar.ui_state.finalize()
+      end)
+    else
+      return { ok = false, error = "finalize not available" }
+    end
+    return { ok = true }
+  end,
+  ["review.next"] = function(_)
+    local review = require("neph.api.review")
+    local ar = review._active_review()
+    if not ar then
+      return { ok = false, error = "No active review" }
+    end
+    local next_idx = ar.session.next_undecided(1)
+    if not next_idx then
+      return { ok = false, error = "No undecided hunks" }
+    end
+    if ar.ui_state.jump_to_hunk then
+      ar.ui_state.jump_to_hunk(next_idx)
+    end
+    if ar.ui_state.refresh then
+      ar.ui_state.refresh()
+    end
+    return { ok = true, idx = next_idx }
+  end,
 }
 
 function M.request(method, params)

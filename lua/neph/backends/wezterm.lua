@@ -203,8 +203,13 @@ function M.open(termname, agent_config, cwd)
 
   local agent_cmd = agent_config.full_cmd or agent_config.cmd
   local full_cmd = env_str ~= "" and (env_str .. " " .. agent_cmd) or agent_cmd
+  -- NOTE: do NOT use 2>&1 here.  wezterm frequently emits warnings/config-reload
+  -- notices to stderr.  Merging stderr into stdout would corrupt the pane ID that
+  -- wezterm prints on stdout, causing tonumber() to return nil and the spawn to
+  -- appear to fail even though wezterm actually created the pane.
+  -- Redirect stderr to /dev/null to isolate the bare integer pane ID on stdout.
   local spawn_cmd = string.format(
-    "wezterm cli split-pane --pane-id %d --right --percent 50 --cwd %s -- sh -c %s 2>&1",
+    "wezterm cli split-pane --pane-id %d --right --percent 50 --cwd %s -- sh -c %s 2>/dev/null",
     parent_pane_id,
     vim.fn.shellescape(cwd),
     vim.fn.shellescape(full_cmd)
@@ -212,7 +217,10 @@ function M.open(termname, agent_config, cwd)
 
   local result = vim.fn.system(spawn_cmd)
   if vim.v.shell_error ~= 0 then
-    vim.notify("Neph/wezterm: spawn failed – " .. vim.trim(result), vim.log.levels.ERROR)
+    vim.notify(
+      "Neph/wezterm: spawn failed (exit " .. vim.v.shell_error .. ") – check :messages or run wezterm CLI manually",
+      vim.log.levels.ERROR
+    )
     return nil
   end
 

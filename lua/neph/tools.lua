@@ -238,7 +238,10 @@ local function touch_stamp(agent, name)
   local manifest = load_manifest()
   local fp = compute_fingerprint(root, agent or {}, name == UNIVERSAL_NAME)
   manifest[name] = fp
-  pcall(save_manifest, manifest)
+  local ok, err = pcall(save_manifest, manifest)
+  if not ok then
+    require("neph.internal.log").warn("tools", "failed to save fingerprint manifest: %s", tostring(err))
+  end
 
   -- Keep legacy stamp for backward compat
   local sp = stamp_path(name)

@@ -749,6 +749,23 @@ function M.start_review(session, ui_state, on_done)
     )
   end
 
+  -- Expose control surface on ui_state for RPC-driven review control
+  -- (neph review accept/reject/submit/next from the agent terminal).
+  ui_state.refresh = function()
+    if not finalized then
+      refresh_ui(session, ui_state, keymaps)
+    end
+  end
+  ui_state.finalize = function()
+    do_finalize()
+  end
+  ui_state.jump_to_hunk = function(idx)
+    if not finalized then
+      local h = session.get_hunk_ranges()
+      jump_to_hunk(ui_state, h, idx)
+    end
+  end
+
   -- Initial: jump to first hunk and refresh UI
   local hunks = session.get_hunk_ranges()
   if #hunks > 0 then

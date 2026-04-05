@@ -348,8 +348,14 @@ end
 ---@param file_path string  Absolute path to the file
 ---@return {ok: boolean, msg?: string, error?: string}
 function M.open_manual(file_path)
-  -- Manual reviews always use vimdiff; no active agent required. The agent
-  -- check is only relevant for auto-triggered (pre/post-write) reviews.
+  -- Check that a review provider is configured before attempting to open.
+  -- Manual reviews use the same provider as agent-triggered ones; no provider
+  -- means there is nothing to open.
+  local active_agent_name = require("neph.internal.session").get_active()
+  if not review_provider.is_enabled_for(active_agent_name) then
+    return { ok = false, error = "Review provider not configured" }
+  end
+
   if type(file_path) ~= "string" or file_path == "" then
     return { ok = false, error = "invalid file_path" }
   end
@@ -358,17 +364,16 @@ function M.open_manual(file_path)
     return { ok = false, error = "File not found: " .. file_path }
   end
 
-  -- Read buffer lines (old) and disk lines (new)
+  -- Read buffer lines (old) and disk lines (new).
+  -- Manual review compares what the user had open (buffer) against what is on
+  -- disk (agent-written version).  If the file has no open buffer there is
+  -- nothing to diff against, so return an error rather than silently loading
+  -- a fresh buffer that would always look identical to disk.
   local bufnr = vim.fn.bufnr(file_path)
-  local old_lines
-  if bufnr ~= -1 and vim.api.nvim_buf_is_valid(bufnr) then
-    old_lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
-  else
-    -- File not in a buffer — load it so the review can compare buffer vs disk.
-    bufnr = vim.fn.bufadd(file_path)
-    vim.fn.bufload(bufnr)
-    old_lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+  if bufnr == -1 or not vim.api.nvim_buf_is_valid(bufnr) then
+    return { ok = false, error = "No buffer open for: " .. file_path }
   end
+  local old_lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
 
   local new_lines = {}
   local f = io.open(file_path, "r")
@@ -405,7 +410,7 @@ function M.open_manual(file_path)
     channel_id = nil,
     path = file_path,
     content = "",
-    agent = active_agent,
+    agent = active_agent_name,
     mode = "manual",
   }
 
@@ -486,6 +491,12 @@ function M.write_result(path, channel_id, request_id, envelope)
   if channel_id and channel_id ~= 0 then
     pcall(vim.rpcnotify, channel_id, "neph:review_done", envelope)
   end
+end
+
+--- Expose active_review for RPC handlers (review.status, review.accept, etc.)
+--- and for test monkey-patching.
+M._active_review = function()
+  return active_review
 end
 
 return M

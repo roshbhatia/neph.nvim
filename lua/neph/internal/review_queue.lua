@@ -104,6 +104,8 @@ function M.enqueue(params)
     local ok, review = pcall(require, "neph.api.review")
     if ok and review._bypass_accept then
       review._bypass_accept(params)
+    elseif not ok then
+      log.warn("review_queue", "bypass: failed to load neph.api.review: %s", tostring(review))
     end
     return
   end
@@ -138,6 +140,8 @@ function M.enqueue(params)
         local ok, review = pcall(require, "neph.api.review")
         if ok and review._bypass_accept then
           review._bypass_accept(snapshot)
+        elseif not ok then
+          log.warn("review_queue", "bypass (scheduled): failed to load neph.api.review: %s", tostring(review))
         end
       else
         open_fn(active)
@@ -332,6 +336,8 @@ function M.cancel_path(path)
         reason = "cancelled",
       }
       review_api.write_result(cancelled.result_path, cancelled.channel_id, cancelled.request_id, envelope)
+    elseif not ok then
+      log.warn("review_queue", "cancel_path: failed to load neph.api.review: %s", tostring(review_api))
     end
 
     -- Open next queued review
@@ -380,6 +386,8 @@ function M.enqueue_front(params)
     local ok, review = pcall(require, "neph.api.review")
     if ok and review._bypass_accept then
       review._bypass_accept(params)
+    elseif not ok then
+      log.warn("review_queue", "enqueue_front bypass: failed to load neph.api.review: %s", tostring(review))
     end
     return
   end
@@ -405,6 +413,8 @@ function M.enqueue_front(params)
         local ok, review = pcall(require, "neph.api.review")
         if ok and review._bypass_accept then
           review._bypass_accept(snapshot)
+        elseif not ok then
+          log.warn("review_queue", "bypass (front scheduled): failed to load neph.api.review: %s", tostring(review))
         end
       else
         open_fn(active)

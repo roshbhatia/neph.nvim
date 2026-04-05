@@ -260,7 +260,10 @@ function M.open(termname)
       if queue then
         ready_queue[termname] = nil
         for _, entry in ipairs(queue) do
-          pcall(M.send, termname, entry.text, entry.opts)
+          local ok, err = pcall(M.send, termname, entry.text, entry.opts)
+          if not ok then
+            log.warn("session", "on_ready send failed for %s: %s", termname, tostring(err))
+          end
         end
       end
     end

@@ -9,6 +9,7 @@ import { runIntegrationCommand } from './integration';
 import { runDepsCommand } from './deps';
 import { runGateCommand } from './gate';
 import { runToolsCommand } from './tools';
+import { runReviewCtrlCommand } from './review-ctrl';
 
 const RPC_CALL = 'return require("neph.rpc").request(...)';
 
@@ -137,6 +138,23 @@ export async function runCommand(transport: NvimTransport | null, command: strin
   }
 
   if (command === 'review') {
+    // Control subcommands: neph review <status|accept|reject|...>
+    // These drive a live review session already open in Neovim.
+    const CTRL_SUBCOMMANDS = new Set(['status', 'accept', 'reject', 'accept-all', 'reject-all', 'submit', 'next']);
+    const subcommand = args[1];
+    if (subcommand && CTRL_SUBCOMMANDS.has(subcommand)) {
+      if (!transport) {
+        process.stderr.write('Error: No Neovim socket found. Set NVIM_SOCKET_PATH or run within Neovim.\n');
+        process.exit(1);
+      }
+      try {
+        await runReviewCtrlCommand(subcommand, args.slice(2), transport);
+      } finally {
+        await transport.close();
+      }
+      return;
+    }
+    // Blocking agent review flow (neph review with piped content)
     const timeoutIdx = args.indexOf('--timeout');
     const timeout = timeoutIdx >= 0 ? parseInt(args[timeoutIdx + 1], 10) || 300 : 300;
     const exitCode = await runReview({ stdin, timeout, transport });
