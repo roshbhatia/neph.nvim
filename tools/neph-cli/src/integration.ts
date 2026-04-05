@@ -9,7 +9,7 @@ interface Integration {
   label: string;
   configPath: () => string;
   templatePath: string;
-  kind: "hooks" | "copilot";
+  kind: "hooks" | "copilot" | "cupcake";
   requiresCupcake?: boolean;
 }
 
@@ -46,6 +46,16 @@ const INTEGRATIONS: Integration[] = [
     configPath: () => path.join(process.cwd(), ".copilot", "hooks.json"),
     templatePath: path.join(TOOLS_ROOT, "copilot", "hooks.json"),
     kind: "copilot",
+    requiresCupcake: true,
+  },
+  {
+    // opencode uses `cupcake init --harness opencode` for integration setup.
+    // Status is determined by whether the per-project cupcake policy is present.
+    name: "opencode",
+    label: "OpenCode",
+    configPath: () => path.join(process.cwd(), ".cupcake", "policies", "opencode"),
+    templatePath: "",
+    kind: "cupcake",
     requiresCupcake: true,
   },
 ];
@@ -236,6 +246,13 @@ function templateFor(integration: Integration): any {
 }
 
 function applyIntegration(integration: Integration, enable: boolean): boolean {
+  if (integration.kind === "cupcake") {
+    // Cupcake integrations are installed via `cupcake init --harness <name>`, not by neph.
+    process.stderr.write(
+      `${integration.name}: use 'cupcake init --harness ${integration.name}' to install this integration\n`,
+    );
+    return false;
+  }
   const configPath = integration.configPath();
   const template = templateFor(integration);
   const existing = readJson(configPath);
@@ -257,6 +274,7 @@ function applyIntegration(integration: Integration, enable: boolean): boolean {
 function integrationEnabled(integration: Integration): boolean {
   const configPath = integration.configPath();
   if (!fs.existsSync(configPath)) return false;
+  if (integration.kind === "cupcake") return true; // presence of the policy dir/file is sufficient
   const template = templateFor(integration);
   const existing = readJson(configPath);
   return integration.kind === "copilot" ? copilotEnabled(existing, template) : hooksEnabled(existing, template);

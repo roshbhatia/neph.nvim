@@ -22,8 +22,8 @@ describe("neph.agents submodules", function()
     end)
   end
 
-  -- Terminal agents: Cupcake harness pending or no hook system
-  local terminal_agents = { "amp" }
+  -- Terminal agents: fs_watcher-based interception (no Cupcake hook)
+  local terminal_agents = { "amp", "codex", "crush", "goose" }
   for _, name in ipairs(terminal_agents) do
     it(name .. " has type = terminal", function()
       local def = require("neph.agents." .. name)
@@ -31,17 +31,8 @@ describe("neph.agents submodules", function()
     end)
   end
 
-  -- Terminal-only agents: no type field (legacy compat)
-  local untyped_agents = { "codex", "crush", "goose" }
-  for _, name in ipairs(untyped_agents) do
-    it(name .. " has no type field", function()
-      local def = require("neph.agents." .. name)
-      assert.is_nil(def.type)
-    end)
-  end
-
   -- Agents with tools manifests
-  local agents_with_tools = { "amp", "cursor", "pi" }
+  local agents_with_tools = { "amp", "pi" }
   for _, name in ipairs(agents_with_tools) do
     it(name .. " has a valid tools manifest", function()
       local def = require("neph.agents." .. name)
@@ -52,8 +43,9 @@ describe("neph.agents submodules", function()
     end)
   end
 
-  -- Agents without tools (hooks managed via launch_args_fn or Cupcake native)
-  local agents_without_tools = { "claude", "codex", "copilot", "crush", "gemini", "goose", "opencode" }
+  -- Agents without tools (hooks managed via neph CLI or Cupcake native)
+  -- cursor removed from tools: its hook config is per-project via `neph integration toggle cursor`
+  local agents_without_tools = { "claude", "codex", "copilot", "crush", "cursor", "gemini", "goose", "opencode" }
   for _, name in ipairs(agents_without_tools) do
     it(name .. " has no tools field", function()
       local def = require("neph.agents." .. name)

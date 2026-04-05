@@ -869,4 +869,10 @@ M._stamp_path = stamp_path
 M._touch_stamp = touch_stamp
 M._clear_stamp = clear_stamp
 
+-- Delegate dist_is_current to the internal module so callers can use
+-- neph.tools as a single entry point for tool-related utilities.
+M.dist_is_current = function(...)
+  return require("neph.internal.tools").dist_is_current(...)
+end
+
 return M

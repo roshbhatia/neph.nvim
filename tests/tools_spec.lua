@@ -686,4 +686,71 @@ describe("neph.tools", function()
       rm_rf(tmpdir)
     end)
   end)
+
+  -- -------------------------------------------------------------------------
+  -- dist_is_current — root-level fallback for packages without src/
+  -- -------------------------------------------------------------------------
+
+  describe("dist_is_current", function()
+    local function make_pkg(opts)
+      local dir = make_tmpdir()
+      local dist_path = dir .. "/dist/artifact.js"
+      vim.fn.mkdir(dir .. "/dist", "p")
+
+      local dist_f = io.open(dist_path, "w")
+      dist_f:write("// dist")
+      dist_f:close()
+
+      local ts_path
+      if opts.src_subdir then
+        vim.fn.mkdir(dir .. "/src", "p")
+        ts_path = dir .. "/src/index.ts"
+      else
+        ts_path = dir .. "/index.ts"
+      end
+      local ts_f = io.open(ts_path, "w")
+      ts_f:write("// source")
+      ts_f:close()
+
+      if opts.ts_newer then
+        local dist_stat = vim.uv.fs_stat(dist_path)
+        local future = dist_stat.mtime.sec + 10
+        vim.uv.fs_utime(ts_path, future, future)
+      else
+        local ts_stat = vim.uv.fs_stat(ts_path)
+        local future = ts_stat.mtime.sec + 10
+        vim.uv.fs_utime(dist_path, future, future)
+      end
+
+      return dir
+    end
+
+    it("returns 'stale' when root .ts file is newer than dist (no src/ dir)", function()
+      local dir = make_pkg({ src_subdir = false, ts_newer = true })
+      local result = tools.dist_is_current(dir, "dist/artifact.js")
+      rm_rf(dir)
+      assert.equals("stale", result)
+    end)
+
+    it("returns 'current' when dist is newer than root .ts file (no src/ dir)", function()
+      local dir = make_pkg({ src_subdir = false, ts_newer = false })
+      local result = tools.dist_is_current(dir, "dist/artifact.js")
+      rm_rf(dir)
+      assert.equals("current", result)
+    end)
+
+    it("returns 'stale' when src/ .ts file is newer than dist", function()
+      local dir = make_pkg({ src_subdir = true, ts_newer = true })
+      local result = tools.dist_is_current(dir, "dist/artifact.js")
+      rm_rf(dir)
+      assert.equals("stale", result)
+    end)
+
+    it("returns 'missing' when dist artifact does not exist", function()
+      local dir = make_tmpdir()
+      local result = tools.dist_is_current(dir, "dist/no_such.js")
+      rm_rf(dir)
+      assert.equals("missing", result)
+    end)
+  end)
 end)

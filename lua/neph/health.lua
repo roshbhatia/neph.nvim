@@ -168,6 +168,29 @@ local function check_agents()
     return
   end
 
+  -- Check Cupcake availability for harness-group agents.
+  -- These agents call `cupcake eval --harness <name>` at hook time; if the
+  -- binary is absent every hook invocation fails with a non-obvious error.
+  local harness_agents = {}
+  for _, agent in ipairs(all) do
+    if agent.integration_group == "harness" then
+      table.insert(harness_agents, agent.name)
+    end
+  end
+  if #harness_agents > 0 then
+    if vim.fn.executable("cupcake") == 0 then
+      vim.health.warn(
+        string.format(
+          "cupcake not found on PATH — required by: %s\n"
+            .. "  Install from https://github.com/zed-industries/cupcake or run :NephInstall",
+          table.concat(harness_agents, ", ")
+        )
+      )
+    else
+      vim.health.ok(string.format("cupcake: available (used by %s)", table.concat(harness_agents, ", ")))
+    end
+  end
+
   for _, agent in ipairs(all) do
     local available = vim.fn.executable(agent.cmd) == 1
     local s = statuses[agent.name] or {}

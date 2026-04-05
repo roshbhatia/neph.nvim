@@ -87,27 +87,37 @@ function M.dist_is_current(pkg_dir, dist_file)
   end
   local dist_mtime = dist_stat.mtime.sec
 
-  -- Walk src/ for *.ts files and find the newest mtime
-  local src_dir = pkg_dir .. "/src"
-  local newest_src = 0
-  local handle = vim.uv.fs_scandir(src_dir)
-  if handle then
+  -- Walk src/ for *.ts files; fall back to pkg root when src/ is absent/empty.
+  -- (amp, pi keep source at the package root, not in a src/ subdirectory.)
+  local function scan_ts(dir)
+    local newest = 0
+    local handle = vim.uv.fs_scandir(dir)
+    if not handle then
+      return newest
+    end
     while true do
       local name, ftype = vim.uv.fs_scandir_next(handle)
       if not name then
         break
       end
       if ftype == "file" and name:match("%.ts$") then
-        local s = vim.uv.fs_stat(src_dir .. "/" .. name)
-        if s and s.mtime.sec > newest_src then
-          newest_src = s.mtime.sec
+        local s = vim.uv.fs_stat(dir .. "/" .. name)
+        if s and s.mtime.sec > newest then
+          newest = s.mtime.sec
         end
       end
     end
+    return newest
+  end
+
+  local newest_src = scan_ts(pkg_dir .. "/src")
+  if newest_src == 0 then
+    -- src/ absent or empty — scan package root for *.ts
+    newest_src = scan_ts(pkg_dir)
   end
 
   if newest_src == 0 then
-    -- No src files found — treat dist as current
+    -- No .ts source found at all — cannot determine staleness
     return "current"
   end
   return newest_src <= dist_mtime and "current" or "stale"
