@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, ChildProcess } from "node:child_process";
 import process from "node:process";
 import { Buffer } from "node:buffer";
 import { debug as log } from "./log";
@@ -87,6 +87,106 @@ export function createNephQueue(): (...args: string[]) => void {
       }),
     );
   };
+}
+
+/**
+ * Create a fire-and-forget command queue backed by a persistent
+ * `neph connect` subprocess.  Eliminates per-call process spawn overhead.
+ *
+ * Falls back to per-call spawn if the persistent process dies unexpectedly.
+ * The caller should call .close() when done (e.g. on session end).
+ */
+export function createPersistentQueue(): {
+  call: (...args: string[]) => void;
+  close: () => void;
+} {
+  let proc: ChildProcess | null = null;
+  let nextId = 1;
+  let queue: Promise<void> = Promise.resolve();
+  const pending = new Map<number, { resolve: () => void; reject: (e: Error) => void }>();
+  let outBuf = '';
+  let closed = false;
+
+  function startProc(): void {
+    if (closed) return;
+    proc = spawn('neph', ['connect'], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: process.env,
+    });
+
+    (proc.stdout as import('stream').Readable).setEncoding('utf8');
+    proc.stdout?.on('data', (chunk: string) => {
+      outBuf += chunk;
+      const lines = outBuf.split('\n');
+      outBuf = lines.pop() ?? '';
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        try {
+          const msg: { id: number; ok: boolean; error?: string } = JSON.parse(trimmed);
+          const p = pending.get(msg.id);
+          if (p) {
+            pending.delete(msg.id);
+            if (msg.ok) {
+              p.resolve();
+            } else {
+              p.reject(new Error(msg.error ?? 'rpc error'));
+            }
+          }
+        } catch { /* malformed line */ }
+      }
+    });
+
+    proc.on('error', () => {
+      proc = null;
+      for (const [, p] of pending) p.reject(new Error('neph connect error'));
+      pending.clear();
+    });
+
+    proc.on('close', () => {
+      proc = null;
+      for (const [, p] of pending) p.reject(new Error('neph connect closed'));
+      pending.clear();
+    });
+  }
+
+  function sendCommand(method: string, params: Record<string, unknown>): Promise<void> {
+    return new Promise((resolve, reject) => {
+      if (closed) { reject(new Error('queue closed')); return; }
+      if (!proc || !proc.stdin?.writable) startProc();
+      if (!proc?.stdin?.writable) { resolve(); return; } // failed to start — fail-open
+      const id = nextId++;
+      pending.set(id, { resolve, reject });
+      try {
+        proc.stdin.write(JSON.stringify({ id, method, params }) + '\n');
+      } catch (e) {
+        pending.delete(id);
+        reject(e as Error);
+      }
+    });
+  }
+
+  const call = (...args: string[]): void => {
+    let method = '';
+    let params: Record<string, unknown> = {};
+    switch (args[0]) {
+      case 'set':    method = 'status.set';   params = { name: args[1], value: args[2] }; break;
+      case 'unset':  method = 'status.unset'; params = { name: args[1] }; break;
+      case 'checktime': method = 'buffers.check'; break;
+      default: return;
+    }
+    queue = queue.then(() =>
+      sendCommand(method, params).catch(() => { /* fire-and-forget */ })
+    );
+  };
+
+  const close = (): void => {
+    closed = true;
+    if (proc?.stdin?.writable) proc.stdin.end();
+    proc = null;
+  };
+
+  return { call, close };
 }
 
 /**

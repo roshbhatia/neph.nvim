@@ -50,15 +50,29 @@ function M.setup(opts)
     contracts.validate_agent(agent)
   end
 
-  -- Auto-create RPC socket if not already listening
-  local socket_cfg = config.current.socket or {}
-  if socket_cfg.enable ~= false and (vim.v.servername == nil or vim.v.servername == "") then
-    local path = socket_cfg.path
-    if not path or path == "" then
-      path = vim.fn.tempname()
-    end
-    if path and path ~= "" then
-      vim.fn.serverstart(path)
+  -- Ensure an RPC socket is listening and store the path for backends.
+  -- vim.v.servername is the primary server (set by --listen); serverstart()
+  -- adds a secondary server but may not update vim.v.servername.
+  -- We store the canonical path via neph.internal.channel so backends can
+  -- pass a reliable NVIM_SOCKET_PATH to spawned agent terminals.
+  local channel = require("neph.internal.channel")
+  local existing = vim.v.servername
+  if existing and existing ~= "" then
+    channel.set_socket_path(existing)
+  else
+    local socket_cfg = config.current.socket or {}
+    if socket_cfg.enable ~= false then
+      local path = socket_cfg.path
+      if not path or path == "" then
+        path = vim.fn.tempname()
+      end
+      if path and path ~= "" then
+        local started = vim.fn.serverstart(path)
+        -- serverstart returns the address on success, empty string on failure.
+        -- vim.v.servername may still be empty after this call (it tracks the
+        -- primary server only); store the result explicitly.
+        channel.set_socket_path(started ~= "" and started or path)
+      end
     end
   end
 

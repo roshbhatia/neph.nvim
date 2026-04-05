@@ -35,6 +35,42 @@ local open_fn = nil
 ---@type table<string, number>  path → hrtime of last completed review
 local recently_reviewed = {}
 
+--- Batch a queued review into the pending notification and schedule the 400ms
+--- debounce timer if not already scheduled.
+---@param params neph.ReviewRequest
+local function batch_notify(params)
+  local config = require("neph.config").current
+  local review_cfg = type(config.review) == "table" and config.review or {}
+  if review_cfg.pending_notify == false then
+    return
+  end
+  table.insert(pending_notify_batch, params)
+  if not notify_timer then
+    notify_timer = vim.defer_fn(function()
+      notify_timer = nil
+      local batch = pending_notify_batch
+      pending_notify_batch = {}
+      if #batch == 0 then
+        return
+      end
+      local agents_seen = {}
+      local agent_list = {}
+      for _, p in ipairs(batch) do
+        local a = p.agent or "unknown"
+        if not agents_seen[a] then
+          agents_seen[a] = true
+          table.insert(agent_list, a)
+        end
+      end
+      local agent_str = "(" .. table.concat(agent_list, ", ") .. ")"
+      vim.notify(
+        string.format("Neph: %d review%s queued %s", #batch, #batch == 1 and "" or "s", agent_str),
+        vim.log.levels.INFO
+      )
+    end, 400)
+  end
+end
+
 ---@param fn fun(params: neph.ReviewRequest)
 function M.set_open_fn(fn)
   open_fn = fn
@@ -83,39 +119,7 @@ function M.enqueue(params)
     table.insert(queue, params)
     log.debug("review_queue", "queued: %s (pending=%d)", params.path, #queue)
 
-    -- Show batched notification for queued review
-    local config = require("neph.config").current
-    local review_cfg = type(config.review) == "table" and config.review or {}
-    if review_cfg.pending_notify ~= false then
-      table.insert(pending_notify_batch, params)
-      if notify_timer then
-        -- already scheduled, just accumulate
-      else
-        notify_timer = vim.defer_fn(function()
-          notify_timer = nil
-          local batch = pending_notify_batch
-          pending_notify_batch = {}
-          if #batch == 0 then
-            return
-          end
-          -- Group by agent
-          local agents_seen = {}
-          local agent_list = {}
-          for _, p in ipairs(batch) do
-            local a = p.agent or "unknown"
-            if not agents_seen[a] then
-              agents_seen[a] = true
-              table.insert(agent_list, a)
-            end
-          end
-          local agent_str = "(" .. table.concat(agent_list, ", ") .. ")"
-          vim.notify(
-            string.format("Neph: %d review%s queued %s", #batch, #batch == 1 and "" or "s", agent_str),
-            vim.log.levels.INFO
-          )
-        end, 400)
-      end
-    end
+    batch_notify(params)
   end
 end
 
@@ -133,8 +137,11 @@ function M.on_complete(request_id)
       active = next_review
       log.debug("review_queue", "opening next: %s (remaining=%d)", active.path, #queue)
       if open_fn then
+        local snapshot = active
         vim.schedule(function()
-          if active then
+          -- Guard: only open if active hasn't been replaced by cancel_path
+          -- or another on_complete in the meantime.
+          if active == snapshot then
             open_fn(active)
           end
         end)
@@ -211,8 +218,11 @@ function M.clear_agent(agent_name)
   if cancelled_active and #queue > 0 then
     active = table.remove(queue, 1)
     if open_fn then
+      local snapshot = active
       vim.schedule(function()
-        open_fn(active)
+        if active == snapshot then
+          open_fn(active)
+        end
       end)
     end
   end
@@ -252,8 +262,11 @@ function M.cancel_path(path)
     if #queue > 0 then
       active = table.remove(queue, 1)
       if open_fn then
+        local snapshot = active
         vim.schedule(function()
-          open_fn(active)
+          if active == snapshot then
+            open_fn(active)
+          end
         end)
       end
     end
@@ -292,38 +305,7 @@ function M.enqueue_front(params)
   else
     table.insert(queue, 1, params)
     log.debug("review_queue", "queued at front: %s (pending=%d)", params.path, #queue)
-    local config = require("neph.config").current
-    local review_cfg = type(config.review) == "table" and config.review or {}
-    if review_cfg.pending_notify ~= false then
-      table.insert(pending_notify_batch, params)
-      if notify_timer then
-        -- already scheduled, just accumulate
-      else
-        notify_timer = vim.defer_fn(function()
-          notify_timer = nil
-          local batch = pending_notify_batch
-          pending_notify_batch = {}
-          if #batch == 0 then
-            return
-          end
-          -- Group by agent
-          local agents_seen = {}
-          local agent_list = {}
-          for _, p in ipairs(batch) do
-            local a = p.agent or "unknown"
-            if not agents_seen[a] then
-              agents_seen[a] = true
-              table.insert(agent_list, a)
-            end
-          end
-          local agent_str = "(" .. table.concat(agent_list, ", ") .. ")"
-          vim.notify(
-            string.format("Neph: %d review%s queued %s", #batch, #batch == 1 and "" or "s", agent_str),
-            vim.log.levels.INFO
-          )
-        end, 400)
-      end
-    end
+    batch_notify(params)
   end
 end
 
@@ -336,11 +318,14 @@ function M.drain()
   local next_review = table.remove(queue, 1)
   if next_review then
     active = next_review
-    vim.schedule(function()
-      if active then
-        open_fn(active)
-      end
-    end)
+    if open_fn then
+      local snapshot = active
+      vim.schedule(function()
+        if active == snapshot then
+          open_fn(active)
+        end
+      end)
+    end
   end
 end
 

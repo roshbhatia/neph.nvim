@@ -220,6 +220,68 @@ export async function runCommand(transport: NvimTransport | null, command: strin
     return;
   }
 
+  if (command === 'connect') {
+    // Persistent REPL: read JSON-line commands from stdin, execute against
+    // Neovim, write JSON-line results to stdout.
+    // Protocol:
+    //   stdin:  { id: number, method: string, params: object }
+    //   stdout: { id: number, ok: boolean, result?: unknown, error?: string }
+    // One object per line. Exits when stdin closes.
+    if (!transport) {
+      process.stderr.write('neph connect: no Neovim socket found\n');
+      process.exit(1);
+    }
+
+    const RPC = 'return require("neph.rpc").request(...)';
+    process.stdin.setEncoding('utf8');
+    let buf = '';
+
+    const processLine = async (line: string) => {
+      line = line.trim();
+      if (!line) return;
+      let req: { id: number; method: string; params?: unknown };
+      try {
+        req = JSON.parse(line);
+      } catch {
+        process.stdout.write(JSON.stringify({ id: -1, ok: false, error: 'invalid JSON' }) + '\n');
+        return;
+      }
+      try {
+        const result = await transport.executeLua(RPC, [req.method, req.params ?? {}]);
+        process.stdout.write(JSON.stringify({ id: req.id, ok: true, result }) + '\n');
+      } catch (err) {
+        process.stdout.write(JSON.stringify({ id: req.id, ok: false, error: String(err) }) + '\n');
+      }
+    };
+
+    process.stdin.on('data', (chunk: string) => {
+      buf += chunk;
+      const lines = buf.split('\n');
+      buf = lines.pop() ?? '';
+      for (const line of lines) {
+        processLine(line).catch((err) => {
+          process.stderr.write(`neph connect: error: ${err}\n`);
+        });
+      }
+    });
+
+    process.stdin.on('end', async () => {
+      if (buf.trim()) {
+        await processLine(buf).catch(() => {});
+      }
+      await transport.close();
+      process.exit(0);
+    });
+
+    process.stdin.on('error', async () => {
+      await transport.close();
+      process.exit(0);
+    });
+
+    // Keep process alive (stdin drives lifecycle)
+    return;
+  }
+
   // --- Simple fire-and-forget commands ---
 
   if (!transport) {
@@ -285,7 +347,7 @@ if (require.main === module) {
   if (!command) {
     process.stderr.write(
       'Usage: neph <command> [args...]\n' +
-        'Commands: review, set, unset, get, checktime, close-tab, status, spec, ui-select, ui-input, ui-notify, integration, deps, gate, tools\n'
+        'Commands: review, connect, set, unset, get, checktime, close-tab, status, spec, ui-select, ui-input, ui-notify, integration, deps, gate, tools\n'
     );
     process.exit(1);
   }
@@ -306,8 +368,8 @@ if (require.main === module) {
       process.stderr.write(`neph: failed to connect to Neovim socket at ${socketPath}: ${err}\n`);
     }
   } else if (command !== 'spec' && command !== 'integration' && command !== 'deps' && command !== 'gate' && command !== 'tools') {
-    // review handles missing transport itself (fail-open); other commands need it
-    if (command !== 'review') {
+    // review and connect handle missing transport themselves; other commands need it
+    if (command !== 'review' && command !== 'connect') {
       process.stderr.write(
         'neph: could not determine which Neovim instance to use.\n' +
         'Set NVIM_SOCKET_PATH to the socket of the intended Neovim instance and retry.\n'
@@ -316,13 +378,21 @@ if (require.main === module) {
     }
   }
 
-  readStdin().then(stdin => {
-    runCommand(transport, command, args, stdin).catch(err => {
+  if (command === 'connect') {
+    // connect manages stdin itself as a streaming REPL — do not pre-read
+    runCommand(transport, command, args, '').catch(err => {
       process.stderr.write(`Unhandled error: ${err}\n`);
       process.exit(1);
     });
-  }).catch(err => {
-    process.stderr.write(`Failed to read stdin: ${err}\n`);
-    process.exit(1);
-  });
+  } else {
+    readStdin().then(stdin => {
+      runCommand(transport, command, args, stdin).catch(err => {
+        process.stderr.write(`Unhandled error: ${err}\n`);
+        process.exit(1);
+      });
+    }).catch(err => {
+      process.stderr.write(`Failed to read stdin: ${err}\n`);
+      process.exit(1);
+    });
+  }
 }

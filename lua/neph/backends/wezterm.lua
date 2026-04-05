@@ -180,8 +180,9 @@ function M.open(termname, agent_config, cwd)
   for k, v in pairs(merged_env) do
     env_parts[#env_parts + 1] = string.format("export %s=%s;", k, vim.fn.shellescape(v))
   end
-  if vim.v.servername then
-    env_parts[#env_parts + 1] = string.format("export NVIM_SOCKET_PATH=%s;", vim.fn.shellescape(vim.v.servername))
+  local nvim_socket = require("neph.internal.channel").socket_path()
+  if nvim_socket and nvim_socket ~= "" then
+    env_parts[#env_parts + 1] = string.format("export NVIM_SOCKET_PATH=%s;", vim.fn.shellescape(nvim_socket))
   end
   local env_str = table.concat(env_parts, " ")
 

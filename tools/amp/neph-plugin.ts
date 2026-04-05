@@ -1,16 +1,18 @@
 // @i-know-the-amp-plugin-api-is-wip-and-very-experimental-right-now
 import { readFileSync } from "node:fs";
 import { debug } from "../lib/log";
-import { review, uiSelect, uiInput, uiNotify, createNephQueue } from "../lib/neph-run";
+import { review, uiSelect, uiInput, uiNotify, createPersistentQueue } from "../lib/neph-run";
 
 function neph_plugin_default(amp: any) {
-  // Serial queue ensures agent lifecycle commands (set/unset/checktime) execute
-  // in dispatch order and don't race each other across concurrent agent events.
-  const agentQueue = createNephQueue();
+  // Persistent queue: one long-lived `neph connect` subprocess per session.
+  // Eliminates per-call spawn overhead for set/unset/checktime.
+  // Falls back to per-spawn silently if the connect process can't start.
+  let pq = createPersistentQueue();
 
   amp.on("session.start", async () => {
     debug("amp", "session.start");
 
+    // Wire amp UI to Neovim
     amp.ui = {
       ...amp.ui,
       notify: (message: string, type?: string) => {
@@ -26,13 +28,20 @@ function neph_plugin_default(amp: any) {
     };
   });
 
+  amp.on("session.end", async () => {
+    debug("amp", "session.end");
+    pq.close();
+    // Create a fresh queue in case the session restarts in the same process
+    pq = createPersistentQueue();
+  });
+
   amp.on("agent.start", async () => {
-    agentQueue("set", "amp_running", "true");
+    pq.call("set", "amp_running", "true");
   });
 
   amp.on("agent.end", async () => {
-    agentQueue("unset", "amp_running");
-    agentQueue("checktime");
+    pq.call("unset", "amp_running");
+    pq.call("checktime");
   });
 
   amp.on("tool.call", async (event: any, _ctx: any) => {
