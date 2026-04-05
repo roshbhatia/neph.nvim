@@ -29,6 +29,12 @@ function M.set(gate_state, win)
     return
   end
 
+  -- If an indicator is already showing, clear it first so we don't stack
+  -- indicators and so we restore from the true original winbar on clear().
+  if state.win ~= nil then
+    M.clear()
+  end
+
   -- Save previous winbar for restoration
   state.win = win
   state.previous_winbar = vim.wo[win].winbar or ""
@@ -62,10 +68,9 @@ function M.clear()
   end
 end
 
---- Reset all state (for testing).
+--- Reset all state (for testing). Also clears any live winbar indicator.
 function M._reset()
-  state.win = nil
-  state.previous_winbar = nil
+  M.clear()
 end
 
 return M

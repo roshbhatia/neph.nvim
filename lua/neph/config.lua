@@ -41,6 +41,9 @@ local M = {}
 ---@class neph.ReviewProvider
 ---@field name string
 
+--- Valid layout values for the diff review split.
+---@alias neph.ReviewLayout "vertical" | "horizontal"
+
 ---@class neph.Config
 ---@field keymaps?        boolean              Register default keymaps (default: true)
 ---@field env?            table<string,string> Extra environment variables forwarded to every agent
@@ -50,9 +53,9 @@ local M = {}
 ---@field backend?        table                Injected backend module (required)
 ---@field review_signs?   neph.ReviewSignsConfig  Sign icons for diff review UI
 ---@field review_keymaps? neph.ReviewKeymapsConfig  Keymaps for diff review UI
----@field review_layout?  string               Default diff split layout: "vertical" (default) | "horizontal"
----@field review?         neph.ReviewConfig     Review system configuration
----@field review_provider? neph.ReviewProvider  Explicit review provider (default: noop)
+---@field review_layout?  neph.ReviewLayout    Default diff split layout: "vertical" (default) | "horizontal"
+---@field review?         neph.ReviewConfig    Review system configuration
+---@field review_provider? neph.ReviewProvider Explicit review provider (default: noop)
 ---@field integration_groups? table<string, neph.IntegrationGroup>  Integration group defaults
 ---@field integration_default_group? string    Default integration group name
 

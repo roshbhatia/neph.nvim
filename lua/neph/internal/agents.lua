@@ -64,7 +64,10 @@ function M.init(agent_defs)
 end
 
 --- Return all agents whose executable is present on PATH.
+--- Use this for operations that will actually invoke the agent (e.g. opening a terminal,
+--- building pickers). Agents whose cmd is not found are excluded.
 ---@return neph.AgentDef[]
+---@see neph.internal.agents.get_all_registered for the full list including unavailable agents
 function M.get_all()
   local result = {}
   for _, agent in ipairs(agents) do
@@ -76,7 +79,10 @@ function M.get_all()
 end
 
 --- Return all registered agents, regardless of PATH availability.
+--- Use this for operations that should enumerate every configured agent even when its
+--- executable is not installed (e.g. health checks, fs-watcher setup, tools inspector).
 ---@return neph.AgentDef[]
+---@see neph.internal.agents.get_all for the PATH-filtered subset
 function M.get_all_registered()
   return agents
 end

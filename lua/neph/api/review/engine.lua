@@ -175,6 +175,7 @@ function M.create_session(old_lines, new_lines)
   -- Random-access decisions array: nil = undecided, table = decided
   local decisions_by_idx = {}
   local current_idx = 1
+  local _finalized = false
 
   local self = {}
 
@@ -222,13 +223,21 @@ function M.create_session(old_lines, new_lines)
 
   function self.next_undecided(from)
     from = from or 1
+    -- Clamp to [1, #hunk_ranges] so out-of-bounds values never produce an
+    -- invalid index (sub-1 would return 0; super-N would let the wrap-around
+    -- loop scan phantom nil slots beyond the real hunk array).
+    if from < 1 then
+      from = 1
+    elseif from > #hunk_ranges then
+      from = #hunk_ranges + 1 -- forces first loop to skip, wrap covers 1..N
+    end
     for i = from, #hunk_ranges do
       if not decisions_by_idx[i] then
         return i
       end
     end
-    -- Wrap around
-    for i = 1, from - 1 do
+    -- Wrap around: only scan indices that actually exist (1..from-1)
+    for i = 1, math.min(from - 1, #hunk_ranges) do
       if not decisions_by_idx[i] then
         return i
       end
@@ -312,6 +321,17 @@ function M.create_session(old_lines, new_lines)
   end
 
   function self.finalize()
+    -- Idempotent guard: subsequent calls return the same envelope without
+    -- re-mutating decisions_by_idx or re-running apply_decisions.
+    if _finalized then
+      local decisions = {}
+      for i = 1, #hunk_ranges do
+        decisions[i] = decisions_by_idx[i]
+      end
+      local content = M.apply_decisions(old_lines, new_lines, decisions)
+      return M.build_envelope(decisions, content)
+    end
+    _finalized = true
     -- Treat undecided hunks as rejected (safety)
     for i = 1, #hunk_ranges do
       if not decisions_by_idx[i] then

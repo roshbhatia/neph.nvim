@@ -86,6 +86,10 @@ function neph_plugin_default(amp: any) {
       return { action: "allow" };
     } catch (e) {
       debug("amp", `Review failed: ${e}`);
+      // Notify Neovim so the user knows review was skipped rather than silently
+      // allowing the write. uiNotify is fire-and-forget; if neph is also
+      // unreachable it will swallow the error internally.
+      uiNotify(`neph review failed for ${filePath} — allowing write: ${e}`, "warn");
       return { action: "allow" };
     }
   });

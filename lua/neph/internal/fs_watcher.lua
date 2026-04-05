@@ -10,11 +10,19 @@ local M = {}
 local log = require("neph.internal.log")
 
 local max_watched = 100
+-- Files larger than this (bytes) are skipped in the buffer-vs-disk comparison
+-- to avoid blocking the main loop with a large synchronous read.
+local max_diff_bytes = 1024 * 1024 -- 1 MiB
 
 ---@type table<string, userdata>  filepath → uv_fs_event_t handle
 local watches = {}
 ---@type table<string, userdata>  filepath → debounce timer
 local debounce_timers = {}
+-- Per-filepath monotonic counter incremented each time watch_file creates a
+-- new handle.  Closures capture the epoch at creation; stale callbacks from
+-- a previous handle are silently dropped when the epoch has advanced.
+---@type table<string, integer>
+local watch_epochs = {}
 ---@type boolean
 local active = false
 ---@type integer|nil
@@ -71,6 +79,14 @@ end
 local function buffer_differs_from_disk(filepath)
   local bufnr = vim.fn.bufnr(filepath)
   if bufnr == -1 or not vim.api.nvim_buf_is_valid(bufnr) then
+    return false
+  end
+
+  -- Guard: skip synchronous read for files that exceed the size threshold.
+  -- vim.uv.fs_stat is synchronous but cheap (single syscall, no data read).
+  local stat = vim.uv.fs_stat(filepath)
+  if stat and stat.size > max_diff_bytes then
+    log.debug("fs_watcher", "skipping diff for large file (%d bytes): %s", stat.size, filepath)
     return false
   end
 
@@ -183,6 +199,11 @@ function M.watch_file(filepath)
     return
   end
 
+  -- Bump the epoch for this path so any in-flight callbacks from a previous
+  -- handle (which libuv may still deliver after stop()) are discarded.
+  local epoch = (watch_epochs[filepath] or 0) + 1
+  watch_epochs[filepath] = epoch
+
   local ok, err = handle:start(filepath, {}, function(err_msg, _filename, _events)
     if err_msg then
       log.debug("fs_watcher", "fs_event error for %s: %s", filepath, err_msg)
@@ -196,10 +217,18 @@ function M.watch_file(filepath)
     end
     debounce_timers[filepath] = vim.uv.new_timer()
 
+    -- Capture the epoch at closure-creation time.  If the file is unwatched
+    -- and re-watched before the schedule fires, the epoch will have advanced
+    -- and this callback will be a no-op.
+    local captured_epoch = epoch
     debounce_timers[filepath]:start(
       200,
       0,
       vim.schedule_wrap(function()
+        -- Discard callback if a newer watch was registered for this path.
+        if watch_epochs[filepath] ~= captured_epoch then
+          return
+        end
         local timer = debounce_timers[filepath]
         debounce_timers[filepath] = nil
         if timer then
@@ -234,6 +263,11 @@ function M.unwatch_file(filepath)
     pcall(timer.stop, timer)
     pcall(timer.close, timer)
     debounce_timers[filepath] = nil
+  end
+  -- Invalidate any in-flight callbacks for this path by advancing the epoch.
+  -- This is a no-op when unwatch is followed by watch_file (which bumps again).
+  if watch_epochs[filepath] then
+    watch_epochs[filepath] = (watch_epochs[filepath] or 0) + 1
   end
 end
 
@@ -314,6 +348,7 @@ function M.stop()
     pcall(timer.close, timer)
   end
   debounce_timers = {}
+  watch_epochs = {}
 
   if augroup then
     pcall(vim.api.nvim_del_augroup_by_id, augroup)

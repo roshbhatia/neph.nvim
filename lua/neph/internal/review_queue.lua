@@ -101,12 +101,16 @@ function M.enqueue(params)
   if not active then
     active = params
     log.debug("review_queue", "opening immediately: %s", params.path)
-    if not open_fn then
-      vim.notify("neph: review queue: no open function set — review dropped", vim.log.levels.WARN)
-      active = nil
-      return
-    end
-    open_fn(params)
+    -- vim.schedule so open_fn is safe even when enqueue is called from a
+    -- libuv fast-event context (e.g. fs_watcher callbacks).  The snapshot
+    -- guard prevents a double-open if cancel_path / on_complete fires before
+    -- the scheduled callback runs.
+    local snapshot = active
+    vim.schedule(function()
+      if active == snapshot and open_fn then
+        open_fn(active)
+      end
+    end)
   else
     if #queue >= MAX_QUEUE_SIZE then
       local dropped = table.remove(queue, 1)
@@ -157,7 +161,10 @@ end
 
 ---@return neph.ReviewRequest|nil
 function M.get_active()
-  return active
+  if active == nil then
+    return nil
+  end
+  return vim.deepcopy(active)
 end
 
 --- Mark a path as recently reviewed (suppresses fs_watcher duplicates).
@@ -175,7 +182,14 @@ function M.was_recently_reviewed(path, ttl_ms)
   if not t then
     return false
   end
-  local elapsed_ms = (vim.uv.hrtime() - t) / 1e6
+  local now = vim.uv.hrtime()
+  -- Guard against the (practically impossible) uint64 wrap: treat any
+  -- case where now < t as "not recently reviewed" rather than a negative
+  -- elapsed time which would divide to a huge positive value.
+  if now < t then
+    return false
+  end
+  local elapsed_ms = (now - t) / 1e6
   return elapsed_ms < (ttl_ms or 5000)
 end
 
@@ -256,8 +270,24 @@ function M.cancel_path(path)
 
   -- Cancel active review if it matches
   if active and active.path == path then
+    local cancelled = active
     log.debug("review_queue", "cancelling active review for path: %s", path)
     active = nil
+
+    -- Notify the CLI reviewer so it does not hang waiting for a result.
+    -- Attempt to write a cancellation result via the review API if available.
+    local ok, review_api = pcall(require, "neph.api.review")
+    if ok and review_api.write_result then
+      local envelope = {
+        schema = "review/v1",
+        decision = "reject",
+        content = cancelled.content or "",
+        hunks = {},
+        reason = "cancelled",
+      }
+      review_api.write_result(cancelled.result_path, cancelled.channel_id, cancelled.request_id, envelope)
+    end
+
     -- Open next queued review
     if #queue > 0 then
       active = table.remove(queue, 1)
@@ -301,7 +331,12 @@ function M.enqueue_front(params)
   if not active then
     active = params
     log.debug("review_queue", "opening immediately (front): %s", params.path)
-    open_fn(params)
+    local snapshot = active
+    vim.schedule(function()
+      if active == snapshot and open_fn then
+        open_fn(active)
+      end
+    end)
   else
     table.insert(queue, 1, params)
     log.debug("review_queue", "queued at front: %s (pending=%d)", params.path, #queue)
@@ -348,6 +383,35 @@ end
 ---@return neph.ReviewRequest[]
 function M.get_queue()
   return vim.deepcopy(queue)
+end
+
+--- Reject all pending (queued, not-yet-active) reviews.
+--- Writes a reject envelope for each so CLI callers are not left hanging.
+--- Called from VimLeavePre so callers receive a response before exit.
+---@param reason string  Human-readable rejection reason
+function M.reject_all_pending(reason)
+  if #queue == 0 then
+    return
+  end
+
+  local pending = queue
+  queue = {}
+
+  local ok, review_api = pcall(require, "neph.api.review")
+
+  for _, req in ipairs(pending) do
+    log.debug("review_queue", "reject_all_pending: %s (%s)", req.path, reason)
+    if ok and review_api.write_result then
+      local envelope = {
+        schema = "review/v1",
+        decision = "reject",
+        content = req.content or "",
+        hunks = {},
+        reason = reason,
+      }
+      pcall(review_api.write_result, req.result_path, req.channel_id, req.request_id, envelope)
+    end
+  end
 end
 
 return M

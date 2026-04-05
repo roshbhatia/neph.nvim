@@ -9,6 +9,9 @@ local config = {}
 local parent_pane_id = nil
 ---@type table<number,number>
 local pane_errors = {}
+--- Maximum consecutive failures tracked per pane before the entry is discarded.
+--- Caps table growth when many panes are opened and never explicitly killed.
+local MAX_PANE_ERRORS = 10
 
 local function get_current_pane()
   return tonumber(vim.env.WEZTERM_PANE)
@@ -222,7 +225,13 @@ function M.open(termname, agent_config, cwd)
   wait_for_pane(pane_id, function(ok)
     if not ok then
       vim.notify("Neph/wezterm: pane did not appear within timeout", vim.log.levels.WARN)
-      pane_errors[pane_id] = (pane_errors[pane_id] or 0) + 1
+      local count = (pane_errors[pane_id] or 0) + 1
+      if count < MAX_PANE_ERRORS then
+        pane_errors[pane_id] = count
+      else
+        -- Discard the entry once we hit the cap to bound table size.
+        pane_errors[pane_id] = nil
+      end
     elseif agent_config.ready_pattern then
       watch_for_ready(td, agent_config.ready_pattern)
     end

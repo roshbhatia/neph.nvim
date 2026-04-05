@@ -49,7 +49,10 @@ vim.api.nvim_create_autocmd("VimLeavePre", {
     if not active_review then
       return
     end
+    -- Nil active_review immediately so finish_review (e.g. from a concurrent
+    -- TabClosed) cannot race and double-invoke write_result / on_complete.
     local ar = active_review
+    active_review = nil
     pcall(ar.session.reject_all_remaining, "Neovim exiting")
     local ok, envelope = pcall(function()
       return ar.session.finalize()
@@ -61,7 +64,6 @@ vim.api.nvim_create_autocmd("VimLeavePre", {
       M.write_result(ar.result_path, ar.channel_id, ar.request_id, envelope)
     end
     pcall(review_queue.on_complete, ar.request_id)
-    active_review = nil
   end,
 })
 
@@ -72,7 +74,10 @@ function M.force_cleanup(agent_name)
   if not active_review or active_review.agent ~= agent_name then
     return
   end
+  -- Nil active_review immediately so that finish_review (TabClosed) cannot
+  -- race with this path and cause write_result / on_complete to fire twice.
   local ar = active_review
+  active_review = nil
   pcall(ar.session.reject_all_remaining, "Agent killed")
   local ok, envelope = pcall(ar.session.finalize)
   if ok then
@@ -87,7 +92,6 @@ function M.force_cleanup(agent_name)
     end)
   end
   pcall(review_queue.on_complete, ar.request_id)
-  active_review = nil
 end
 
 --- Public entry point — routes through the review queue.
@@ -387,7 +391,11 @@ function M.open_manual(file_path)
     end
   end
 
-  local request_id = "manual-" .. tostring(vim.fn.localtime()) .. "-" .. tostring(math.random(10000))
+  -- Use hrtime (nanosecond monotonic clock) instead of math.random to avoid
+  -- collisions when multiple manual reviews are triggered in the same second.
+  -- string.format("%d") avoids the scientific notation that tostring() produces
+  -- for large 64-bit integers in LuaJIT.
+  local request_id = "manual-" .. string.format("%d", vim.uv.hrtime())
 
   local params = {
     request_id = request_id,
@@ -449,8 +457,27 @@ function M.write_result(path, channel_id, request_id, envelope)
     end
     local ok, rename_err = os.rename(tmp_path, path)
     if not ok then
-      vim.notify("Neph: failed to rename review result: " .. (rename_err or ""), vim.log.levels.ERROR)
-      return
+      -- os.rename fails across filesystems; fall back to copy + delete.
+      local src = io.open(tmp_path, "r")
+      if not src then
+        vim.notify("Neph: failed to rename review result: " .. (rename_err or ""), vim.log.levels.ERROR)
+        return
+      end
+      local data = src:read("*all")
+      src:close()
+      local dst, dst_err = io.open(path, "w")
+      if not dst then
+        os.remove(tmp_path)
+        vim.notify("Neph: failed to write review result (cross-fs): " .. (dst_err or ""), vim.log.levels.ERROR)
+        return
+      end
+      local wok2, werr2 = dst:write(data)
+      dst:close()
+      os.remove(tmp_path)
+      if not wok2 then
+        vim.notify("Neph: failed to write review result (cross-fs copy): " .. (werr2 or ""), vim.log.levels.ERROR)
+        return
+      end
     end
   end
 

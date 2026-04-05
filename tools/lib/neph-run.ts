@@ -109,6 +109,7 @@ export function createPersistentQueue(): {
 
   function startProc(): void {
     if (closed) return;
+    outBuf = ''; // reset partial-line buffer so stale bytes don't corrupt new proc
     proc = spawn('neph', ['connect'], {
       stdio: ['pipe', 'pipe', 'pipe'],
       env: process.env,
@@ -173,7 +174,9 @@ export function createPersistentQueue(): {
       case 'set':    method = 'status.set';   params = { name: args[1], value: args[2] }; break;
       case 'unset':  method = 'status.unset'; params = { name: args[1] }; break;
       case 'checktime': method = 'buffers.check'; break;
-      default: return;
+      default:
+        log('persistent-queue', `unknown command dropped: ${args[0]}`);
+        return;
     }
     queue = queue.then(() =>
       sendCommand(method, params).catch(() => { /* fire-and-forget */ })
@@ -184,6 +187,9 @@ export function createPersistentQueue(): {
     closed = true;
     if (proc?.stdin?.writable) proc.stdin.end();
     proc = null;
+    // reject all in-flight requests so callers don't hang forever
+    for (const [, p] of pending) p.reject(new Error('queue closed'));
+    pending.clear();
   };
 
   return { call, close };

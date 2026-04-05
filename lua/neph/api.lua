@@ -20,6 +20,28 @@ local M = {}
 
 local gate_ui = require("neph.internal.gate_ui")
 
+--- Return the current window if it is a normal (non-floating) window, or the
+--- first non-floating window in the window list. Falls back to the current
+--- window if no non-floating window can be found (unlikely in practice).
+--- This prevents the gate winbar indicator from landing on a floating terminal
+--- or picker window where it would be invisible or cosmetically broken.
+---@return integer
+local function non_floating_win()
+  local cur = vim.api.nvim_get_current_win()
+  local cfg = vim.api.nvim_win_get_config(cur)
+  -- relative == "" means the window is not floating
+  if cfg.relative == "" then
+    return cur
+  end
+  for _, w in ipairs(vim.api.nvim_list_wins()) do
+    local wcfg = vim.api.nvim_win_get_config(w)
+    if wcfg.relative == "" then
+      return w
+    end
+  end
+  return cur
+end
+
 --- Get the active agent name, notifying if none is set.
 ---@return string|nil
 local function get_active()
@@ -87,6 +109,13 @@ function M.comment()
 end
 
 --- Open an interactive review of buffer vs disk changes.
+---
+--- NOTE: When `path` is relative it is expanded to an absolute path at
+--- call-time using the cwd that is current *right now*. If the cwd changes
+--- between this call and the moment the review window opens (e.g. an
+--- autocmd or another plugin changes directories in the same tick), the
+--- resolved path will still point to the file that was intended, because
+--- the expansion is done eagerly before any async work begins.
 ---@param path? string  File path (defaults to current buffer's file)
 ---@return {ok: boolean, msg?: string, error?: string}
 function M.review(path)
@@ -98,6 +127,8 @@ function M.review(path)
     end
     path = bufname
   end
+  -- Resolve to absolute path eagerly so the value is stable even if the cwd
+  -- changes before the review UI opens (see NOTE above).
   path = vim.fn.fnamemodify(path, ":p")
   local result = require("neph.api.review").open_manual(path)
   if not result.ok then
@@ -106,29 +137,51 @@ function M.review(path)
   return result
 end
 
+--- Maximum byte length for a resent prompt. Prompts longer than this are
+--- likely accidentally-pasted file contents and would flood the agent's
+--- input pipe. Adjust via this constant if your workflow requires longer
+--- prompts (the right fix is to use context slots instead).
+local RESEND_MAX_BYTES = 8192
+
 --- Resend the previous prompt to the active agent.
+--- Prompts longer than RESEND_MAX_BYTES are blocked with a warning to avoid
+--- flooding the agent with accidentally-pasted file contents.
 function M.resend()
   local active = get_active()
   if not active then
     return
   end
   local last = require("neph.internal.terminal").get_last_prompt(active)
-  if last and last ~= "" then
-    require("neph.internal.session").ensure_active_and_send(last)
-  else
+  if not last or last == "" then
     vim.notify("No previous prompt found", vim.log.levels.WARN)
+    return
   end
+  if #last > RESEND_MAX_BYTES then
+    vim.notify(
+      string.format(
+        "Neph: last prompt is %d bytes (limit %d) — use context slots for large inputs",
+        #last,
+        RESEND_MAX_BYTES
+      ),
+      vim.log.levels.WARN
+    )
+    return
+  end
+  require("neph.internal.session").ensure_active_and_send(last)
 end
 
---- Cycle the review gate: normal → hold → bypass → normal.
+--- Cycle the review gate: normal → hold → release.
 --- In hold mode, reviews accumulate silently until released.
---- In bypass mode, all agent writes are auto-accepted.
+--- Use gate_bypass() / gate_release() to explicitly enter or leave bypass mode.
 function M.gate()
   local gate = require("neph.internal.gate")
   local current = gate.get()
+  -- Resolve a non-floating window at call-time so the indicator is placed on
+  -- a regular editor split rather than a floating terminal or picker.
+  local win = non_floating_win()
   if current == "normal" then
     gate.set("hold")
-    gate_ui.set("hold")
+    gate_ui.set("hold", win)
     vim.notify("Neph: reviews held — writes will accumulate", vim.log.levels.INFO)
   elseif current == "hold" then
     gate.release()
@@ -144,15 +197,18 @@ end
 
 --- Set gate to hold mode explicitly.
 function M.gate_hold()
+  local win = non_floating_win()
   require("neph.internal.gate").set("hold")
-  gate_ui.set("hold")
+  gate_ui.set("hold", win)
   vim.notify("Neph: reviews held", vim.log.levels.INFO)
 end
 
---- Set gate to bypass mode explicitly (auto-accepts all writes).
+--- Set gate to bypass mode explicitly (auto-accepts all writes without review).
 function M.gate_bypass()
+  local win = non_floating_win()
   require("neph.internal.gate").set("bypass")
-  gate_ui.set("bypass")
+  gate_ui.set("bypass", win)
+  vim.notify("Neph: bypass mode — all writes auto-accepted without review", vim.log.levels.WARN)
 end
 
 --- Release hold and drain accumulated reviews.

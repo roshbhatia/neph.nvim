@@ -14,10 +14,24 @@ local function make_request(id, path, agent)
   }
 end
 
+-- Flush pending vim.schedule callbacks so synchronous assertions work after enqueue.
+local function flush()
+  vim.wait(50, function()
+    return false
+  end)
+end
+
 describe("neph.internal.review_queue", function()
   local opened_params = {}
 
   before_each(function()
+    -- Reset the old module before discarding it so any pending vim.schedule
+    -- callbacks clear their captured open_fn reference.  Without this, stale
+    -- scheduled callbacks fire during a later test's flush() and insert into
+    -- the shared opened_params variable via the old closure.
+    if review_queue and review_queue._reset then
+      review_queue._reset()
+    end
     package.loaded["neph.internal.review_queue"] = nil
     review_queue = require("neph.internal.review_queue")
     opened_params = {}
@@ -31,6 +45,7 @@ describe("neph.internal.review_queue", function()
     it("opens first review immediately", function()
       local req = make_request("r1", "/tmp/a.lua")
       review_queue.enqueue(req)
+      flush()
       assert.are.equal(1, #opened_params)
       assert.are.equal("r1", opened_params[1].request_id)
     end)
@@ -38,6 +53,7 @@ describe("neph.internal.review_queue", function()
     it("queues second review when one is active", function()
       review_queue.enqueue(make_request("r1", "/tmp/a.lua"))
       review_queue.enqueue(make_request("r2", "/tmp/b.lua"))
+      flush()
       -- Only first opened
       assert.are.equal(1, #opened_params)
       assert.are.equal(1, review_queue.count())
@@ -55,18 +71,22 @@ describe("neph.internal.review_queue", function()
   describe("on_complete", function()
     it("clears active on completion", function()
       review_queue.enqueue(make_request("r1", "/tmp/a.lua"))
+      flush()
       review_queue.on_complete("r1")
       assert.is_nil(review_queue.get_active())
     end)
 
     it("does not open next if queue is empty", function()
       review_queue.enqueue(make_request("r1", "/tmp/a.lua"))
+      flush()
       review_queue.on_complete("r1")
+      flush()
       assert.are.equal(1, #opened_params) -- only the first
     end)
 
     it("ignores completion for wrong request_id", function()
       review_queue.enqueue(make_request("r1", "/tmp/a.lua"))
+      flush()
       review_queue.on_complete("wrong-id")
       assert.is_not_nil(review_queue.get_active())
     end)
@@ -118,6 +138,7 @@ describe("neph.internal.review_queue", function()
   describe("is_in_review", function()
     it("returns true for active review path", function()
       review_queue.enqueue(make_request("r1", "/tmp/a.lua"))
+      flush()
       assert.is_true(review_queue.is_in_review("/tmp/a.lua"))
     end)
 
@@ -129,6 +150,7 @@ describe("neph.internal.review_queue", function()
 
     it("returns false for unknown path", function()
       review_queue.enqueue(make_request("r1", "/tmp/a.lua"))
+      flush()
       assert.is_false(review_queue.is_in_review("/tmp/unknown.lua"))
     end)
   end)
@@ -145,12 +167,14 @@ describe("neph.internal.review_queue", function()
 
     it("cancels active review if path matches", function()
       review_queue.enqueue(make_request("r1", "/tmp/a.lua"))
+      flush()
       review_queue.cancel_path("/tmp/a.lua")
       assert.is_nil(review_queue.get_active())
     end)
 
     it("is a no-op for unknown path", function()
       review_queue.enqueue(make_request("r1", "/tmp/a.lua"))
+      flush()
       review_queue.cancel_path("/tmp/unknown.lua")
       assert.is_not_nil(review_queue.get_active())
       assert.are.equal(0, review_queue.count())
@@ -188,6 +212,7 @@ describe("neph.internal.review_queue", function()
         table.insert(opened, params)
       end)
       review_queue.enqueue(make_request("r2", "/tmp/b.lua"))
+      flush()
       assert.are.equal(1, #opened)
       assert.are.equal("r2", opened[1].request_id)
     end)
@@ -230,7 +255,7 @@ describe("neph.internal.review_queue", function()
         review_queue.enqueue(make_request("r" .. i, "/tmp/" .. i .. ".lua"))
       end
       assert.are.equal(50, review_queue.count())
-      -- Drain active + a few queued
+      -- Drain active + a few queued (active is promoted synchronously in on_complete)
       review_queue.on_complete("r0")
       review_queue.on_complete(review_queue.get_active().request_id)
       -- count should have decreased
@@ -259,8 +284,9 @@ describe("neph.internal.review_queue", function()
       for i = 1, 10 do
         review_queue.enqueue(make_request("burst-" .. i, "/tmp/burst" .. i .. ".lua", "claude"))
       end
+      flush()
 
-      -- First opened immediately
+      -- First opened after flush
       assert.is_not_nil(review_queue.get_active())
       assert.are.equal("burst-1", review_queue.get_active().request_id)
       assert.are.equal(1, #opened_params)
@@ -293,8 +319,8 @@ describe("neph.internal.review_queue", function()
       end
 
       assert.are.equal(10, review_queue.total())
-      local active = review_queue.get_active()
-      review_queue.on_complete(active.request_id)
+      local cur_active = review_queue.get_active()
+      review_queue.on_complete(cur_active.request_id)
       -- total decreased (next may be promoted via vim.schedule, but pending list shrinks)
       assert.is_true(review_queue.total() <= 9)
     end)
@@ -354,6 +380,7 @@ describe("review_queue gate integration", function()
       opened = opened + 1
     end)
     local ok = gate_aware_enqueue(make_req("r1", "/tmp/a.lua"))
+    flush()
     assert.is_true(ok)
     assert.are.equal(1, opened)
   end)
@@ -389,10 +416,12 @@ describe("review_queue gate integration", function()
     end)
     gate.set("hold")
     gate_aware_enqueue(make_req("r1", "/tmp/a.lua")) -- suppressed
+    flush()
     assert.are.equal(0, opened)
 
     gate.release()
     local ok = gate_aware_enqueue(make_req("r2", "/tmp/b.lua"))
+    flush()
     assert.is_true(ok)
     assert.are.equal(1, opened)
   end)
@@ -421,7 +450,8 @@ describe("review_queue gate integration", function()
     gate_aware_enqueue(make_req("r1", "/tmp/a.lua"))
     gate_aware_enqueue(make_req("r2", "/tmp/b.lua"))
     gate_aware_enqueue(make_req("r3", "/tmp/c.lua"))
-    -- First opened immediately; rest queued
+    flush()
+    -- First opened after flush; rest queued
     assert.are.equal(1, #opened)
     assert.are.equal("r1", opened[1])
     assert.are.equal(2, rq.count())

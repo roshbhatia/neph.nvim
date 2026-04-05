@@ -106,8 +106,11 @@ function M.open_diff_tab(path, old_lines, new_lines, opts)
     vim.cmd("wincmd h") -- focus left
   end
 
-  -- Guard autocmd: re-force line numbers on window enter (scoped to tab)
-  local guard_augroup = vim.api.nvim_create_augroup("neph_review_guard", { clear = true })
+  -- Guard autocmd: re-force line numbers on window enter (scoped to tab).
+  -- Use a unique name per request_id so simultaneous reviews (e.g. bypass gate)
+  -- do not stomp each other's WinEnter callbacks.
+  local guard_name = "neph_review_guard_" .. (opts.request_id or tostring(vim.uv.hrtime()))
+  local guard_augroup = vim.api.nvim_create_augroup(guard_name, { clear = true })
   vim.api.nvim_create_autocmd("WinEnter", {
     group = guard_augroup,
     callback = function()
@@ -639,10 +642,15 @@ function M.start_review(session, ui_state, on_done)
       title_pos = "center",
     })
 
+    -- Track on ui_state so cleanup() can close it if Neovim shuts down or
+    -- the review is cancelled while the summary float is open.
+    ui_state.summary_win = summary_win
+
     local function close_summary()
       if vim.api.nvim_win_is_valid(summary_win) then
         pcall(vim.api.nvim_win_close, summary_win, true)
       end
+      ui_state.summary_win = nil
     end
 
     vim.keymap.set("n", "<CR>", function()
@@ -719,6 +727,17 @@ function M.start_review(session, ui_state, on_done)
     toggle_help_popup(ui_state, keymaps)
   end, "Neph: toggle help")
 
+  -- Right pane is read-only; keymaps are only active on the left buffer.
+  -- Show a static winbar hint so the user knows to move focus left.
+  if vim.api.nvim_win_is_valid(ui_state.right_win) then
+    local accept_key = display_key(keymaps.accept or "ga")
+    vim.wo[ui_state.right_win].winbar = string.format(
+      "%%#DiagnosticHint# PROPOSED (read-only) %%*  use %s/%s on left pane",
+      accept_key,
+      display_key(keymaps.reject or "gr")
+    )
+  end
+
   -- Initial: jump to first hunk and refresh UI
   local hunks = session.get_hunk_ranges()
   if #hunks > 0 then
@@ -754,6 +773,14 @@ function M.cleanup(ui_state)
   -- Close help popup if open
   if ui_state.help_win and vim.api.nvim_win_is_valid(ui_state.help_win) then
     pcall(vim.api.nvim_win_close, ui_state.help_win, true)
+    ui_state.help_win = nil
+  end
+
+  -- Close submit summary float if it was open when cleanup was called
+  -- (e.g. user closed Neovim or the tab while the summary was displayed).
+  if ui_state.summary_win and vim.api.nvim_win_is_valid(ui_state.summary_win) then
+    pcall(vim.api.nvim_win_close, ui_state.summary_win, true)
+    ui_state.summary_win = nil
   end
 
   -- Clean up guard autocmd

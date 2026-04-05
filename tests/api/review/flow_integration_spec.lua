@@ -382,10 +382,14 @@ describe("flow_integration: queue drain", function()
       orig_on_complete(id)
     end
 
-    -- open() routes through queue
+    -- open() routes through queue; open_fn fires via vim.schedule so flush first
     local review = require("neph.api.review")
     review.open({ request_id = "q1", path = path1, content = "a", mode = "pre_write" })
     review.open({ request_id = "q2", path = path2, content = "b", mode = "pre_write" })
+    -- Flush scheduled callbacks so 0-hunk auto-complete path runs
+    vim.wait(50, function()
+      return false
+    end)
 
     os.remove(path1)
     os.remove(path2)

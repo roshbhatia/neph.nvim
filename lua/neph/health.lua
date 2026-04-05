@@ -1,5 +1,30 @@
 local M = {}
 
+local function check_neovim_version()
+  vim.health.start("neph: Neovim version")
+
+  -- neph.nvim requires Neovim 0.10+ (vim.uv replaces vim.loop, inline:char diffopt, etc.)
+  local min_major, min_minor = 0, 10
+  local ver = vim.version()
+  if ver.major > min_major or (ver.major == min_major and ver.minor >= min_minor) then
+    vim.health.ok(
+      string.format("Neovim %d.%d.%d (>= %d.%d required)", ver.major, ver.minor, ver.patch, min_major, min_minor)
+    )
+  else
+    vim.health.error(
+      string.format(
+        "Neovim %d.%d.%d is too old — neph.nvim requires >= %d.%d.\n"
+          .. "  Some features (vim.uv, inline diff) will not work correctly.",
+        ver.major,
+        ver.minor,
+        ver.patch,
+        min_major,
+        min_minor
+      )
+    )
+  end
+end
+
 local function run_cli(cmd)
   local output = vim.fn.systemlist(cmd .. " 2>&1")
   local code = vim.v.shell_error
@@ -82,14 +107,29 @@ end
 local function check_socket()
   vim.health.start("neph: Neovim RPC socket")
 
+  -- Primary: vim.v.servername (set when Neovim starts with --listen or after serverstart())
+  -- Secondary: neph.internal.channel tracks the socket path stored by setup() explicitly
   local servername = vim.v.servername
-  if not servername or servername == "" then
+  local ok_channel, channel = pcall(require, "neph.internal.channel")
+  local channel_path = ok_channel and channel.socket_path() or ""
+
+  local active_path = (servername ~= nil and servername ~= "") and servername or channel_path
+
+  if active_path == "" then
     vim.health.warn(
       "Neovim is not listening on a socket ($NVIM_SOCKET_PATH unset).\n"
         .. "  Agents cannot call back for review/UI. Ensure socket = { enable = true } in setup()."
     )
   else
-    vim.health.ok("Neovim socket: " .. servername)
+    if servername and servername ~= "" then
+      vim.health.ok("Neovim socket (vim.v.servername): " .. servername)
+    else
+      vim.health.ok("Neovim socket (channel): " .. channel_path)
+    end
+    -- Also surface channel path when it differs from servername (secondary server via serverstart)
+    if ok_channel and channel_path ~= "" and channel_path ~= servername then
+      vim.health.ok("neph channel socket: " .. channel_path)
+    end
     local env = os.getenv("NVIM_SOCKET_PATH") or os.getenv("NVIM")
     if env then
       vim.health.ok("$NVIM_SOCKET_PATH forwarded to agent processes")
@@ -98,7 +138,7 @@ local function check_socket()
         "$NVIM_SOCKET_PATH not set in shell env — new terminal agents may not find the socket.\n"
           .. "  neph forwards the socket via agent env vars, so this is usually fine.\n"
           .. "  Current socket: "
-          .. servername
+          .. active_path
       )
     end
   end
@@ -224,6 +264,7 @@ local function check_deps()
 end
 
 function M.check()
+  check_neovim_version()
   check_build()
   check_cli()
   check_socket()

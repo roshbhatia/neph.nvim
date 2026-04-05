@@ -163,7 +163,9 @@ function M.open(termname, agent_config, cwd)
       end
       timeout_timer:close()
       pcall(vim.fn.delete, fifo_path)
-      vim.notify("Neph/zellij: timeout waiting for pane ID", vim.log.levels.WARN)
+      -- The pane was already spawned via jobstart; without a pane ID we have no
+      -- handle to close it, so it will remain as an orphaned Zellij pane.
+      vim.notify("Neph/zellij: timeout waiting for pane ID – the spawned pane may be orphaned", vim.log.levels.WARN)
       td.ready = true
       if td.on_ready then
         td.on_ready()
@@ -290,10 +292,13 @@ function M.send(td, text, opts)
   end
   local full_text = opts.submit and (text .. "\n") or text
   -- move-focus right -> write-chars -> move-focus left
-  local escaped = vim.fn.shellescape(full_text)
+  -- NOTE: do NOT pre-shellescape full_text here; zellij_actions_chain calls
+  -- vim.fn.shellescape on every element of each action table, so passing an
+  -- already-escaped string would produce double-escaping and zellij would
+  -- receive the literal quote characters instead of the intended text.
   zellij_actions_chain({
     { "move-focus", "right" },
-    { "write-chars", escaped },
+    { "write-chars", full_text },
     { "move-focus", "left" },
   }, function(_, code)
     if code ~= 0 then

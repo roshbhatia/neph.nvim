@@ -7,18 +7,24 @@ local M = {}
 
 ---Reload all buffers from disk (`:checktime`).
 ---@param params? table Unused, present for RPC dispatch consistency.
----@return {ok: boolean}
+---@return {ok: boolean, error?: {code: string, message: string}}
 function M.checktime(_params)
-  vim.cmd("checktime")
+  local ok, err = pcall(vim.cmd, "checktime")
+  if not ok then
+    return { ok = false, error = { code = "CHECKTIME_FAILED", message = tostring(err) } }
+  end
   return { ok = true }
 end
 
 ---Close the current tab (`:tabclose`).
 ---@param params? table Unused, present for RPC dispatch consistency.
----@return {ok: boolean}
+---@return {ok: boolean, error?: {code: string, message: string}}
 function M.close_tab(_params)
   if #vim.api.nvim_list_tabpages() > 1 then
-    vim.cmd("tabclose")
+    local ok, err = pcall(vim.cmd, "tabclose")
+    if not ok then
+      return { ok = false, error = { code = "TABCLOSE_FAILED", message = tostring(err) } }
+    end
   end
   return { ok = true }
 end

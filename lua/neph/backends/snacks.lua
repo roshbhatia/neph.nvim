@@ -36,6 +36,9 @@ function M.open(termname, agent_config, cwd)
     cwd = cwd,
     name = termname,
     ready = not agent_config.ready_pattern,
+    -- Set to true by kill() so queued schedule_wrap callbacks can detect that
+    -- the terminal has been torn down and skip on_ready invocation.
+    _killed = false,
   }
 
   -- Watch terminal output for ready pattern
@@ -76,7 +79,9 @@ function M.open(termname, agent_config, cwd)
           td.ready_timer:close()
           td.ready_timer = nil
         end
-        if not matched then
+        -- Guard: kill() may have been called while this callback was queued.
+        -- Do not invoke on_ready on a terminal that has already been torn down.
+        if not matched and not td._killed then
           matched = true
           td.ready = true
           if td.on_ready then
@@ -122,6 +127,9 @@ function M.kill(term_data)
   if not term_data then
     return
   end
+  -- Mark killed first so any queued schedule_wrap timer callbacks observe it
+  -- before they attempt to call on_ready.
+  term_data._killed = true
   if term_data.ready_timer then
     pcall(term_data.ready_timer.stop, term_data.ready_timer)
     pcall(term_data.ready_timer.close, term_data.ready_timer)
@@ -148,7 +156,9 @@ function M.send(td, text, opts)
     return
   end
   local full_text = opts.submit and (text .. "\n") or text
-  vim.fn.chansend(chan, full_text)
+  -- chansend returns 0 and errors when the job has exited but the buffer is still
+  -- valid (stale terminal_job_id). Wrap in pcall so callers are not interrupted.
+  pcall(vim.fn.chansend, chan, full_text)
 end
 
 function M.cleanup_all(terminals)

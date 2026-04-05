@@ -236,6 +236,8 @@ export async function runCommand(transport: NvimTransport | null, command: strin
     process.stdin.setEncoding('utf8');
     let buf = '';
 
+    let connectionBroken = false;
+
     const processLine = async (line: string) => {
       line = line.trim();
       if (!line) return;
@@ -251,17 +253,27 @@ export async function runCommand(transport: NvimTransport | null, command: strin
         process.stdout.write(JSON.stringify({ id: req.id, ok: true, result }) + '\n');
       } catch (err) {
         process.stdout.write(JSON.stringify({ id: req.id, ok: false, error: String(err) }) + '\n');
+        // A transport error is fatal — the connection is gone. Tear down so
+        // subsequent requests don't pile up as endless failures.
+        connectionBroken = true;
+        try { await transport.close(); } catch {}
+        process.exit(1);
       }
     };
 
     process.stdin.on('data', (chunk: string) => {
-      buf += chunk;
-      const lines = buf.split('\n');
-      buf = lines.pop() ?? '';
-      for (const line of lines) {
-        processLine(line).catch((err) => {
-          process.stderr.write(`neph connect: error: ${err}\n`);
-        });
+      if (connectionBroken) return;
+      try {
+        buf += chunk;
+        const lines = buf.split('\n');
+        buf = lines.pop() ?? '';
+        for (const line of lines) {
+          processLine(line).catch((err) => {
+            process.stderr.write(`neph connect: unhandled error: ${err}\n`);
+          });
+        }
+      } catch (err) {
+        process.stderr.write(`neph connect: data handler error: ${err}\n`);
       }
     });
 
@@ -269,12 +281,12 @@ export async function runCommand(transport: NvimTransport | null, command: strin
       if (buf.trim()) {
         await processLine(buf).catch(() => {});
       }
-      await transport.close();
+      try { await transport.close(); } catch {}
       process.exit(0);
     });
 
     process.stdin.on('error', async () => {
-      await transport.close();
+      try { await transport.close(); } catch {}
       process.exit(0);
     });
 

@@ -42,6 +42,14 @@ local function source_for(overrides, group_value, key)
   return "default"
 end
 
+--- Resolve the integration pipeline for an agent.
+---
+--- Resolution order per field: agent.integration_overrides > group > "noop".
+---
+--- Fallback behaviour when integration_group is set but absent from config.integration_groups:
+---   The group name is preserved in pipeline.group so callers can inspect it, but every
+---   field falls through to the "noop" default because the group table is treated as empty.
+---   No error is raised; misconfiguration should be caught at setup time via contracts.
 ---@param agent neph.AgentDef
 ---@return neph.IntegrationPipeline
 function M.resolve(agent)
@@ -49,6 +57,8 @@ function M.resolve(agent)
   local groups = config.integration_groups or {}
   local default_group = config.integration_default_group or "default"
   local group_name = agent.integration_group or default_group
+  -- When group_name is not in config.integration_groups the group table is empty,
+  -- so all fields fall back to "noop" (see resolution order above).
   local group = groups[group_name] or {}
   local overrides = agent.integration_overrides or {}
 

@@ -18,6 +18,8 @@ local terminals = {}
 local active_terminal = nil
 ---@type integer|nil
 local augroup = nil
+---@type userdata|nil  periodic staleness check timer
+local stale_timer = nil
 ---@type table<string, userdata>  termname → pending retry timer
 local pending_timers = {}
 ---@type table<string, {text:string, opts:table}[]>  termname → queued sends
@@ -69,7 +71,14 @@ function M.setup(opts, backend_mod)
         for name in pairs(terminals) do
           vim.g[name .. "_active"] = nil
         end
-        backend.cleanup_all(terminals)
+        -- Stop periodic staleness timer
+        if stale_timer then
+          pcall(stale_timer.stop, stale_timer)
+          pcall(stale_timer.close, stale_timer)
+          stale_timer = nil
+        end
+        -- Wrap backend.cleanup_all so failures don't block remaining teardown
+        pcall(backend.cleanup_all, terminals)
         -- Clean up all pending timers
         for name, pt in pairs(pending_timers) do
           pcall(pt.stop, pt)
@@ -84,8 +93,50 @@ function M.setup(opts, backend_mod)
         pcall(function()
           require("neph.internal.fs_watcher").stop()
         end)
+        -- Clear gate winbar indicator so the previous winbar value is restored
+        -- before Neovim tears down windows (best-effort; window may already be
+        -- invalid, which pcall swallows).
+        pcall(function()
+          require("neph.internal.gate_ui").clear()
+        end)
+        -- Reject all pending queued reviews so CLI callers are not left hanging
+        -- until their 300-second timeout expires.
+        pcall(function()
+          require("neph.internal.review_queue").reject_all_pending("Neovim exiting")
+        end)
       end,
     })
+
+    -- Periodic staleness check: mark panes stale every 30 s without waiting
+    -- for user interaction (CursorHold/FocusGained).
+    if vim.uv then
+      stale_timer = vim.uv.new_timer()
+      if stale_timer then
+        stale_timer:start(
+          30000,
+          30000,
+          vim.schedule_wrap(function()
+            local keys = vim.tbl_keys(terminals)
+            for _, name in ipairs(keys) do
+              local td = terminals[name]
+              if td then
+                if not backend.is_visible(td) then
+                  td.pane_id = nil
+                  td.win = nil
+                  td.stale_since = os.time()
+                  vim.g[name .. "_active"] = nil
+                  if active_terminal == name then
+                    active_terminal = nil
+                  end
+                elseif td.stale_since then
+                  td.stale_since = nil
+                end
+              end
+            end
+          end)
+        )
+      end
+    end
   end
 end
 
@@ -169,15 +220,17 @@ function M.open(termname)
       end
     end)
 
-    -- Set on_ready callback to drain queued text
+    -- Set on_ready callback to drain queued text.
+    -- The queue may already contain entries added before open() was called
+    -- (e.g. via ensure_active_and_send racing with a slow open).
     td.on_ready = function()
       log.debug("session", "ready: %s", termname)
       local queue = ready_queue[termname]
       if queue then
+        ready_queue[termname] = nil
         for _, entry in ipairs(queue) do
           pcall(M.send, termname, entry.text, entry.opts)
         end
-        ready_queue[termname] = nil
       end
     end
 
@@ -185,6 +238,10 @@ function M.open(termname)
     if td.ready then
       td.on_ready()
     end
+  else
+    -- backend.open returned nil: clear any stale terminals entry so a
+    -- subsequent open() is not short-circuited by the stale record.
+    terminals[termname] = nil
   end
 end
 
@@ -253,7 +310,11 @@ function M.kill_session(termname)
 
   local td = terminals[termname]
   if td and backend then
-    backend.kill(td)
+    -- Wrap in pcall: a backend failure must not prevent cleanup below.
+    local ok, err = pcall(backend.kill, td)
+    if not ok then
+      log.debug("session", "kill_session: backend.kill error for %s: %s", termname, tostring(err))
+    end
   end
   terminals[termname] = nil
   ready_queue[termname] = nil

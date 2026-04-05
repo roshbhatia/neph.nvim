@@ -1,3 +1,5 @@
+// tests/transport.test.ts
+// Unit tests for discoverNvimSocket() and SocketTransport reliability.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // Must be hoisted before the module under test is imported.
@@ -8,11 +10,66 @@ vi.mock('node:child_process');
 import * as fs from 'node:fs';
 import * as childProcess from 'node:child_process';
 import { globSync } from 'glob';
-import { discoverNvimSocket } from '../src/transport';
+import { discoverNvimSocket, SocketTransport } from '../src/transport';
+import { EventEmitter } from 'node:events';
+import type * as net from 'node:net';
 
-// Helper: make a socket path that encodes pid using the Linux /tmp/nvim.<pid>/0 pattern.
+// ---------------------------------------------------------------------------
+// Socket / client fakes
+// ---------------------------------------------------------------------------
+
+function makeFakeSocket(): net.Socket {
+  const emitter = new EventEmitter();
+  const sock = Object.assign(emitter, {
+    write: vi.fn(),
+    end: vi.fn((_cb?: () => void) => { if (typeof _cb === 'function') _cb(); }),
+    destroy: vi.fn(),
+    pipe: vi.fn(),
+  }) as unknown as net.Socket;
+  return sock;
+}
+
+function makeFakeNeovimClient(overrides: Partial<{
+  executeLua: ReturnType<typeof vi.fn>;
+  request: ReturnType<typeof vi.fn>;
+  close: ReturnType<typeof vi.fn>;
+}> = {}) {
+  const emitter = new EventEmitter();
+  return Object.assign(emitter, {
+    executeLua: overrides.executeLua ?? vi.fn().mockResolvedValue(undefined),
+    request: overrides.request ?? vi.fn().mockResolvedValue([1, {}]),
+    close: overrides.close ?? vi.fn().mockResolvedValue(undefined),
+    off: vi.fn((event: string, listener: (...args: any[]) => void) =>
+      emitter.removeListener(event, listener),
+    ),
+  });
+}
+
+// Build a SocketTransport with injected fakes.
+// connectImmediately: if true, the fake socket emits 'connect' via setImmediate.
+function makeTransport(
+  fakeSocket: net.Socket,
+  fakeClient: ReturnType<typeof makeFakeNeovimClient>,
+  connectImmediately = false,
+): SocketTransport {
+  if (connectImmediately) {
+    setImmediate(() => (fakeSocket as unknown as EventEmitter).emit('connect'));
+  }
+  return new SocketTransport('/fake.sock', {
+    socketFactory: () => fakeSocket,
+    clientFactory: () => fakeClient as any,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// discoverNvimSocket helpers
+// ---------------------------------------------------------------------------
+
 const sockFor = (pid: number) => `/tmp/nvim.${pid}/0`;
 
+// ---------------------------------------------------------------------------
+// SocketTransport.close — source-level check
+// ---------------------------------------------------------------------------
 describe('SocketTransport.close', () => {
   it('calls close() on the neovim client', async () => {
     const { readFileSync } = await vi.importActual<typeof import('node:fs')>('node:fs');
@@ -22,16 +79,16 @@ describe('SocketTransport.close', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// discoverNvimSocket
+// ---------------------------------------------------------------------------
 describe('discoverNvimSocket', () => {
   let killSpy: ReturnType<typeof vi.spyOn>;
   let cwdSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
-    // Every socket file "exists".
     vi.mocked(fs.existsSync).mockReturnValue(true as any);
-    // /proc/<pid>/cwd doesn't exist on macOS CI; throw so we fall through to lsof.
     vi.mocked(fs.lstatSync).mockImplementation(() => { throw new Error('no proc'); });
-    // All PIDs are alive by default.
     killSpy = vi.spyOn(process, 'kill').mockReturnValue(true as any);
     cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue('/project/a');
   });
@@ -40,8 +97,6 @@ describe('discoverNvimSocket', () => {
     vi.restoreAllMocks();
   });
 
-  // Make execSync return lsof output for a given pid→cwd mapping, and
-  // git-rev-parse output for a given dir→root mapping.
   function setupExecSync(
     pidCwds: Record<number, string>,
     gitRoots: Record<string, string>,
@@ -78,7 +133,6 @@ describe('discoverNvimSocket', () => {
     vi.mocked(globSync).mockImplementation((p: any) =>
       String(p).startsWith('/tmp') ? [sockFor(111)] : [],
     );
-    // lsof and git both fail — no cwd info — but there is only one Neovim
     vi.mocked(childProcess.execSync).mockImplementation(() => { throw new Error(); });
     expect(discoverNvimSocket()).toBe(sockFor(111));
   });
@@ -111,8 +165,6 @@ describe('discoverNvimSocket', () => {
   });
 
   it('falls back to git-root matching when Neovim was opened in a project subdirectory', () => {
-    // CLI is at the project root; Neovim was opened inside src/ —
-    // cwd prefix check fails in both directions, so git root is the tie-breaker.
     vi.mocked(globSync).mockImplementation((p: any) =>
       String(p).startsWith('/tmp') ? [sockFor(111), sockFor(222)] : [],
     );
@@ -135,15 +187,12 @@ describe('discoverNvimSocket', () => {
     cwdSpy.mockReturnValue('/tmp/agent-workdir');
     setupExecSync(
       { 111: '/project/a', 222: '/project/b' },
-      // CLI cwd is not in the gitRoots map → git rev-parse throws → no match
       { '/project/a': '/project/a', '/project/b': '/project/b' },
     );
     expect(discoverNvimSocket()).toBeNull();
   });
 
   it('returns null when two instances share the same git root (ambiguous)', () => {
-    // Two Neovim instances with the same git root, different cwds,
-    // CLI cwd doesn't prefix-match either → should return null
     vi.mocked(globSync).mockImplementation((p: any) =>
       String(p).startsWith('/tmp') ? [sockFor(111), sockFor(222)] : [],
     );
@@ -173,5 +222,142 @@ describe('discoverNvimSocket', () => {
       },
     );
     expect(discoverNvimSocket()).toBeNull();
+  });
+
+  // Issue 1: macOS glob pattern corrected to /var/folders/*/*/T/nvim.<pid>/0
+  it('discovers macOS-style sockets from /var/folders/*/*/T/nvim.<pid>/0', () => {
+    const macSock = '/var/folders/ab/xyz123/T/nvim.9999/0';
+    vi.mocked(globSync).mockImplementation((p: any) => {
+      const ps = String(p);
+      if (ps.startsWith('/tmp')) return [];
+      if (ps.startsWith('/var/folders')) return [macSock];
+      return [];
+    });
+    vi.mocked(childProcess.execSync).mockImplementation(() => { throw new Error(); });
+    expect(discoverNvimSocket()).toBe(macSock);
+  });
+
+  // Issue 2: non-numeric pid string skipped — process.kill never called with NaN
+  it('skips sockets whose parent directory yields a non-numeric pid', () => {
+    vi.mocked(globSync).mockImplementation((p: any) =>
+      String(p).startsWith('/tmp') ? ['/tmp/nvim.garbage/0'] : [],
+    );
+    expect(() => discoverNvimSocket()).not.toThrow();
+    expect(killSpy).not.toHaveBeenCalled();
+    expect(discoverNvimSocket()).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SocketTransport.ensureConnected — Issue 3
+// ---------------------------------------------------------------------------
+describe('SocketTransport.ensureConnected', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('rejects executeLua immediately when the socket connection fails', async () => {
+    const fakeSocket = makeFakeSocket();
+    const fakeClient = makeFakeNeovimClient();
+    const transport = makeTransport(fakeSocket, fakeClient);
+
+    setImmediate(() =>
+      (fakeSocket as unknown as EventEmitter).emit('error', new Error('ENOENT: no such file')),
+    );
+
+    await expect(transport.executeLua('return 1', [])).rejects.toThrow('ENOENT');
+  });
+
+  it('rejects executeLua after close() with "Transport is closed"', async () => {
+    const fakeSocket = makeFakeSocket();
+    const fakeClient = makeFakeNeovimClient();
+    const transport = makeTransport(fakeSocket, fakeClient);
+
+    await transport.close();
+
+    await expect(transport.executeLua('return 1', [])).rejects.toThrow('Transport is closed');
+  });
+
+  it('allows executeLua after socket connects successfully', async () => {
+    const fakeSocket = makeFakeSocket();
+    const expectedResult = 'hello';
+    const fakeClient = makeFakeNeovimClient({
+      executeLua: vi.fn().mockResolvedValue(expectedResult),
+    });
+    const transport = makeTransport(fakeSocket, fakeClient, true);
+
+    await expect(transport.executeLua('return "hello"', [])).resolves.toBe(expectedResult);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SocketTransport.close — pending request rejection — Issue 4
+// ---------------------------------------------------------------------------
+describe('SocketTransport.close — pending request rejection', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('rejects in-flight requests when close() is called', async () => {
+    const fakeSocket = makeFakeSocket();
+    const hangingLua: Promise<unknown> = new Promise(() => {}); // never resolves
+    const fakeClient = makeFakeNeovimClient({
+      executeLua: vi.fn().mockReturnValue(hangingLua),
+    });
+    const transport = makeTransport(fakeSocket, fakeClient, true);
+
+    // Wait for the connect event to fire
+    await new Promise(r => setImmediate(r));
+
+    const pending = transport.executeLua('vim.wait(1e9)', []);
+    await transport.close();
+
+    await expect(pending).rejects.toThrow('Transport is closed');
+  });
+
+  it('is idempotent — calling close() twice does not throw', async () => {
+    const fakeSocket = makeFakeSocket();
+    const fakeClient = makeFakeNeovimClient();
+    const transport = makeTransport(fakeSocket, fakeClient);
+
+    await transport.close();
+    await expect(transport.close()).resolves.toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SocketTransport.getChannelId — validation — Issue 5
+// ---------------------------------------------------------------------------
+describe('SocketTransport.getChannelId — validation', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('throws when nvim_get_api_info returns a non-array', async () => {
+    const fakeSocket = makeFakeSocket();
+    const fakeClient = makeFakeNeovimClient({
+      request: vi.fn().mockResolvedValue('not-an-array'),
+    });
+    const transport = makeTransport(fakeSocket, fakeClient, true);
+
+    await expect(transport.getChannelId()).rejects.toThrow(
+      'nvim_get_api_info returned unexpected value',
+    );
+  });
+
+  it('throws when nvim_get_api_info returns an array without a numeric first element', async () => {
+    const fakeSocket = makeFakeSocket();
+    const fakeClient = makeFakeNeovimClient({
+      request: vi.fn().mockResolvedValue(['not-a-number', {}]),
+    });
+    const transport = makeTransport(fakeSocket, fakeClient, true);
+
+    await expect(transport.getChannelId()).rejects.toThrow(
+      'nvim_get_api_info returned unexpected value',
+    );
+  });
+
+  it('returns the channel id from a valid nvim_get_api_info response', async () => {
+    const fakeSocket = makeFakeSocket();
+    const fakeClient = makeFakeNeovimClient({
+      request: vi.fn().mockResolvedValue([42, { version: {}, functions: [] }]),
+    });
+    const transport = makeTransport(fakeSocket, fakeClient, true);
+
+    await expect(transport.getChannelId()).resolves.toBe(42);
   });
 });

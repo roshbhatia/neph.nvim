@@ -74,7 +74,12 @@ export async function runReview(opts: ReviewOptions): Promise<number> {
     try {
       await transport.executeLua(RPC_CALL, ['status.unset', { name: 'neph_connected' }]);
     } catch {}
-    await transport.close();
+    // close() is wrapped in try/catch: if the transport is already broken the
+    // executeLua above may have thrown (caught above), and close() itself could
+    // throw on a dead connection.  We still want cleanup to complete.
+    try {
+      await transport.close();
+    } catch {}
   };
 
   const requestId = crypto.randomUUID();
@@ -90,21 +95,37 @@ export async function runReview(opts: ReviewOptions): Promise<number> {
   }
 
   return new Promise<number>((resolve) => {
-    // Listen for review completion
+    // Safety: onNotification registers synchronously here, before executeLua is
+    // called below.  Because JS is single-threaded, the microtask queue cannot
+    // dispatch the Neovim notification callback until after this synchronous
+    // setup block completes — so there is no race between listener registration
+    // and the RPC call even though executeLua is async.
     transport.onNotification('neph:review_done', async (args: unknown[]) => {
+      // A late notification arriving after timeout is safely ignored here.
       if (done) return;
       try {
         const payload = args[0] as Record<string, unknown> | undefined;
         if (!payload || payload.request_id !== requestId) return;
 
         const decision = typeof payload.decision === 'string' ? payload.decision : 'accept';
+        // content from the notification arrives as `unknown`; coerce to string
+        // defensively so that JSON.stringify cannot encounter a circular ref or
+        // non-serializable value from a misbehaving Neovim plugin.
+        const rawContent = payload.content;
+        const content = typeof rawContent === 'string' ? rawContent : JSON.stringify(rawContent) ?? input.content;
         const envelope: ReviewEnvelope = {
           decision,
-          content: (payload.content as string) ?? input.content,
-          reason: payload.reason as string | undefined,
+          content,
+          reason: typeof payload.reason === 'string' ? payload.reason : undefined,
         };
 
-        process.stdout.write(JSON.stringify(envelope) + '\n');
+        try {
+          process.stdout.write(JSON.stringify(envelope) + '\n');
+        } catch (serializeErr) {
+          process.stderr.write(`neph review: failed to serialize envelope: ${serializeErr}\n`);
+          const fallback: ReviewEnvelope = { decision: 'accept', content: input.content, reason: 'serialize error (fail-open)' };
+          process.stdout.write(JSON.stringify(fallback) + '\n');
+        }
         await cleanup();
         resolve(decision === 'reject' ? 2 : 0);
       } catch (err) {
@@ -112,7 +133,10 @@ export async function runReview(opts: ReviewOptions): Promise<number> {
       }
     });
 
-    // Open the review in Neovim
+    // Open the review in Neovim.  If Neovim auto-completes synchronously (zero
+    // hunks), the RPC result carries { ok: true, msg: 'No changes' } and we
+    // resolve immediately.  For all other results (e.g. 'Review enqueued') we
+    // correctly wait for the neph:review_done notification registered above.
     transport.executeLua(RPC_CALL, [
       'review.open',
       {
@@ -131,6 +155,8 @@ export async function runReview(opts: ReviewOptions): Promise<number> {
         await cleanup();
         resolve(0);
       }
+      // Any other msg (e.g. 'Review enqueued', 'Review started') means the
+      // review is in progress — remain pending and wait for neph:review_done.
     }).catch(async (err) => {
       process.stderr.write(`neph review: RPC error: ${err}\n`);
       const envelope: ReviewEnvelope = { decision: 'accept', content: input.content, reason: 'RPC error (fail-open)' };
@@ -139,7 +165,9 @@ export async function runReview(opts: ReviewOptions): Promise<number> {
       resolve(0); // fail-open
     });
 
-    // Timeout
+    // Timeout.  After this fires, done=true so any late neph:review_done
+    // notification is silently ignored (the `if (done) return` guard above).
+    // Exit code 3 is propagated to process.exit() by the caller in index.ts.
     setTimeout(async () => {
       if (!done) {
         process.stderr.write(`neph review: timed out after ${timeout}s\n`);

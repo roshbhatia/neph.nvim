@@ -178,6 +178,110 @@ describe('runReview', () => {
       expect(output.decision).toBe('accept');
       expect(output.reason).toContain('fail-open');
     });
+
+    it('returns 0 when close() throws after a broken transport', async () => {
+      // Covers Issue 4: cleanup() calls transport.close() even if executeLua
+      // already threw; the try/catch around close() must prevent an unhandled
+      // rejection from escaping.
+      const transport = new FakeTransport();
+      const origExec = transport.executeLua.bind(transport);
+      transport.executeLua = async (code: string, args: unknown[]) => {
+        const method = args[0] as string;
+        if (method === 'review.open') throw new Error('connection lost');
+        return origExec(code, args);
+      };
+      transport.close = async () => { throw new Error('socket already closed'); };
+      const code = await runReview(makeOpts({ transport }));
+      expect(code).toBe(0);
+      const output = JSON.parse(stdoutSpy.mock.calls[0][0] as string);
+      expect(output.decision).toBe('accept');
+    });
+  });
+
+  describe('notification with non-string content', () => {
+    it('coerces non-string content from notification and emits valid JSON', async () => {
+      // Covers Issue 5: payload.content arriving as an object (e.g. from a
+      // misbehaving Neovim plugin) must not cause JSON.stringify to throw.
+      const transport = new FakeTransport();
+      transport.responses['review.open'] = { ok: true, msg: 'Review started' };
+
+      const promise = runReview(makeOpts({ transport }));
+      await new Promise(r => setTimeout(r, 10));
+
+      const openCall = transport.calls.find(c => c.args[0] === 'review.open');
+      const requestId = (openCall?.args[1] as any)?.request_id;
+
+      // Send an object instead of a string for content
+      transport.fireNotification('neph:review_done', [{
+        request_id: requestId,
+        decision: 'accept',
+        content: { nested: 'object' },
+      }]);
+
+      const code = await promise;
+      expect(code).toBe(0);
+      // Must be valid JSON on stdout
+      expect(() => JSON.parse(stdoutSpy.mock.calls[0][0] as string)).not.toThrow();
+      const output = JSON.parse(stdoutSpy.mock.calls[0][0] as string);
+      expect(output.decision).toBe('accept');
+    });
+  });
+
+  describe('review enqueued waits for notification', () => {
+    it('does not resolve immediately when msg is Review enqueued', async () => {
+      // Covers Issue 3: when review.open returns { ok: true, msg: 'Review enqueued' }
+      // the function must stay pending until neph:review_done fires.
+      const transport = new FakeTransport();
+      transport.responses['review.open'] = { ok: true, msg: 'Review enqueued' };
+
+      const promise = runReview(makeOpts({ transport }));
+      await new Promise(r => setTimeout(r, 30));
+
+      // Should still be pending — no stdout written yet
+      expect(stdoutSpy.mock.calls.length).toBe(0);
+
+      const openCall = transport.calls.find(c => c.args[0] === 'review.open');
+      const requestId = (openCall?.args[1] as any)?.request_id;
+
+      transport.fireNotification('neph:review_done', [{
+        request_id: requestId,
+        decision: 'accept',
+        content: 'hello world',
+      }]);
+
+      const code = await promise;
+      expect(code).toBe(0);
+      const output = JSON.parse(stdoutSpy.mock.calls[0][0] as string);
+      expect(output.decision).toBe('accept');
+    });
+  });
+
+  describe('late notification after timeout is ignored', () => {
+    it('does not write to stdout after timeout resolves with 3', async () => {
+      // Covers Issue 2: a late neph:review_done after the timeout must be
+      // silently dropped.  The done guard prevents a second stdout write.
+      const transport = new FakeTransport();
+      transport.responses['review.open'] = { ok: true, msg: 'Review started' };
+
+      const promise = runReview(makeOpts({ transport, timeout: 1 }));
+      // Let the timeout fire
+      const code = await promise;
+      expect(code).toBe(3);
+
+      const callCountAfterTimeout = stdoutSpy.mock.calls.length;
+
+      // Fire a late notification — should be a no-op
+      const openCall = transport.calls.find(c => c.args[0] === 'review.open');
+      const requestId = (openCall?.args[1] as any)?.request_id;
+      transport.fireNotification('neph:review_done', [{
+        request_id: requestId,
+        decision: 'accept',
+        content: 'late',
+      }]);
+
+      await new Promise(r => setTimeout(r, 10));
+      expect(stdoutSpy.mock.calls.length).toBe(callCountAfterTimeout);
+    });
   });
 
   describe('protocol shape', () => {

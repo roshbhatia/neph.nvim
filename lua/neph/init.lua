@@ -55,10 +55,16 @@ function M.setup(opts)
   -- adds a secondary server but may not update vim.v.servername.
   -- We store the canonical path via neph.internal.channel so backends can
   -- pass a reliable NVIM_SOCKET_PATH to spawned agent terminals.
+  --
+  -- Skip the entire block when a live socket is already registered; this
+  -- makes repeated setup() calls (e.g. lazy reload) safe — they update config
+  -- but do not spawn a second server or overwrite a working socket path.
   local channel = require("neph.internal.channel")
-  local existing = vim.v.servername
-  if existing and existing ~= "" then
-    channel.set_socket_path(existing)
+  if channel.is_connected() then
+    -- Socket is already live; nothing to do.
+  elseif vim.v.servername and vim.v.servername ~= "" then
+    -- Primary server is running; record it so backends can use it.
+    channel.set_socket_path(vim.v.servername)
   else
     local socket_cfg = config.current.socket or {}
     if socket_cfg.enable ~= false then
@@ -71,9 +77,32 @@ function M.setup(opts)
         -- serverstart returns the address on success, empty string on failure.
         -- vim.v.servername may still be empty after this call (it tracks the
         -- primary server only); store the result explicitly.
-        channel.set_socket_path(started ~= "" and started or path)
+        -- Only store the path when serverstart confirmed it is listening;
+        -- storing `path` on failure would record a tempname that is not a
+        -- real socket, causing backends to pass a dead NVIM_SOCKET_PATH.
+        if started ~= "" then
+          channel.set_socket_path(started)
+        else
+          vim.notify(
+            "neph: serverstart(" .. path .. ") failed — NVIM_SOCKET_PATH will not be set",
+            vim.log.levels.WARN
+          )
+        end
       end
     end
+  end
+
+  -- Validate review_layout value
+  local layout = config.current.review_layout
+  if layout ~= nil and layout ~= "vertical" and layout ~= "horizontal" then
+    vim.notify(
+      string.format(
+        'neph: review_layout = %q is not valid — expected "vertical" or "horizontal"; falling back to "vertical"',
+        tostring(layout)
+      ),
+      vim.log.levels.WARN
+    )
+    config.current.review_layout = "vertical"
   end
 
   require("neph.internal.agents").init(agents)
