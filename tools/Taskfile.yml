@@ -21,6 +21,9 @@ tasks:
 
   test:neph:
     dir: neph-cli
+    env:
+      NVIM: ""
+      NVIM_SOCKET_PATH: ""
     cmds:
       - npm test -- --run
 
