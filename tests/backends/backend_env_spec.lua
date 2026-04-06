@@ -447,10 +447,9 @@ describe("zellij backend: send() does not double-shellescape text", function()
     zellij_backend.send(td, "hello", { submit = true })
 
     -- The chain command should contain a newline character (\\n visible in cmd string)
-    local found_newline = false
     for _, c in ipairs(jobstart_calls) do
       if c:find("write%-chars") and (c:find("\\n") or c:find("\n")) then
-        found_newline = true
+        -- found newline in command
       end
     end
     -- We can't inspect the raw char in the shellescape'd form easily,

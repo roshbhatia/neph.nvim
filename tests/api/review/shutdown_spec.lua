@@ -468,9 +468,8 @@ describe("shutdown: _open_immediate zero-hunks", function()
     local review, stub_queue = setup(0, make_engine_stub_error_finalize(0))
     local tmp = write_tmp("same content\n")
 
-    local result
     assert.has_no.errors(function()
-      result = review._open_immediate({
+      review._open_immediate({
         request_id = "zero-hunks-finalize-err",
         result_path = nil,
         channel_id = 0,

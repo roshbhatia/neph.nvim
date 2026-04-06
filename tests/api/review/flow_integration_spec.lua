@@ -343,7 +343,6 @@ end)
 -- ─────────────────────────────────────────────────────────────────────────────
 describe("flow_integration: queue drain", function()
   local review_queue
-  local opened
 
   before_each(function()
     reset_modules()
@@ -351,7 +350,6 @@ describe("flow_integration: queue drain", function()
     package.loaded["neph.internal.review_provider"] = make_enabled_provider()
     package.loaded["neph.config"] = { current = { review = { queue = { enable = true } } } }
 
-    opened = {}
     -- Load review so set_open_fn is wired, then replace open_fn to capture calls
     local rq = require("neph.internal.review_queue")
     -- Prime the queue module before review/init wires open_fn

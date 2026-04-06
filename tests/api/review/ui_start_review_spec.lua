@@ -322,7 +322,7 @@ describe("neph.api.review.ui start_review keymaps", function()
 
   it("gL keymap is registered on the left buffer", function()
     ui.setup_signs()
-    ui.start_review(session, ui_state, on_done)
+    ui.start_review(session, ui_state, nil)
     local maps = vim.api.nvim_buf_get_keymap(ui_state.left_buf, "n")
     local found = false
     for _, m in ipairs(maps) do
