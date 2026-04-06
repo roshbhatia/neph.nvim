@@ -63,16 +63,29 @@ describe("health checks", function()
     }
     local orig_tools = package.loaded["neph.internal.tools"]
     package.loaded["neph.internal.tools"] = {
-      _plugin_root = function() return "/tmp" end,
-      status = function() return {} end,
-      dist_is_current = function() return "current" end,
-      cli_status = function() return { installed = true, path = "/tmp/neph", target = "/tmp/dist" } end,
+      _plugin_root = function()
+        return "/tmp"
+      end,
+      status = function()
+        return {}
+      end,
+      dist_is_current = function()
+        return "current"
+      end,
+      cli_status = function()
+        return { installed = true, path = "/tmp/neph", target = "/tmp/dist" }
+      end,
     }
     vim.fn.executable = function(cmd)
-      if cmd == "cupcake" then return 0 end
+      if cmd == "cupcake" then
+        return 0
+      end
       return 1
     end
-    vim.fn.systemlist = function() vim.g.neph_test_shell_error = 0; return {} end
+    vim.fn.systemlist = function()
+      vim.g.neph_test_shell_error = 0
+      return {}
+    end
 
     health.check()
 

@@ -32,7 +32,9 @@ local function stub_jobstart()
     table.insert(cmds, cmd)
     return 1
   end
-  return cmds, function() vim.fn.jobstart = orig end
+  return cmds, function()
+    vim.fn.jobstart = orig
+  end
 end
 
 -- Build a permission.asked event payload
@@ -74,7 +76,9 @@ describe("opencode_permission: permission.asked events", function()
     local ev = make_permission_event()
 
     -- Stub _apply_diff to return predictable content
-    perm._apply_diff = function() return "new line\n" end
+    perm._apply_diff = function()
+      return "new line\n"
+    end
 
     perm.handle_event(4000, "permission.asked", ev)
 
@@ -129,7 +133,9 @@ describe("opencode_permission: permission.asked events", function()
     local enqueued = stub_review_queue()
     local cmds, restore = stub_jobstart()
 
-    perm._apply_diff = function() return nil end
+    perm._apply_diff = function()
+      return nil
+    end
     local ev = make_permission_event()
 
     perm.handle_event(4000, "permission.asked", ev)
@@ -155,7 +161,9 @@ describe("opencode_permission: on_complete callback posts correct reply", functi
     local enqueued = stub_review_queue()
     local cmds, restore = stub_jobstart()
 
-    perm._apply_diff = function() return "new line\n" end
+    perm._apply_diff = function()
+      return "new line\n"
+    end
     local ev = make_permission_event()
 
     perm.handle_event(4000, "permission.asked", ev)
@@ -196,9 +204,13 @@ describe("opencode_permission: file.edited event", function()
     local orig_schedule = vim.schedule
     local orig_cmd = vim.cmd
 
-    vim.schedule = function(fn) fn() end
+    vim.schedule = function(fn)
+      fn()
+    end
     vim.cmd = function(c)
-      if c == "checktime" then checktime_called = true end
+      if c == "checktime" then
+        checktime_called = true
+      end
     end
 
     perm.handle_event(4000, "file.edited", { type = "file.edited", path = "/tmp/foo.lua" })
@@ -244,7 +256,9 @@ describe("opencode_permission._apply_diff()", function()
   it("applies a valid unified diff and returns new content", function()
     local tmp = vim.fn.tempname() .. ".lua"
     local f = io.open(tmp, "w")
-    if not f then return end
+    if not f then
+      return
+    end
     f:write("old line\n")
     f:close()
 

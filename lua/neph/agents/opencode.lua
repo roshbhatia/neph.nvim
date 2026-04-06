@@ -25,7 +25,9 @@ return {
   -- (opencode runs without HTTP server; Cupcake harness is the fallback).
   launch_args_fn = function(_root)
     local ok, sse = pcall(require, "neph.internal.opencode_sse")
-    if not ok then return {} end
+    if not ok then
+      return {}
+    end
     local port = sse.discover_port()
     if port then
       return { "--port", tostring(port) }

@@ -20,26 +20,38 @@ describe("opencode_sse.discover_port()", function()
     local orig_systemlist = vim.fn.systemlist
     local orig_system = vim.fn.system
 
-    vim.fn.systemlist = overrides.systemlist or function() return {} end
-    vim.fn.system = overrides.system or function() return "" end
+    vim.fn.systemlist = overrides.systemlist or function()
+      return {}
+    end
+    vim.fn.system = overrides.system or function()
+      return ""
+    end
 
     local ok, err = pcall(fn)
 
     vim.fn.systemlist = orig_systemlist
     vim.fn.system = orig_system
 
-    if not ok then error(err, 2) end
+    if not ok then
+      error(err, 2)
+    end
   end
 
   it("returns nil when both pgrep calls return empty list", function()
-    with_stubs({ systemlist = function() return {} end }, function()
+    with_stubs({
+      systemlist = function()
+        return {}
+      end,
+    }, function()
       assert.is_nil(sse.discover_port())
     end)
   end)
 
   it("returns nil when pgrep output has no --port arg", function()
     with_stubs({
-      systemlist = function() return { "12345 opencode --config foo" } end,
+      systemlist = function()
+        return { "12345 opencode --config foo" }
+      end,
     }, function()
       assert.is_nil(sse.discover_port())
     end)
@@ -73,7 +85,9 @@ describe("opencode_sse.discover_port()", function()
       systemlist = function()
         return { "12345 opencode --port 5000" }
       end,
-      system = function() return "" end,
+      system = function()
+        return ""
+      end,
     }, function()
       assert.is_nil(sse.discover_port())
     end)
@@ -92,14 +106,20 @@ describe("opencode_sse subscribe/unsubscribe", function()
     vim.fn.jobstart = function(_, _)
       return job_id_to_return or 1
     end
-    return function() vim.fn.jobstart = orig end
+    return function()
+      vim.fn.jobstart = orig
+    end
   end
 
   local function stub_jobstop()
     local stopped = {}
     local orig = vim.fn.jobstop
-    vim.fn.jobstop = function(id) table.insert(stopped, id) end
-    return stopped, function() vim.fn.jobstop = orig end
+    vim.fn.jobstop = function(id)
+      table.insert(stopped, id)
+    end
+    return stopped, function()
+      vim.fn.jobstop = orig
+    end
   end
 
   it("is_subscribed() is false before subscribe()", function()
