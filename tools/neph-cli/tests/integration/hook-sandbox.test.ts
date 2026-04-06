@@ -14,6 +14,9 @@ import * as os from "node:os";
 import * as path from "node:path";
 
 const CLI = path.resolve(__dirname, "../../src/index.ts");
+// Resolve tsx directly to avoid npx resolution differences across environments
+// (nix develop, CI, local). After `npm ci`, tsx is always at this path.
+const TSX = path.resolve(__dirname, "../../node_modules/.bin/tsx");
 
 // Environment with no Neovim socket — forces null transport → pass-through
 const NO_NVIM: Record<string, string> = Object.fromEntries(
@@ -28,7 +31,7 @@ function runHook(
   extraEnv: Record<string, string> = {},
 ): { stdout: string; stderr: string; exitCode: number } {
   try {
-    const stdout = execFileSync("npx", ["tsx", CLI, "integration", "hook", agent], {
+    const stdout = execFileSync(TSX, [CLI, "integration", "hook", agent], {
       input: JSON.stringify(event),
       encoding: "utf-8",
       timeout: 15_000,
@@ -50,7 +53,7 @@ function runToggle(
   cwd: string,
 ): { stdout: string; exitCode: number } {
   try {
-    const stdout = execFileSync("npx", ["tsx", CLI, "integration", "toggle", agent], {
+    const stdout = execFileSync(TSX, [CLI, "integration", "toggle", agent], {
       encoding: "utf-8",
       timeout: 15_000,
       stdio: ["pipe", "pipe", "pipe"],
@@ -68,7 +71,7 @@ function runStatus(
   cwd: string,
 ): { stdout: string; exitCode: number } {
   try {
-    const stdout = execFileSync("npx", ["tsx", CLI, "integration", "status", agent], {
+    const stdout = execFileSync(TSX, [CLI, "integration", "status", agent], {
       encoding: "utf-8",
       timeout: 15_000,
       stdio: ["pipe", "pipe", "pipe"],
@@ -128,7 +131,7 @@ describe("neph integration hook claude (no Neovim)", () => {
 
   it("invalid JSON input → outputs {}", () => {
     try {
-      const stdout = execFileSync("npx", ["tsx", CLI, "integration", "hook", "claude"], {
+      const stdout = execFileSync(TSX, [CLI, "integration", "hook", "claude"], {
         input: "not json at all",
         encoding: "utf-8",
         timeout: 15_000,
