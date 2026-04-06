@@ -56,9 +56,6 @@ end
 --- Open the queue inspector floating window.
 function M.open()
   local lines, cancelable_rows = build_lines()
-  local rq = require("neph.internal.review_queue")
-  local pending = rq.get_queue()
-
   local height = math.min(#lines, math.floor(vim.o.lines * 0.8))
   local buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)

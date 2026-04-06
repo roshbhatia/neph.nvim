@@ -10,6 +10,7 @@ local M = {}
 
 local engine = require("neph.api.review.engine")
 local ui = require("neph.api.review.ui")
+local log = require("neph.internal.log")
 local review_queue = require("neph.internal.review_queue")
 local review_provider = require("neph.internal.review_provider")
 
