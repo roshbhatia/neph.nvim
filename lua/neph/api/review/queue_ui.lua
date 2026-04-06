@@ -55,6 +55,7 @@ end
 
 --- Open the queue inspector floating window.
 function M.open()
+  local rq = require("neph.internal.review_queue")
   local lines, cancelable_rows = build_lines()
   local height = math.min(#lines, math.floor(vim.o.lines * 0.8))
   local buf = vim.api.nvim_create_buf(false, true)
@@ -91,7 +92,6 @@ function M.open()
     vim.bo[buf].modifiable = false
     -- update closure
     cancelable_rows = new_cancelable
-    pending = rq.get_queue()
   end
 
   --- Map a cursor row (1-indexed) to a pending queue index (1-indexed), or nil.
