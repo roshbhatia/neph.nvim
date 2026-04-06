@@ -28,7 +28,7 @@ jobs:
             npm ci --prefix tools/pi
             task tools:build
             task lint
-            task test
+            task tools:test
           '
 
   # ── Hook sandbox e2e: no Neovim, no Cupcake, pure CLI contract ──────────────
