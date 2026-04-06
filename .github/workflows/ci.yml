@@ -19,6 +19,7 @@ jobs:
           nix_path: nixpkgs=channel:nixos-unstable
       - uses: DeterminateSystems/magic-nix-cache-action@v8
       - name: Install Cupcake
+        continue-on-error: true
         run: curl -fsSL https://get.eqtylab.io/cupcake | bash
       - name: Build and test TS tools
         run: |
