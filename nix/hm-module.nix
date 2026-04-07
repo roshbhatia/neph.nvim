@@ -64,29 +64,33 @@ in
     home.file = lib.mkMerge [
       # Gemini: write lifecycle-only hooks to .gemini/settings.json
       (lib.mkIf cfg.integrations.gemini {
-        ".gemini/settings.json".text = builtins.toJSON {
-          hooks = lifecycleHooksFor "gemini";
+        ".gemini/settings.json" = {
+          text = builtins.toJSON { hooks = lifecycleHooksFor "gemini"; };
+          force = true;
         };
       })
 
       # Cursor: write all cursor hooks (all are lifecycle) to .cursor/hooks.json
       (lib.mkIf cfg.integrations.cursor {
-        ".cursor/hooks.json".text = builtins.toJSON {
-          hooks = lifecycleHooksFor "cursor";
+        ".cursor/hooks.json" = {
+          text = builtins.toJSON { hooks = lifecycleHooksFor "cursor"; };
+          force = true;
         };
       })
 
       # Copilot: write sessionStart/sessionEnd hooks to .copilot/hooks.json
       (lib.mkIf cfg.integrations.copilot {
-        ".copilot/hooks.json".text = builtins.toJSON {
-          hooks = lifecycleHooksFor "copilot";
+        ".copilot/hooks.json" = {
+          text = builtins.toJSON { hooks = lifecycleHooksFor "copilot"; };
+          force = true;
         };
       })
 
       # Codex: write UserPromptSubmit/Stop hooks to .codex/hooks.json
       (lib.mkIf cfg.integrations.codex {
-        ".codex/hooks.json".text = builtins.toJSON {
-          hooks = lifecycleHooksFor "codex";
+        ".codex/hooks.json" = {
+          text = builtins.toJSON { hooks = lifecycleHooksFor "codex"; };
+          force = true;
         };
       })
     ];
