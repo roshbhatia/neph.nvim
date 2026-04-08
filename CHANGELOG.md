@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.2.0](https://github.com/roshbhatia/neph.nvim/compare/v1.1.0...v1.2.0) (2026-04-08)
+
+
+### Features
+
+* add diff review, gate three-mode cycle, and review QoL improvements ([eaf0426](https://github.com/roshbhatia/neph.nvim/commit/eaf04268618162597bddb550c3cbe276ab7b0878))
+
+
+### Performance Improvements
+
+* **wezterm:** remove blocking wezterm cli list from send hot path ([dac910b](https://github.com/roshbhatia/neph.nvim/commit/dac910bd8a16e70a21c1da4038c58bd216d32ce0))
+
 ## [1.1.0](https://github.com/roshbhatia/neph.nvim/compare/v1.0.0...v1.1.0) (2026-04-08)
 
 
