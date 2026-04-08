@@ -52,7 +52,24 @@ The project uses a custom RPC protocol (`neph-rpc/v1`) between the `neph-cli` an
 | `status.unset` | Unsets a `vim.g` global variable. |
 | `buffers.check` | Calls `:checktime` to sync files. |
 | `tab.close` | Closes the current tab. |
+| `ui.select` | Opens a UI selection dialog. |
+| `ui.input` | Opens a UI input dialog. |
+| `ui.notify` | Sends a notification to Neovim. |
+| `tools.status` | Retrieves status of installed tools. |
+| `tools.install` | Installs a specific tool. |
+| `tools.install_all` | Installs all required tools. |
+| `tools.uninstall` | Uninstalls a specific tool. |
+| `tools.preview` | Previews available tools. |
+| `review.status` | Retrieves status of the current review session. |
+| `review.accept` | Accepts the current review or specific hunk. |
+| `review.reject` | Rejects the current review or specific hunk. |
+| `review.accept_all` | Accepts all hunks in the review. |
+| `review.reject_all` | Rejects all hunks in the review. |
+| `review.submit` | Submits the review session. |
+| `review.next` | Moves to the next hunk in the review. |
 | `bus.register` | Registers an extension agent's RPC channel (Internal). |
 
 ## Changelog
 * [2026-04-07 16:07:50]: Initial documentation created aggregating Architecture, Flows, and RPC API.
+
+* [2026-04-08 16:46:57]: Updated documentation with new `ui.*`, `tools.*`, and `review.*` API endpoints.
