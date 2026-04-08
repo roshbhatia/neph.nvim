@@ -52,7 +52,11 @@ function getGitRoot(dir: string): string | null {
   }
 }
 
-export function discoverNvimSocket(): string | null {
+export type DiscoverResult =
+  | { path: string }
+  | { error: 'none' | 'ambiguous' };
+
+export function discoverNvimSocket(): DiscoverResult {
   const patterns = [
     // Linux: /tmp/nvim.<pid>/0
     '/tmp/nvim.*/0',
@@ -88,17 +92,17 @@ export function discoverNvimSocket(): string | null {
     }
   }
 
-  if (candidates.length === 0) return null;
+  if (candidates.length === 0) return { error: 'none' };
 
   // Single instance: return it without requiring a cwd match.
-  if (candidates.length === 1) return candidates[0].path;
+  if (candidates.length === 1) return { path: candidates[0].path };
 
   // Multiple instances: prefer the one whose cwd matches ours.
   const cwd = process.cwd();
   for (const candidate of candidates) {
     const nvimCwd = getPidCwd(candidate.pid);
     if (nvimCwd && (nvimCwd === cwd || cwd.startsWith(nvimCwd + '/'))) {
-      return candidate.path;
+      return { path: candidate.path };
     }
   }
 
@@ -118,13 +122,13 @@ export function discoverNvimSocket(): string | null {
       }
     }
     if (gitMatches.length === 1) {
-      return gitMatches[0].path;
+      return { path: gitMatches[0].path };
     }
   }
 
   // No match found among multiple Neovim instances — refuse to guess.
   // The caller must set NVIM_SOCKET_PATH explicitly.
-  return null;
+  return { error: 'ambiguous' };
 }
 
 // Visible for testing: allows injecting a fake socket and client.

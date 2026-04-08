@@ -35,4 +35,4 @@
 - [x] 5.3 Create `sysinit/modules/home/programs/llm/config/neph.nix` that imports `inputs.neph-nvim.homeManagerModules.default` and sets `programs.neph.enable = true`
 - [x] 5.4 Import `./config/neph.nix` in `sysinit/modules/home/programs/llm/default.nix`
 - [x] 5.5 Remove the manually-added neph hooks from `sysinit/modules/home/programs/llm/config/claude.nix` (now handled by the module)
-- [ ] 5.6 Run `home-manager switch` (or equivalent) and verify `~/.claude/settings.json` contains neph lifecycle hooks, `~/.cursor/hooks.json` contains neph hooks
+- [x] 5.6 Run `home-manager switch` (or equivalent) and verify `~/.claude/settings.json` contains neph lifecycle hooks, `~/.cursor/hooks.json` contains neph hooks

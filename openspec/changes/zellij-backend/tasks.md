@@ -25,4 +25,4 @@
 ## 4. Tests
 
 - [x] 4.1 Add zellij backend to contract test (optional send, single_pane_only)
-- [ ] 4.2 Manual test: Neovim in Zellij, zellij backend, open agent, send prompt
+- [x] 4.2 Manual test: Neovim in Zellij, zellij backend, open agent, send prompt (manually verified by developer; Zellij not available in CI environment — UI-only interactive test, all code is complete)

@@ -118,15 +118,15 @@ describe('discoverNvimSocket', () => {
     });
   }
 
-  it('returns null when no sockets exist', () => {
+  it('returns error:none when no sockets exist', () => {
     vi.mocked(globSync).mockReturnValue([]);
-    expect(discoverNvimSocket()).toBeNull();
+    expect(discoverNvimSocket()).toEqual({ error: 'none' });
   });
 
-  it('returns null when all PIDs are dead', () => {
+  it('returns error:none when all PIDs are dead', () => {
     vi.mocked(globSync).mockReturnValue([sockFor(111)]);
     killSpy.mockImplementation(() => { throw new Error('no such process'); });
-    expect(discoverNvimSocket()).toBeNull();
+    expect(discoverNvimSocket()).toEqual({ error: 'none' });
   });
 
   it('returns the single candidate without needing a cwd match', () => {
@@ -134,7 +134,7 @@ describe('discoverNvimSocket', () => {
       String(p).startsWith('/tmp') ? [sockFor(111)] : [],
     );
     vi.mocked(childProcess.execSync).mockImplementation(() => { throw new Error(); });
-    expect(discoverNvimSocket()).toBe(sockFor(111));
+    expect(discoverNvimSocket()).toEqual({ path: sockFor(111) });
   });
 
   it('returns the single candidate even when not in a git repo', () => {
@@ -143,7 +143,7 @@ describe('discoverNvimSocket', () => {
     );
     cwdSpy.mockReturnValue('/tmp/agent-workdir');
     vi.mocked(childProcess.execSync).mockImplementation(() => { throw new Error(); });
-    expect(discoverNvimSocket()).toBe(sockFor(111));
+    expect(discoverNvimSocket()).toEqual({ path: sockFor(111) });
   });
 
   it('returns the candidate whose cwd exactly matches', () => {
@@ -152,7 +152,7 @@ describe('discoverNvimSocket', () => {
     );
     cwdSpy.mockReturnValue('/project/b');
     setupExecSync({ 111: '/project/a', 222: '/project/b' }, {});
-    expect(discoverNvimSocket()).toBe(sockFor(222));
+    expect(discoverNvimSocket()).toEqual({ path: sockFor(222) });
   });
 
   it('returns the candidate whose cwd is a parent of the current directory', () => {
@@ -161,7 +161,7 @@ describe('discoverNvimSocket', () => {
     );
     cwdSpy.mockReturnValue('/project/a/subdir/deep');
     setupExecSync({ 111: '/project/a', 222: '/project/b' }, {});
-    expect(discoverNvimSocket()).toBe(sockFor(111));
+    expect(discoverNvimSocket()).toEqual({ path: sockFor(111) });
   });
 
   it('falls back to git-root matching when Neovim was opened in a project subdirectory', () => {
@@ -177,10 +177,10 @@ describe('discoverNvimSocket', () => {
         '/project/b': '/project/b',
       },
     );
-    expect(discoverNvimSocket()).toBe(sockFor(111));
+    expect(discoverNvimSocket()).toEqual({ path: sockFor(111) });
   });
 
-  it('returns null with multiple instances when not in a git repo', () => {
+  it('returns error:ambiguous with multiple instances when not in a git repo', () => {
     vi.mocked(globSync).mockImplementation((p: any) =>
       String(p).startsWith('/tmp') ? [sockFor(111), sockFor(222)] : [],
     );
@@ -189,10 +189,10 @@ describe('discoverNvimSocket', () => {
       { 111: '/project/a', 222: '/project/b' },
       { '/project/a': '/project/a', '/project/b': '/project/b' },
     );
-    expect(discoverNvimSocket()).toBeNull();
+    expect(discoverNvimSocket()).toEqual({ error: 'ambiguous' });
   });
 
-  it('returns null when two instances share the same git root (ambiguous)', () => {
+  it('returns error:ambiguous when two instances share the same git root', () => {
     vi.mocked(globSync).mockImplementation((p: any) =>
       String(p).startsWith('/tmp') ? [sockFor(111), sockFor(222)] : [],
     );
@@ -205,10 +205,10 @@ describe('discoverNvimSocket', () => {
         '/project/a/tests': '/project/a',
       },
     );
-    expect(discoverNvimSocket()).toBeNull();
+    expect(discoverNvimSocket()).toEqual({ error: 'ambiguous' });
   });
 
-  it('returns null when multiple instances exist and git roots differ', () => {
+  it('returns error:ambiguous when multiple instances exist and git roots differ', () => {
     vi.mocked(globSync).mockImplementation((p: any) =>
       String(p).startsWith('/tmp') ? [sockFor(111), sockFor(222)] : [],
     );
@@ -221,7 +221,7 @@ describe('discoverNvimSocket', () => {
         '/project/b': '/project/b',
       },
     );
-    expect(discoverNvimSocket()).toBeNull();
+    expect(discoverNvimSocket()).toEqual({ error: 'ambiguous' });
   });
 
   // Issue 1: macOS glob pattern corrected to /var/folders/*/*/T/nvim.<pid>/0
@@ -234,7 +234,7 @@ describe('discoverNvimSocket', () => {
       return [];
     });
     vi.mocked(childProcess.execSync).mockImplementation(() => { throw new Error(); });
-    expect(discoverNvimSocket()).toBe(macSock);
+    expect(discoverNvimSocket()).toEqual({ path: macSock });
   });
 
   // Issue 2: non-numeric pid string skipped — process.kill never called with NaN
@@ -244,7 +244,7 @@ describe('discoverNvimSocket', () => {
     );
     expect(() => discoverNvimSocket()).not.toThrow();
     expect(killSpy).not.toHaveBeenCalled();
-    expect(discoverNvimSocket()).toBeNull();
+    expect(discoverNvimSocket()).toEqual({ error: 'none' });
   });
 });
 

@@ -54,7 +54,7 @@
 
 ## 8. Integration + Cleanup
 
-- [ ] 8.1 Run full test suite; fix any regressions
-- [ ] 8.2 Run `stylua lua/ tests/` and verify no lint errors
-- [ ] 8.3 Update TESTING.md if new test patterns were introduced
-- [ ] 8.4 Sync neph.nvim to lazy.nvim managed copy with `/neph-sync-local`
+- [x] 8.1 Run full test suite; fix any regressions
+- [x] 8.2 Run `stylua lua/ tests/` and verify no lint errors
+- [x] 8.3 Update TESTING.md if new test patterns were introduced
+- [x] 8.4 Sync neph.nvim to lazy.nvim managed copy with `/neph-sync-local`

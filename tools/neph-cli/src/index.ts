@@ -385,28 +385,70 @@ if (require.main === module) {
     process.exit(1);
   }
 
-  let socketPath = process.env.NVIM || process.env.NVIM_SOCKET_PATH || discoverNvimSocket();
   const isDryRun = process.env.NEPH_DRY_RUN === '1';
+
+  // Resolve socket path, tracking the source so we can emit precise errors.
+  type SocketSource = 'env' | 'discovery';
+  let socketPath: string | null = null;
+  let socketSource: SocketSource = 'env';
+  let discoveryError: 'none' | 'ambiguous' | null = null;
+
+  const envSocket = process.env.NVIM || process.env.NVIM_SOCKET_PATH || null;
+  if (envSocket) {
+    socketPath = envSocket;
+    socketSource = 'env';
+  } else {
+    const discovered = discoverNvimSocket();
+    if ('path' in discovered) {
+      socketPath = discovered.path;
+      socketSource = 'discovery';
+    } else {
+      discoveryError = discovered.error;
+    }
+  }
+
   if (command === 'review' && isDryRun) {
     socketPath = null;
   }
+
+  // Validate that an env-sourced path still exists on disk.
   if (socketPath && !fs.existsSync(socketPath)) {
+    if (socketSource === 'env') {
+      process.stderr.write(
+        `neph: socket at ${socketPath} no longer exists (Neovim may have exited). ` +
+        'Re-run your agent from within a Neovim terminal.\n'
+      );
+      if (command !== 'spec' && command !== 'integration' && command !== 'deps' && command !== 'gate' && command !== 'tools' && command !== 'review' && command !== 'connect') {
+        process.exit(1);
+      }
+    }
     socketPath = null;
   }
+
   let transport: SocketTransport | null = null;
   if (socketPath) {
     try {
       transport = new SocketTransport(socketPath);
     } catch (err) {
-      process.stderr.write(`neph: failed to connect to Neovim socket at ${socketPath}: ${err}\n`);
+      process.stderr.write(
+        `neph: failed to connect to Neovim socket at ${socketPath}: ${err}. ` +
+        'Is the neph plugin loaded? Check :NephHealth.\n'
+      );
     }
   } else if (command !== 'spec' && command !== 'integration' && command !== 'deps' && command !== 'gate' && command !== 'tools') {
     // review and connect handle missing transport themselves; other commands need it
     if (command !== 'review' && command !== 'connect') {
-      process.stderr.write(
-        'neph: could not determine which Neovim instance to use.\n' +
-        'Set NVIM_SOCKET_PATH to the socket of the intended Neovim instance and retry.\n'
-      );
+      if (discoveryError === 'ambiguous') {
+        process.stderr.write(
+          'neph: multiple Neovim instances found but none match the current directory. ' +
+          'Set NVIM_SOCKET_PATH explicitly.\n'
+        );
+      } else {
+        process.stderr.write(
+          'neph: no running Neovim instance found. ' +
+          'Run neph from a terminal inside Neovim, or set NVIM_SOCKET_PATH.\n'
+        );
+      }
       process.exit(1);
     }
   }
