@@ -572,10 +572,15 @@ describe("wezterm backend integration", function()
       end
       local td = wezterm_backend.open("t", make_agent_config(), "/tmp")
       assert.is_not_nil(td)
-      -- is_visible should handle the JSON parse failure gracefully
+      -- is_visible trusts cached pane_id — returns true when pane_id is set,
+      -- regardless of wezterm cli list output (pane death is detected via
+      -- check_alive_async and send-text failures, not by is_visible).
       assert.has_no_errors(function()
-        assert.is_false(wezterm_backend.is_visible(td))
+        assert.is_true(wezterm_backend.is_visible(td))
       end)
+      -- is_visible returns false when pane_id is nil or _killed
+      td.pane_id = nil
+      assert.is_false(wezterm_backend.is_visible(td))
     end)
 
     it("env vars with special characters do not crash open", function()

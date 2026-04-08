@@ -327,6 +327,11 @@ describe("session lifecycle: periodic stale timer", function()
       is_visible = function(_)
         return visible
       end,
+      -- CursorHold/FocusGained now use check_alive_async; stub calls callback
+      -- synchronously so the test assertion fires in the same tick.
+      check_alive_async = function(_, callback)
+        callback(visible)
+      end,
     })
     session.setup({ env = {} }, be)
 

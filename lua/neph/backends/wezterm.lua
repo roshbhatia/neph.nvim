@@ -264,7 +264,7 @@ function M.open(termname, agent_config, cwd)
 end
 
 function M.focus(term_data)
-  if not term_data or not term_data.pane_id or not pane_exists(term_data.pane_id) then
+  if not term_data or not term_data.pane_id then
     return false
   end
   activate_pane(term_data.pane_id)
@@ -276,9 +276,7 @@ function M.hide(term_data)
     return
   end
   pane_errors[term_data.pane_id] = nil
-  if pane_exists(term_data.pane_id) then
-    kill_pane(term_data.pane_id)
-  end
+  kill_pane(term_data.pane_id)
   term_data.pane_id = nil
   if parent_pane_id then
     activate_pane(parent_pane_id)
@@ -289,8 +287,45 @@ function M.show(_term_data)
   return nil
 end
 
+--- Trust the cached pane_id — no subprocess call. Pane death is detected
+--- via send-text failures (on_exit) and the periodic async liveness check.
 function M.is_visible(term_data)
-  return term_data ~= nil and term_data.pane_id ~= nil and pane_exists(term_data.pane_id)
+  return term_data ~= nil and term_data.pane_id ~= nil and not term_data._killed
+end
+
+--- Async pane liveness check. Runs wezterm cli list in a non-blocking job
+--- and calls callback(alive: boolean). Used by the periodic staleness timer
+--- so it never blocks the Lua event loop.
+---@param term_data table
+---@param callback fun(alive: boolean)
+function M.check_alive_async(term_data, callback)
+  if not term_data or not term_data.pane_id then
+    callback(false)
+    return
+  end
+  local pane_id = term_data.pane_id
+  vim.fn.jobstart({ "wezterm", "cli", "list", "--format", "json" }, {
+    stdout_buffered = true,
+    on_stdout = function(_, data)
+      local output = table.concat(data or {}, "\n")
+      local ok, panes = pcall(vim.fn.json_decode, output)
+      if not ok or type(panes) ~= "table" then
+        return
+      end
+      for _, p in ipairs(panes) do
+        if p.pane_id == pane_id then
+          callback(true)
+          return
+        end
+      end
+      callback(false)
+    end,
+    on_exit = function(_, code)
+      if code ~= 0 then
+        callback(false)
+      end
+    end,
+  })
 end
 
 function M.kill(term_data)
@@ -339,17 +374,27 @@ function M.send(td, text, opts)
     return
   end
   local full_text = opts.submit and (text .. "\n") or text
+  local pane_id = td.pane_id
   local job_id = vim.fn.jobstart({
     "wezterm",
     "cli",
     "send-text",
     "--pane-id",
-    tostring(td.pane_id),
+    tostring(pane_id),
     "--no-paste",
   }, {
     on_exit = vim.schedule_wrap(function(_, code)
       if code ~= 0 then
-        vim.notify("Neph: wezterm send-text failed (exit " .. code .. ")", vim.log.levels.WARN)
+        local errors = (pane_errors[pane_id] or 0) + 1
+        if errors >= 3 then
+          -- Three consecutive failures → pane is gone; mark stale so session cleans up.
+          td.stale_since = os.time()
+          pane_errors[pane_id] = nil
+        else
+          pane_errors[pane_id] = errors
+        end
+      else
+        pane_errors[pane_id] = nil
       end
     end),
   })

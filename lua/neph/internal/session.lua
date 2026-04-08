@@ -40,23 +40,28 @@ function M.setup(opts, backend_mod)
   if not augroup then
     augroup = vim.api.nvim_create_augroup("NephSession", { clear = true })
 
-    -- Periodically check pane health
+    -- Async pane health check on focus events — never blocks the event loop.
     vim.api.nvim_create_autocmd({ "CursorHold", "FocusGained" }, {
       group = augroup,
       callback = function()
+        if not backend.check_alive_async then
+          return
+        end
         local keys = vim.tbl_keys(terminals)
         for _, name in ipairs(keys) do
           local td = terminals[name]
           if td then
-            if not backend.is_visible(td) then
-              td.stale_since = os.time()
-              vim.g[name .. "_active"] = nil
-              if active_terminal == name then
-                active_terminal = nil
+            backend.check_alive_async(td, function(alive)
+              if not alive then
+                td.stale_since = os.time()
+                vim.g[name .. "_active"] = nil
+                if active_terminal == name then
+                  active_terminal = nil
+                end
+              elseif td.stale_since then
+                td.stale_since = nil
               end
-            elseif td.stale_since then
-              td.stale_since = nil
-            end
+            end)
           end
         end
       end,
@@ -140,8 +145,8 @@ function M.setup(opts, backend_mod)
       end,
     })
 
-    -- Periodic staleness check: mark panes stale every 30 s without waiting
-    -- for user interaction (CursorHold/FocusGained).
+    -- Periodic staleness check: async liveness ping every 30 s so the timer
+    -- callback never blocks the Lua event loop with a synchronous subprocess.
     if vim.uv then
       stale_timer = vim.uv.new_timer()
       if stale_timer then
@@ -152,16 +157,18 @@ function M.setup(opts, backend_mod)
             local keys = vim.tbl_keys(terminals)
             for _, name in ipairs(keys) do
               local td = terminals[name]
-              if td then
-                if not backend.is_visible(td) then
-                  td.stale_since = os.time()
-                  vim.g[name .. "_active"] = nil
-                  if active_terminal == name then
-                    active_terminal = nil
+              if td and backend.check_alive_async then
+                backend.check_alive_async(td, function(alive)
+                  if not alive then
+                    td.stale_since = os.time()
+                    vim.g[name .. "_active"] = nil
+                    if active_terminal == name then
+                      active_terminal = nil
+                    end
+                  elseif td.stale_since then
+                    td.stale_since = nil
                   end
-                elseif td.stale_since then
-                  td.stale_since = nil
-                end
+                end)
               end
             end
           end)
