@@ -21,14 +21,14 @@ includes:
 
 tasks:
   lint:
-    # Run all linters for Lua and TypeScript code
+    desc: Run all linters (stylua + luacheck + tools TSC)
     cmds:
       - stylua --check lua/ tests/  # Check Lua code formatting
       - luacheck lua/ tests/ --globals vim Snacks describe it before_each after_each assert  # Lint Lua code
       - task tools:lint  # Run linters for tools
 
   test:
-    # Run all tests (Lua, TypeScript, Rego)
+    desc: Run full test suite (Lua plenary/busted + TS vitest + Rego + e2e)
     cmds:
       - |
         nvim --headless \
@@ -53,13 +53,15 @@ tasks:
 
   test:e2e:review:
     desc: Run neph-cli review integration tests
+    dir: tools/neph-cli
     cmds:
-      - cd tools/neph-cli && npx vitest run tests/integration/  # Run neph-cli review integration tests via vitest
+      - npx vitest run tests/integration/
 
   test:e2e:hooks:
     desc: Sandbox e2e tests for hook handlers and integration toggle (no Neovim required)
+    dir: tools/neph-cli
     cmds:
-      - cd tools/neph-cli && npx vitest run tests/integration/hook-sandbox.test.ts
+      - npx vitest run tests/integration/hook-sandbox.test.ts
 
   build:
     desc: Build all companion tools and install the neph CLI symlink

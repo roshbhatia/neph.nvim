@@ -11,24 +11,11 @@ import { createPersistentQueue } from "./neph-run";
 // Shared types
 // ---------------------------------------------------------------------------
 
-export interface WriteEvent {
-  filePath: string;
-  toolName: string;
-  content: string;
-  oldString?: string;
-  newString?: string;
-}
-
 export interface CupcakeDecision {
   decision: "allow" | "deny" | "block" | "ask" | "modify";
   reason?: string;
   updated_input?: { content?: string; [key: string]: unknown };
 }
-
-export type HookDecision =
-  | { action: "allow" }
-  | { action: "deny"; reason?: string }
-  | { action: "allow-with-modification"; updatedInput: Record<string, unknown> };
 
 // ---------------------------------------------------------------------------
 // ContentHelper — reconstruct full proposed file content from tool input

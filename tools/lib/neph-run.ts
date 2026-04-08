@@ -9,16 +9,8 @@ export interface HunkResult {
   reason?: string;
 }
 
-export interface ReviewEnvelope {
-  schema: "review/v1";
-  decision: "accept" | "reject" | "partial";
-  content: string;
-  hunks: HunkResult[];
-  reason?: string;
-}
-
 /** Timeout for fire-and-forget neph calls (ms). Interactive review has no timeout. */
-export const NEPH_TIMEOUT_MS = 5_000;
+const NEPH_TIMEOUT_MS = 5_000;
 
 /**
  * Run the neph CLI and await exit. stdin is optional; stdout is returned.
@@ -72,21 +64,6 @@ export function nephRun(
       }
     });
   });
-}
-
-/**
- * Create a fire-and-forget neph command queue.
- * Commands are executed serially in dispatch order. Errors are swallowed.
- */
-export function createNephQueue(): (...args: string[]) => void {
-  let queue: Promise<void> = Promise.resolve();
-  return (...args: string[]): void => {
-    queue = queue.then(async () => {
-      await nephRun(args, undefined, NEPH_TIMEOUT_MS).catch(() => {
-        /* nvim may have closed */
-      });
-    });
-  };
 }
 
 /**
@@ -196,33 +173,6 @@ export function createPersistentQueue(): {
 }
 
 /**
- * Blocking vimdiff review. Proposed content is sent via stdin.
- * Returns the user's decision plus the final buffer content (may be partial).
- * No timeout — this is interactive and waits for the user.
- */
-export async function review(
-  filePath: string,
-  content: string,
-  agent?: string,
-): Promise<ReviewEnvelope> {
-  try {
-    const json = await nephRun(
-      ["review"],
-      JSON.stringify({ path: filePath, content, agent }),
-    );
-    return JSON.parse(json) as ReviewEnvelope;
-  } catch {
-    return {
-      schema: "review/v1",
-      decision: "reject",
-      content: "",
-      hunks: [],
-      reason: "Review failed or timed out",
-    };
-  }
-}
-
-/**
  * Trigger a selection list in Neovim via CLI.
  */
 export async function uiSelect(
@@ -246,7 +196,7 @@ export async function uiInput(
 ): Promise<string | undefined> {
   try {
     const args = ["ui-input", title];
-    if (defaultValue) args.push(defaultValue);
+    if (defaultValue !== undefined) args.push(defaultValue);
     const result = await nephRun(args);
     return result.trim() || undefined;
   } catch {

@@ -12,12 +12,20 @@ jobs:
   # ── TypeScript tools: lint + unit tests ─────────────────────────────────────
   tools:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: cachix/install-nix-action@v30
         with:
           nix_path: nixpkgs=channel:nixos-unstable
       - uses: DeterminateSystems/magic-nix-cache-action@v8
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: |
+            tools/neph-cli/package-lock.json
+            tools/pi/package-lock.json
       - name: Install Cupcake
         continue-on-error: true
         run: curl -fsSL https://get.eqtylab.io/cupcake | bash
@@ -35,6 +43,7 @@ jobs:
   # ── Hook sandbox e2e: no Neovim, no Cupcake, pure CLI contract ──────────────
   hook-sandbox:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -45,7 +54,8 @@ jobs:
       - name: Install dependencies
         run: npm ci --prefix tools/neph-cli
       - name: Run hook sandbox e2e tests
-        run: cd tools/neph-cli && npx vitest run tests/integration/hook-sandbox.test.ts
+        working-directory: tools/neph-cli
+        run: npx vitest run tests/integration/hook-sandbox.test.ts
         env:
           NVIM: ""
           NVIM_SOCKET_PATH: ""
@@ -53,6 +63,7 @@ jobs:
   # ── Lua tests: run against stable and nightly Neovim ────────────────────────
   lua-tests:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -86,7 +97,7 @@ jobs:
             -c "lua require('plenary.test_harness').test_directory('tests/', {minimal_init='tests/minimal_init.lua', sequential=true})" \
             2>&1 || true)
           echo "$OUTPUT"
-          if echo "$OUTPUT" | sed 's/\x1b\[[0-9;]*m//g' | grep -qP "Failed\s*:\s*[1-9]|Errors\s*:\s*[1-9]"; then
+          if echo "$OUTPUT" | sed 's/\x1b\[[0-9;]*m//g' | grep -qP "Failed\s*:\s*[1-9][0-9]*|Errors\s*:\s*[1-9][0-9]*"; then
             echo "::error::Lua tests reported failures or errors"
             exit 1
           fi

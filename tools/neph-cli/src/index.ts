@@ -181,13 +181,16 @@ export async function runCommand(transport: NvimTransport | null, command: strin
       await transport.close();
     };
 
-    transport.onNotification('neph:ui_response', async (args: any) => {
+    transport.onNotification('neph:ui_response', async (args: unknown[]) => {
       try {
         const payload = args[0];
-        if (payload && payload.request_id === requestId) {
-          process.stdout.write(String(payload.choice) + '\n');
-          await cleanup();
-          process.exit(0);
+        if (payload && typeof payload === 'object') {
+          const p = payload as Record<string, unknown>;
+          if (p.request_id === requestId) {
+            process.stdout.write(String(p.choice) + '\n');
+            await cleanup();
+            process.exit(0);
+          }
         }
       } catch (err) {
         process.stderr.write(`neph: notification handler error: ${err}\n`);
@@ -321,7 +324,7 @@ export async function runCommand(transport: NvimTransport | null, command: strin
 
   try {
     let method = '';
-    let params: any = {};
+    let params: Record<string, unknown> = {};
 
     switch (command) {
       case 'set':

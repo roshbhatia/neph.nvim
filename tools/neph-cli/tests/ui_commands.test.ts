@@ -4,9 +4,9 @@ import { FakeTransport } from './fake_transport';
 
 describe('neph ui commands', () => {
   let transport: FakeTransport;
-  let stdoutSpy: any;
-  let stderrSpy: any;
-  let exitSpy: any;
+  let stdoutSpy: ReturnType<typeof vi.spyOn>;
+  let stderrSpy: ReturnType<typeof vi.spyOn>;
+  let exitSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     transport = new FakeTransport();

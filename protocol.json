@@ -37,6 +37,57 @@
     "ui.notify": {
       "params": ["message", "level"],
       "async": false
+    },
+    "tools.status": {
+      "params": [],
+      "async": false
+    },
+    "tools.install": {
+      "params": ["name"],
+      "async": false
+    },
+    "tools.install_all": {
+      "params": [],
+      "async": false
+    },
+    "tools.uninstall": {
+      "params": ["name"],
+      "async": false
+    },
+    "tools.preview": {
+      "params": [],
+      "async": false
+    },
+    "review.status": {
+      "params": [],
+      "async": false
+    },
+    "review.accept": {
+      "params": [],
+      "optional_params": ["idx"],
+      "async": false
+    },
+    "review.reject": {
+      "params": [],
+      "optional_params": ["idx", "reason"],
+      "async": false
+    },
+    "review.accept_all": {
+      "params": [],
+      "async": false
+    },
+    "review.reject_all": {
+      "params": [],
+      "optional_params": ["reason"],
+      "async": false
+    },
+    "review.submit": {
+      "params": [],
+      "async": false
+    },
+    "review.next": {
+      "params": [],
+      "async": false
     }
   }
 }

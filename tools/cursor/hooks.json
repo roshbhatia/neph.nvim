@@ -8,13 +8,13 @@
     ],
     "beforeShellExecution": [
       {
-        "_kind": "lifecycle",
+        "_kind": "review",
         "command": "neph integration hook cursor"
       }
     ],
     "beforeMCPExecution": [
       {
-        "_kind": "lifecycle",
+        "_kind": "review",
         "command": "neph integration hook cursor"
       }
     ]

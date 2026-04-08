@@ -1,5 +1,27 @@
 {
   "hooks": {
+    "SessionStart": [
+      {
+        "_kind": "lifecycle",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "neph integration hook codex"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "_kind": "lifecycle",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "neph integration hook codex"
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "_kind": "review",

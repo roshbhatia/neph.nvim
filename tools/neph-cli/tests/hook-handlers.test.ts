@@ -24,9 +24,6 @@ vi.mock("../../lib/harness-base", () => ({
   createSessionSignals: (...args: unknown[]) => mockCreateSessionSignals(...args),
 }));
 
-// Mock review (still referenced for legacy gemini path)
-vi.mock("../src/review", () => ({ runReview: vi.fn() }));
-
 // Mock fs so template reads don't fail
 vi.mock("node:fs", async () => {
   const actual = await vi.importActual<typeof import("node:fs")>("node:fs");

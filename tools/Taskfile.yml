@@ -2,24 +2,36 @@ version: "3"
 
 tasks:
   build:
-    deps: [build:neph, build:pi]
+    desc: Build all TS tool packages (neph-cli, amp, pi)
+    deps: [build:neph, build:amp, build:pi]
 
   build:neph:
+    desc: Build neph-cli TypeScript package
     dir: neph-cli
     cmds:
       - npm install --ignore-scripts
       - npm run build
 
+  build:amp:
+    desc: Build neph-amp-bridge TypeScript package
+    dir: amp
+    cmds:
+      - npm install --ignore-scripts
+      - npm run build
+
   build:pi:
+    desc: Build pi cupcake-harness TypeScript package
     dir: pi
     cmds:
       - npm install --ignore-scripts
       - npm run build
 
   test:
+    desc: Run unit tests for all TS tool packages
     deps: [test:neph, test:pi]
 
   test:neph:
+    desc: Run neph-cli unit tests (vitest)
     dir: neph-cli
     env:
       NVIM: ""
@@ -28,14 +40,17 @@ tasks:
       - npm test -- --run
 
   test:pi:
+    desc: Run pi harness unit tests (vitest)
     dir: pi
     cmds:
       - npx vitest --run
 
   lint:
+    desc: Type-check all TS tool packages
     deps: [lint:neph, lint:pi]
 
   lint:neph:
+    desc: Type-check neph-cli (tsc --noEmit)
     dir: neph-cli
     cmds:
       - npx tsc --noEmit

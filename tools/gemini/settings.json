@@ -68,7 +68,7 @@
     ],
     "AfterTool": [
       {
-        "_kind": "review",
+        "_kind": "lifecycle",
         "matcher": "write_file|edit_file|replace",
         "hooks": [
           {

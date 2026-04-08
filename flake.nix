@@ -15,17 +15,7 @@
       let
         pkgs = import nixpkgs { inherit system; };
 
-        # Fetch snacks.nvim if not in nixpkgs
-        snacks-nvim = pkgs.vimPlugins.snacks-nvim or (pkgs.vimUtils.buildVimPlugin {
-          pname = "snacks.nvim";
-          version = "2024-01-01";
-          src = pkgs.fetchFromGitHub {
-            owner = "folke";
-            repo = "snacks.nvim";
-            rev = "main";
-            sha256 = pkgs.lib.fakeSha256;
-          };
-        });
+        snacks-nvim = pkgs.vimPlugins.snacks-nvim;
       in
       {
         devShells.default = pkgs.mkShell {

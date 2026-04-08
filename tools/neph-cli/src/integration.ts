@@ -1,9 +1,8 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as readline from "node:readline/promises";
-import { runReview } from "./review";
 import { NvimTransport } from "./transport";
-import { CupcakeHelper, ContentHelper, createSessionSignals, isNvimAvailable } from "../../lib/harness-base";
+import { CupcakeHelper, ContentHelper, createSessionSignals } from "../../lib/harness-base";
 
 interface Integration {
   name: string;

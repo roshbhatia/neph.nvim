@@ -1,4 +1,4 @@
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, EditToolInput, WriteToolInput } from "@mariozechner/pi-coding-agent";
 import { createWriteTool, createEditTool } from "@mariozechner/pi-coding-agent";
 import { readFileSync } from "node:fs";
 import { resolve, relative, basename } from "node:path";
@@ -54,12 +54,13 @@ function evaluateWrite(
   let result: CupcakeResponse;
   try {
     result = runCupcakeEval(event);
-  } catch (err: any) {
-    if (err.status === 2) {
-      return { decision: "reject", reason: err.stderr?.toString() || "Cupcake blocked" };
+  } catch (err: unknown) {
+    const e = err as { status?: number; stderr?: Buffer | string; message?: string };
+    if (e.status === 2) {
+      return { decision: "reject", reason: e.stderr?.toString() || "Cupcake blocked" };
     }
     // Cupcake error — reject, don't silently allow
-    return { decision: "reject", reason: `Cupcake eval failed: ${err.message}` };
+    return { decision: "reject", reason: `Cupcake eval failed: ${e.message ?? String(err)}` };
   }
 
   if (result.decision === "deny" || result.decision === "block") {
@@ -86,8 +87,9 @@ export default function (pi: ExtensionAPI) {
       parameters: createWriteTool(process.cwd()).parameters,
 
       async execute(toolCallId, params, signal, onUpdate, ctx) {
-        const filePath = resolve(ctx.cwd, params.path as string);
-        const newContent = params.content as string;
+        const writeParams = params as WriteToolInput;
+        const filePath = resolve(ctx.cwd, writeParams.path);
+        const newContent = writeParams.content;
 
         const result = evaluateWrite(filePath, newContent, "write");
 
@@ -101,7 +103,7 @@ export default function (pi: ExtensionAPI) {
         const finalContent = result.content ?? newContent;
         const writeResult = await createWriteTool(ctx.cwd).execute(
           toolCallId,
-          { ...params, content: finalContent },
+          { ...writeParams, content: finalContent },
           signal,
           onUpdate,
         );
@@ -127,19 +129,21 @@ export default function (pi: ExtensionAPI) {
       parameters: createEditTool(process.cwd()).parameters,
 
       async execute(toolCallId, params, signal, onUpdate, ctx) {
-        const filePath = resolve(ctx.cwd, params.path as string);
-        const oldText = params.oldText as string;
-        const newText = params.newText as string;
+        const editParams = params as EditToolInput;
+        const filePath = resolve(ctx.cwd, editParams.path);
 
-        // Reconstruct full new content
+        // Reconstruct full new content by applying all edits sequentially
         let newContent: string;
         try {
-          const currentContent = readFileSync(filePath, "utf-8");
-          newContent = currentContent.includes(oldText)
-            ? currentContent.replaceAll(oldText, newText)
-            : currentContent;
+          let currentContent = readFileSync(filePath, "utf-8");
+          for (const { oldText, newText } of editParams.edits) {
+            if (currentContent.includes(oldText)) {
+              currentContent = currentContent.replaceAll(oldText, newText);
+            }
+          }
+          newContent = currentContent;
         } catch {
-          newContent = newText;
+          newContent = editParams.edits.map((e) => e.newText).join("\n");
         }
 
         const result = evaluateWrite(filePath, newContent, "edit");
@@ -155,11 +159,11 @@ export default function (pi: ExtensionAPI) {
         const actualResult = result.content
           ? await createWriteTool(ctx.cwd).execute(
               toolCallId,
-              { path: params.path as string, content: result.content },
+              { path: editParams.path, content: result.content },
               signal,
               onUpdate,
             )
-          : await createEditTool(ctx.cwd).execute(toolCallId, params as any, signal, onUpdate);
+          : await createEditTool(ctx.cwd).execute(toolCallId, editParams, signal, onUpdate);
 
         if (result.decision === "partial") {
           return {

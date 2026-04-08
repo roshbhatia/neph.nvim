@@ -28,10 +28,10 @@ export async function runToolsCommand(args: string[], transport: NvimTransport |
     try {
       const result = await transport.executeLua(RPC_CALL, ["tools.status", {}]);
       if (result && typeof result === "object") {
-        const table = result as Record<string, any>;
+        const table = result as Record<string, unknown>;
         for (const [name, info] of Object.entries(table)) {
-          const installed =
-            typeof info === "object" && info !== null ? info.installed ?? info : info;
+          const infoObj = typeof info === "object" && info !== null ? info as Record<string, unknown> : null;
+          const installed = infoObj !== null ? (infoObj.installed ?? info) : info;
           process.stdout.write(`${name}: ${installed ? "installed" : "not installed"}\n`);
         }
       } else {
