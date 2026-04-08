@@ -170,9 +170,10 @@ function M.resend()
   require("neph.internal.session").ensure_active_and_send(last)
 end
 
---- Cycle the review gate: normal → hold → release.
---- In hold mode, reviews accumulate silently until released.
---- Use gate_bypass() / gate_release() to explicitly enter or leave bypass mode.
+--- Cycle the review gate: normal → hold → bypass → normal.
+--- normal: each write triggers an immediate review UI.
+--- hold: writes queue silently; drain on release.
+--- bypass: all writes auto-accepted without UI.
 function M.gate()
   local gate = require("neph.internal.gate")
   local current = gate.get()
@@ -184,14 +185,14 @@ function M.gate()
     gate_ui.set("hold", win)
     vim.notify("Neph: reviews held — writes will accumulate", vim.log.levels.INFO)
   elseif current == "hold" then
+    gate.set("bypass")
+    gate_ui.set("bypass", win)
+    vim.notify("Neph: bypass mode — all writes auto-accepted without review", vim.log.levels.WARN)
+  else -- bypass
     gate.release()
     gate_ui.clear()
     require("neph.internal.review_queue").drain()
     vim.notify("Neph: gate released — draining pending reviews", vim.log.levels.INFO)
-  else -- bypass
-    gate.release()
-    gate_ui.clear()
-    vim.notify("Neph: review gate restored to normal", vim.log.levels.INFO)
   end
 end
 
@@ -263,6 +264,48 @@ end
 --- Open the review queue inspector floating window.
 function M.queue()
   require("neph.api.review.queue_ui").open()
+end
+
+local DIFF_REVIEW_SCOPES = {
+  head = true,
+  staged = true,
+  branch = true,
+  file = true,
+  hunk = true,
+}
+
+local DIFF_PICKER_SCOPES = {
+  head = true,
+  staged = true,
+  branch = true,
+}
+
+--- Send a git diff to the active agent for review.
+--- scope: "head" | "staged" | "branch" | "file" | "hunk"
+---@param scope string
+---@param opts? { prompt?: string, cwd?: string, file?: string, merge_base_targets?: string[], branch_fallback?: string, submit?: boolean }
+---@return boolean, string|nil
+function M.diff_review(scope, opts)
+  if not DIFF_REVIEW_SCOPES[scope] then
+    local msg = string.format("diff_review: invalid scope %q (expected head|staged|branch|file|hunk)", tostring(scope))
+    vim.notify("Neph: " .. msg, vim.log.levels.ERROR)
+    return false, msg
+  end
+  return require("neph.api.diff").review(scope, opts)
+end
+
+--- Open a snacks.nvim git diff picker.
+--- scope: "head" | "staged" | "branch"
+---@param scope string
+---@param opts? { cwd?: string, merge_base_targets?: string[], branch_fallback?: string }
+---@return boolean, string|nil
+function M.diff_picker(scope, opts)
+  if not DIFF_PICKER_SCOPES[scope] then
+    local msg = string.format("diff_picker: invalid scope %q (expected head|staged|branch)", tostring(scope))
+    vim.notify("Neph: " .. msg, vim.log.levels.ERROR)
+    return false, msg
+  end
+  return require("neph.api.diff").picker(scope, opts)
 end
 
 return M

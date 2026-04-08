@@ -19,6 +19,7 @@ local MAX_QUEUE_SIZE = 50
 ---@field content string
 ---@field agent? string
 ---@field mode? string  "pre_write" | "post_write"
+---@field on_complete? fun(envelope: table)  Optional callback invoked with the final review envelope
 
 ---@type neph.ReviewRequest[]
 local queue = {}

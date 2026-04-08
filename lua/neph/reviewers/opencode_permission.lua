@@ -76,6 +76,9 @@ function M.handle_event(port, event_type, data)
 
     local review_queue = require("neph.internal.review_queue")
     review_queue.enqueue({
+      request_id = "opencode-" .. perm_id,
+      result_path = nil,
+      channel_id = nil,
       path = file_path,
       content = proposed_content,
       agent = "opencode",

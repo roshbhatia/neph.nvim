@@ -24,6 +24,7 @@ local review_provider = require("neph.internal.review_provider")
 ---@field file_path string
 ---@field old_lines string[]
 ---@field agent string?
+---@field on_complete_cb fun(envelope: table)?  Optional per-request callback (e.g. opencode HTTP reply)
 
 ---@type neph.ReviewActive|nil
 local active_review = nil
@@ -35,10 +36,13 @@ review_queue.set_open_fn(function(params)
   local is_manual = params.mode == "manual"
   if not is_manual and not review_provider.is_enabled_for(params.agent) then
     -- Auto-accept: write result if the caller expects one, then advance queue.
+    local content = params.content or ""
+    local envelope = engine.build_envelope({}, content)
     if params.result_path or (params.channel_id and params.channel_id ~= 0) then
-      local content = params.content or ""
-      local envelope = engine.build_envelope({}, content)
       M.write_result(params.result_path, params.channel_id, params.request_id, envelope)
+    end
+    if type(params.on_complete) == "function" then
+      pcall(params.on_complete, envelope)
     end
     review_queue.on_complete(params.request_id)
     return
@@ -68,6 +72,9 @@ vim.api.nvim_create_autocmd("VimLeavePre", {
       pcall(M._apply_post_write, ar.file_path, envelope, ar.old_lines)
     end
     M.write_result(ar.result_path, ar.channel_id, ar.request_id, envelope)
+    if ar.on_complete_cb then
+      pcall(ar.on_complete_cb, envelope)
+    end
     pcall(review_queue.on_complete, ar.request_id)
   end,
 })
@@ -89,6 +96,9 @@ function M.force_cleanup(agent_name)
     envelope = { schema = "review/v1", decision = "reject", content = "", hunks = {}, reason = "Agent killed" }
   end
   M.write_result(ar.result_path, ar.channel_id, ar.request_id, envelope)
+  if ar.on_complete_cb then
+    pcall(ar.on_complete_cb, envelope)
+  end
   local cleanup_ok, cleanup_err = pcall(ui.cleanup, ar.ui_state)
   if not cleanup_ok then
     log.warn("review", "force_cleanup ui.cleanup error: %s", tostring(cleanup_err))
@@ -205,6 +215,9 @@ function M._open_immediate(params)
       envelope = { schema = "review/v1", decision = "accept", content = table.concat(new_lines, "\n"), hunks = {} }
     end
     M.write_result(result_path, channel_id, request_id, envelope)
+    if type(params.on_complete) == "function" then
+      pcall(params.on_complete, envelope)
+    end
     review_queue.on_complete(request_id)
     return { ok = true, msg = "No changes" }
   end
@@ -217,6 +230,8 @@ function M._open_immediate(params)
 
   local result_written = false
   local augroup_name = "NephReview_" .. request_id
+
+  local on_complete_cb = type(params.on_complete) == "function" and params.on_complete or nil
 
   local function finish_review(envelope)
     if result_written then
@@ -231,6 +246,9 @@ function M._open_immediate(params)
     end
 
     M.write_result(result_path, channel_id, request_id, envelope)
+    if on_complete_cb then
+      pcall(on_complete_cb, envelope)
+    end
     review_queue.on_complete(request_id)
     review_queue.mark_reviewed(file_path)
 
@@ -270,6 +288,7 @@ function M._open_immediate(params)
     file_path = file_path,
     old_lines = old_lines,
     agent = params.agent,
+    on_complete_cb = on_complete_cb,
   }
 
   ui.start_review(session, ui_state, function(envelope)
