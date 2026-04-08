@@ -26,6 +26,11 @@ end
 
 --- Transition to a new gate state.
 --- Calling set() with the current state is a no-op (idempotent).
+--- THEORETICAL: Neovim Lua is single-threaded; two external processes calling
+--- RPC simultaneously cannot interleave Lua execution — msgpack-rpc messages are
+--- dispatched one at a time on the main event loop.  No real concurrent mutation
+--- of `state` is possible; the hold/bypass checks in review_queue.enqueue() are
+--- therefore always consistent with the most recently applied set() call.
 ---@param new_state neph.GateState
 function M.set(new_state)
   if not VALID_STATES[new_state] then

@@ -455,8 +455,15 @@ function M._reset()
   recently_reviewed = {}
   pending_notify_batch = {}
   if notify_timer then
-    -- vim.defer_fn timers can't be cancelled directly, but we clear the batch
-    -- so the timer fires and does nothing
+    -- vim.defer_fn timers cannot be cancelled directly.  We clear the batch and
+    -- nil out notify_timer so that:
+    --   (a) the pending timer fires, sees an empty batch, and silently returns;
+    --   (b) a new enqueue() after _reset() can create a fresh timer normally.
+    -- THEORETICAL: if enqueue() is called between _reset() and the old timer
+    -- firing, a second timer is created.  The old timer still fires first (sets
+    -- notify_timer = nil, sees empty batch, no-op) and the new timer fires
+    -- correctly.  No duplicate notifications can occur because pending_notify_batch
+    -- is replaced atomically on each timer fire.
     pending_notify_batch = {}
     notify_timer = nil
   end

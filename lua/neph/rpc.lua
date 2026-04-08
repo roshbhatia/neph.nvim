@@ -180,6 +180,10 @@ local dispatch = {
       return { ok = false, error = "No active review" }
     end
     if ar.ui_state.finalize then
+      -- THEORETICAL: vim.schedule defers finalize to the next event-loop tick.
+      -- If the user closes the tab (via 'q') between this RPC returning and the
+      -- scheduled callback firing, do_finalize()'s `if finalized then return end`
+      -- guard prevents a double-finalize.  No real bug; documented for clarity.
       vim.schedule(function()
         ar.ui_state.finalize()
       end)

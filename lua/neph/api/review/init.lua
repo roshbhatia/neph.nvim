@@ -126,7 +126,15 @@ function M.open(params)
   local queue_cfg = review_cfg.queue or {}
 
   if queue_cfg.enable == false then
-    -- Queue disabled — open directly
+    -- Queue disabled — open directly.
+    -- REAL BUG GUARD: two simultaneous review.open RPC calls with queue disabled
+    -- would both reach _open_immediate and the second would overwrite active_review,
+    -- orphaning the first review's cleanup path (force_cleanup / VimLeavePre only
+    -- see the last writer).  Reject the second call so the caller gets an explicit
+    -- error rather than a silently corrupted state.
+    if active_review then
+      return { ok = false, error = "A review is already active (queue disabled); finish or close it first" }
+    end
     return M._open_immediate(params)
   end
 
