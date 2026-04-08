@@ -170,7 +170,7 @@ describe("cupcake-harness", () => {
 
       await pi.tools.edit.execute(
         "call-1",
-        { path: "foo.lua", oldText: "foo", newText: "bar" },
+        { path: "foo.lua", edits: [{ oldText: "foo", newText: "bar" }] },
         undefined, vi.fn(), mockCtx(),
       );
 
