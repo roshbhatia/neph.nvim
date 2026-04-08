@@ -10,12 +10,11 @@ files["tests/"] = {
   ignore = {
     "112", -- accessing undefined global (e.g. captured upvalues in closures)
     "122", -- setting read-only field of a global (monkey-patching os/math)
-    "211", -- unused variable
-    "212", -- unused variable in loop
-    "213", -- unused argument
-    "214", -- unused argument (self)
-    "221", -- unused function (local function defined but not called)
-    "311", -- value assigned to variable is unused
-    "312", -- value of a field is unused
+    "211", -- unused local variable
+    "212", -- unused argument
+    "213", -- unused loop variable
+    "221", -- local variable is accessed but never set
+    "311", -- value assigned to a local variable is never used
+    "312", -- value of an argument is never used
   },
 }
