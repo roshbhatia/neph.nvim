@@ -9,7 +9,7 @@ The system enforces a strict boundary where agents interact with the Cupcake pol
 
 ```mermaid
 graph TD
-    A[Agents: Claude, Gemini, Pi, OpenCode] -->|Hook/Plugin| B(Cupcake: Policy + Routing)
+    A[Agents: Amp, Claude, Copilot, Cursor, Gemini, OpenCode, Pi] -->|Hook/Plugin| B(Cupcake: Policy + Routing)
     B -->|neph_review signal| C(neph-cli: Editor Abstraction)
     C -->|Msgpack RPC| D[Neovim: neph.nvim vimdiff]
     D -->|RPC Response| C
@@ -52,7 +52,22 @@ The project uses a custom RPC protocol (`neph-rpc/v1`) between the `neph-cli` an
 | `status.unset` | Unsets a `vim.g` global variable. |
 | `buffers.check` | Calls `:checktime` to sync files. |
 | `tab.close` | Closes the current tab. |
-| `bus.register` | Registers an extension agent's RPC channel (Internal). |
+| `ui.select` | Shows a UI select prompt to the user. |
+| `ui.input` | Shows a UI input prompt to the user. |
+| `ui.notify` | Shows a UI notification to the user. |
+| `tools.status` | Retrieves status of installed tools. |
+| `tools.install` | Installs a specific tool. |
+| `tools.install_all` | Installs all tools. |
+| `tools.uninstall` | Uninstalls a specific tool. |
+| `tools.preview` | Previews tool installations. |
+| `review.status` | Retrieves the status of the current review. |
+| `review.accept` | Accepts a specific review hunk or file. |
+| `review.reject` | Rejects a specific review hunk or file. |
+| `review.accept_all` | Accepts all review hunks or files. |
+| `review.reject_all` | Rejects all review hunks or files. |
+| `review.submit` | Submits the current review. |
+| `review.next` | Moves to the next review item. |
 
 ## Changelog
 * [2026-04-07 16:07:50]: Initial documentation created aggregating Architecture, Flows, and RPC API.
+* [2026-04-16 16:38:57]: Updated Architecture diagram to include Amp, Copilot, and Cursor. Updated API Endpoints to align with `protocol.json`.
