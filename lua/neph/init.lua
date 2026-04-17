@@ -25,40 +25,51 @@ local M = {}
 local config = require("neph.config")
 local contracts = require("neph.internal.contracts")
 
---- Setup neph.nvim.
----@param opts? neph.Config
-function M.setup(opts)
-  opts = opts or {}
-  config.current = vim.tbl_deep_extend("force", config.defaults, opts)
+-- Track whether user commands have been registered for idempotency.
+-- nvim_create_user_command silently overwrites on duplicate, but we use this
+-- flag to avoid unnecessary re-registration on repeated setup() calls.
+local _commands_registered = false
 
-  -- Validate and wire backend
-  local backend = config.current.backend
+--- Validate all setup opts before committing any state.
+--- Returns nil on success, or an error string describing the first problem found.
+---@param merged neph.Config
+---@return string|nil err
+local function validate_opts(merged)
+  -- Backend: must be present and be a table implementing all required methods.
+  local backend = merged.backend
   if not backend then
-    error("neph: no backend registered — pass backend = require('neph.backends.snacks') in setup()")
+    return "neph: no backend registered — pass backend = require('neph.backends.snacks') in setup()"
   end
-  contracts.validate_backend(backend, "backend")
-
-  -- Validate and wire agents
-  local agents = config.current.agents or {}
-  if #agents == 0 then
-    vim.notify(
-      "neph: no agents registered — pass agents = { require('neph.agents.claude'), ... } in setup()",
-      vim.log.levels.WARN
-    )
+  if type(backend) ~= "table" then
+    return string.format("neph: backend must be a table, got %s", type(backend))
   end
-  for _, agent in ipairs(agents) do
-    contracts.validate_agent(agent)
+  local ok_be, err_be = pcall(contracts.validate_backend, backend, "backend")
+  if not ok_be then
+    return tostring(err_be)
   end
 
-  -- Ensure an RPC socket is listening and store the path for backends.
-  -- vim.v.servername is the primary server (set by --listen); serverstart()
-  -- adds a secondary server but may not update vim.v.servername.
-  -- We store the canonical path via neph.internal.channel so backends can
-  -- pass a reliable NVIM_SOCKET_PATH to spawned agent terminals.
-  --
-  -- Skip the entire block when a live socket is already registered; this
-  -- makes repeated setup() calls (e.g. lazy reload) safe — they update config
-  -- but do not spawn a second server or overwrite a working socket path.
+  -- Agents: must be nil or a table; each element must be a valid AgentDef table.
+  local agents = merged.agents
+  if agents ~= nil and type(agents) ~= "table" then
+    return string.format("neph: agents must be a table, got %s", type(agents))
+  end
+  for i, agent in ipairs(agents or {}) do
+    if type(agent) ~= "table" then
+      return string.format("neph: agents[%d] must be a table (AgentDef), got %s", i, type(agent))
+    end
+    local ok_ag, err_ag = pcall(contracts.validate_agent, agent)
+    if not ok_ag then
+      return tostring(err_ag)
+    end
+  end
+
+  return nil
+end
+
+--- Ensure an RPC socket is listening and record the path on neph.internal.channel.
+--- Idempotent: repeated calls do not spawn a second server.
+---@param socket_cfg table
+local function setup_socket(socket_cfg)
   local channel = require("neph.internal.channel")
   if channel.is_connected() then
     -- Socket is already live. If socket_path() fell back to servername (i.e.
@@ -66,38 +77,38 @@ function M.setup(opts)
     if vim.v.servername and vim.v.servername ~= "" and channel.socket_path() == vim.v.servername then
       channel.set_socket_path(vim.v.servername)
     end
-  elseif vim.v.servername and vim.v.servername ~= "" then
+    return
+  end
+  if vim.v.servername and vim.v.servername ~= "" then
     -- Primary server is running; record it so backends can use it.
     channel.set_socket_path(vim.v.servername)
-  else
-    local socket_cfg = config.current.socket or {}
-    if socket_cfg.enable ~= false then
-      local path = socket_cfg.path
-      if not path or path == "" then
-        path = vim.fn.tempname()
-      end
-      if path and path ~= "" then
-        local started = vim.fn.serverstart(path)
-        -- serverstart returns the address on success, empty string on failure.
-        -- vim.v.servername may still be empty after this call (it tracks the
-        -- primary server only); store the result explicitly.
-        -- Only store the path when serverstart confirmed it is listening;
-        -- storing `path` on failure would record a tempname that is not a
-        -- real socket, causing backends to pass a dead NVIM_SOCKET_PATH.
-        if started ~= "" then
-          channel.set_socket_path(started)
-        else
-          vim.notify(
-            "neph: serverstart(" .. path .. ") failed — NVIM_SOCKET_PATH will not be set",
-            vim.log.levels.WARN
-          )
-        end
-      end
+    return
+  end
+  if socket_cfg.enable == false then
+    return
+  end
+  local path = socket_cfg.path
+  if not path or path == "" then
+    path = vim.fn.tempname()
+  end
+  if path and path ~= "" then
+    local started = vim.fn.serverstart(path)
+    -- serverstart returns the address on success, empty string on failure.
+    -- Only store the path when serverstart confirmed it is listening; storing
+    -- `path` on failure would record a tempname that is not a real socket,
+    -- causing backends to pass a dead NVIM_SOCKET_PATH.
+    if started ~= "" then
+      channel.set_socket_path(started)
+    else
+      vim.notify("neph: serverstart(" .. path .. ") failed — NVIM_SOCKET_PATH will not be set", vim.log.levels.WARN)
     end
   end
+end
 
-  -- Validate review_layout value
-  local layout = config.current.review_layout
+--- Validate the review_layout config value; fall back to "vertical" if invalid.
+---@param cfg neph.Config
+local function validate_review_layout(cfg)
+  local layout = cfg.review_layout
   if layout ~= nil and layout ~= "vertical" and layout ~= "horizontal" then
     vim.notify(
       string.format(
@@ -106,37 +117,120 @@ function M.setup(opts)
       ),
       vim.log.levels.WARN
     )
-    config.current.review_layout = "vertical"
+    cfg.review_layout = "vertical"
+  end
+end
+
+--- Validate file_refresh.interval is a positive integer when provided.
+---@param cfg neph.Config
+local function validate_file_refresh(cfg)
+  local fr = cfg.file_refresh
+  if fr == nil then
+    return
+  end
+  if type(fr) ~= "table" then
+    vim.notify(string.format("neph: file_refresh must be a table, got %s — ignoring", type(fr)), vim.log.levels.WARN)
+    cfg.file_refresh = vim.deepcopy(config.defaults.file_refresh)
+    return
+  end
+  local interval = fr.interval
+  if interval ~= nil then
+    if type(interval) ~= "number" or interval ~= math.floor(interval) or interval < 1 then
+      vim.notify(
+        string.format(
+          "neph: file_refresh.interval must be a positive integer, got %s — falling back to 1000",
+          tostring(interval)
+        ),
+        vim.log.levels.WARN
+      )
+      cfg.file_refresh.interval = 1000
+    end
+  end
+end
+
+--- Parse NephInstall args: returns { preview, name }.
+---@param args string
+---@return { preview: boolean, name: string|nil }
+local function parse_install_args(args)
+  local parts = vim.split(args, "%s+", { trimempty = true })
+  local preview = vim.tbl_contains(parts, "--preview")
+  local name = nil
+  for _, a in ipairs(parts) do
+    if a ~= "--preview" then
+      name = a
+      break
+    end
+  end
+  return { preview = preview, name = name }
+end
+
+--- Install CLI and agent tools. Called from the NephInstall command handler.
+---@param parsed { preview: boolean, name: string|nil }
+local function run_install(parsed)
+  if parsed.preview then
+    require("neph.api").tools_preview()
+    return
   end
 
-  require("neph.internal.agents").init(agents)
-  require("neph.internal.session").setup(config.current, backend)
-  require("neph.internal.file_refresh").setup(config.current)
+  local tools_mod = require("neph.internal.tools")
+  local agents_mod = require("neph.internal.agents")
+  local root = tools_mod._plugin_root()
 
-  -- Auto-repair neph CLI symlink if missing (silent fallback; build step is the canonical path)
-  vim.schedule(function()
-    local tools_mod = require("neph.internal.tools")
-    local root = tools_mod._plugin_root()
-    local cli = tools_mod.cli_status(root)
-    if not cli.installed then
-      local ok, err = tools_mod.install_cli(root)
-      if not ok then
-        vim.notify(
-          "Neph: could not install neph CLI symlink: " .. tostring(err) .. "\n  Run :NephBuild or :NephInstall.",
-          vim.log.levels.WARN
-        )
+  if not parsed.name then
+    local cli_ok, cli_err = tools_mod.install_cli(root)
+    if cli_ok then
+      vim.notify("Neph: installed neph CLI → ~/.local/bin/neph", vim.log.levels.INFO)
+    else
+      vim.notify("Neph: CLI install failed: " .. tostring(cli_err), vim.log.levels.WARN)
+    end
+  end
+
+  local targets = agents_mod.get_all()
+  if parsed.name then
+    local agent = agents_mod.get_by_name(parsed.name)
+    if not agent then
+      vim.notify("Neph: agent '" .. parsed.name .. "' not found", vim.log.levels.ERROR)
+      return
+    end
+    targets = { agent }
+  end
+
+  local count = 0
+  for _, agent in ipairs(targets) do
+    if agent.tools then
+      local ok, err = pcall(tools_mod.install_agent, root, agent)
+      if ok then
+        count = count + 1
+      else
+        vim.notify("Neph: install failed for " .. agent.name .. ": " .. tostring(err), vim.log.levels.ERROR)
       end
     end
-  end)
+  end
 
-  -- Register :NephBuild command
+  if parsed.name then
+    local agent = agents_mod.get_by_name(parsed.name)
+    if agent and not agent.tools then
+      vim.notify("Neph: " .. parsed.name .. ": no tools to install", vim.log.levels.INFO)
+    else
+      vim.notify(string.format("Neph: installed tools for %d agent(s)", count), vim.log.levels.INFO)
+    end
+  elseif count > 0 then
+    vim.notify(string.format("Neph: installed tools for %d agent(s)", count), vim.log.levels.INFO)
+  end
+end
+
+--- Register all user commands once. No-ops on subsequent calls (idempotent).
+local function register_commands()
+  if _commands_registered then
+    return
+  end
+  _commands_registered = true
   vim.api.nvim_create_user_command("NephBuild", function()
     require("neph.build").run()
   end, {
     desc = "Build neph TypeScript tools and reinstall CLI symlink",
   })
 
-  -- Register :NephDebug command
   vim.api.nvim_create_user_command("NephDebug", function(cmd_opts)
     local log = require("neph.internal.log")
     local sub = cmd_opts.fargs[1]
@@ -184,65 +278,8 @@ function M.setup(opts)
     desc = "Open interactive review of buffer vs disk changes",
   })
 
-  -- Register :NephInstall command
   vim.api.nvim_create_user_command("NephInstall", function(cmd_opts)
-    local args = vim.split(cmd_opts.args, "%s+", { trimempty = true })
-    local preview = vim.tbl_contains(args, "--preview")
-    local name = nil
-    for _, a in ipairs(args) do
-      if a ~= "--preview" then
-        name = a
-        break
-      end
-    end
-    if preview then
-      require("neph.api").tools_preview()
-    else
-      local tools_mod = require("neph.internal.tools")
-      local root = tools_mod._plugin_root()
-      local agents_mod = require("neph.internal.agents")
-      local all = agents_mod.get_all()
-
-      -- Always install the global neph CLI binary (no --name filter)
-      if not name then
-        local cli_ok, cli_err = tools_mod.install_cli(root)
-        if cli_ok then
-          vim.notify("Neph: installed neph CLI → ~/.local/bin/neph", vim.log.levels.INFO)
-        else
-          vim.notify("Neph: CLI install failed: " .. tostring(cli_err), vim.log.levels.WARN)
-        end
-      end
-
-      if name then
-        local agent = agents_mod.get_by_name(name)
-        if not agent then
-          vim.notify("Neph: agent '" .. name .. "' not found", vim.log.levels.ERROR)
-          return
-        end
-        all = { agent }
-      end
-      local count = 0
-      for _, agent in ipairs(all) do
-        if agent.tools then
-          local ok, err = pcall(tools_mod.install_agent, root, agent)
-          if ok then
-            count = count + 1
-          else
-            vim.notify("Neph: install failed for " .. agent.name .. ": " .. tostring(err), vim.log.levels.ERROR)
-          end
-        end
-      end
-      if name then
-        local agent = agents_mod.get_by_name(name)
-        if agent and not agent.tools then
-          vim.notify("Neph: " .. name .. ": no tools to install", vim.log.levels.INFO)
-        else
-          vim.notify(string.format("Neph: installed tools for %d agent(s)", count), vim.log.levels.INFO)
-        end
-      elseif count > 0 then
-        vim.notify(string.format("Neph: installed tools for %d agent(s)", count), vim.log.levels.INFO)
-      end
-    end
+    run_install(parse_install_args(cmd_opts.args))
   end, {
     nargs = "*",
     desc = "Install neph agent tools (symlinks, json merges)",
@@ -257,6 +294,71 @@ function M.setup(opts)
       end, names)
     end,
   })
+end
+
+--- Setup neph.nvim.
+---@param opts? neph.Config
+function M.setup(opts)
+  opts = opts or {}
+
+  -- Build merged config into a local first so that validation failure leaves
+  -- config.current unchanged (atomic: all-or-nothing commit).
+  local merged = vim.tbl_deep_extend("force", config.defaults, opts)
+
+  -- Validate all required inputs before touching any module state.
+  -- Any validation error emits vim.notify(ERROR) then re-raises so callers
+  -- that wrap setup() in pcall can inspect the error message.
+  local err = validate_opts(merged)
+  if err then
+    vim.notify(err, vim.log.levels.ERROR)
+    error(err)
+  end
+
+  -- Validation passed — commit config.
+  config.current = merged
+
+  -- Warn (not error) when no agents are configured; this is valid but almost
+  -- always unintentional during initial plugin setup.
+  local agents = config.current.agents or {}
+  if #agents == 0 then
+    vim.notify(
+      "neph: no agents registered — pass agents = { require('neph.agents.claude'), ... } in setup()",
+      vim.log.levels.WARN
+    )
+  end
+
+  local backend = config.current.backend
+
+  -- Socket setup is idempotent: repeated calls do not spawn a second server.
+  setup_socket(config.current.socket or {})
+
+  -- Coerce invalid review_layout to "vertical" with a warning.
+  validate_review_layout(config.current)
+
+  -- Coerce invalid file_refresh.interval to the default with a warning.
+  validate_file_refresh(config.current)
+
+  require("neph.internal.agents").init(agents)
+  require("neph.internal.session").setup(config.current, backend)
+  require("neph.internal.file_refresh").setup(config.current)
+
+  -- Auto-repair neph CLI symlink if missing (silent fallback; build step is the canonical path)
+  vim.schedule(function()
+    local tools_mod = require("neph.internal.tools")
+    local root = tools_mod._plugin_root()
+    local cli = tools_mod.cli_status(root)
+    if not cli.installed then
+      local ok, repair_err = tools_mod.install_cli(root)
+      if not ok then
+        vim.notify(
+          "Neph: could not install neph CLI symlink: " .. tostring(repair_err) .. "\n  Run :NephBuild or :NephInstall.",
+          vim.log.levels.WARN
+        )
+      end
+    end
+  end)
+
+  register_commands()
 end
 
 return M

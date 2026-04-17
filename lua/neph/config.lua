@@ -17,20 +17,23 @@ local M = {}
 ---@field formatter?      string   Override response formatter id
 ---@field adapter?        string   Override adapter id
 
+---@alias neph.AgentType "extension" | "hook" | "terminal"
+
 ---@class neph.AgentDef
----@field name            string               Unique agent identifier
----@field label           string               Human-readable display name
----@field icon            string               Nerd Font icon
----@field cmd             string               CLI command to launch the agent
----@field args?           string[]             Static CLI arguments
----@field type?           string               "extension" | "hook" (nil = terminal-only)
----@field env?            table<string,string> Extra environment variables for this agent
----@field tools?          table                Declarative install manifest (symlinks, merges, builds, files)
----@field launch_args_fn? fun(root: string): string[]  Compute additional CLI args at launch time
----@field ready_pattern?  string               Lua pattern matched against terminal output to detect readiness
----@field full_cmd?       string               Resolved command (set by agents module at runtime)
----@field integration_group? string            Integration group name for defaults
+---@field name               string               Unique agent identifier
+---@field label              string               Human-readable display name
+---@field icon               string               Nerd Font icon
+---@field cmd                string               CLI command to launch the agent
+---@field args?              string[]             Static CLI arguments
+---@field type?              neph.AgentType       "extension" | "hook" | "terminal" (nil = terminal-only)
+---@field env?               table<string,string> Extra environment variables for this agent
+---@field tools?             table                Declarative install manifest (symlinks, merges, builds, files)
+---@field launch_args_fn?    fun(root: string): string[]  Compute additional CLI args at launch time
+---@field ready_pattern?     string               Lua pattern matched against terminal output to detect readiness
+---@field full_cmd?          string               Resolved command (set by agents module at runtime)
+---@field integration_group? string               Integration group name for defaults
 ---@field integration_overrides? neph.IntegrationOverrides  Per-agent integration overrides
+---@field integration_pipeline? table             Resolved integration pipeline (set at runtime by agents module)
 
 ---@class neph.IntegrationGroup
 ---@field policy_engine?  string   Policy engine id (e.g. "cupcake", "noop")
