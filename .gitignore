@@ -1,4 +1,5 @@
 .pi/
+.neph/
 
 # Python
 __pycache__/

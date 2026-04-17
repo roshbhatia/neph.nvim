@@ -20,7 +20,7 @@ const INTEGRATIONS: Integration[] = [
   {
     name: "claude",
     label: "Claude",
-    configPath: () => path.join(process.cwd(), ".claude", "settings.json"),
+    configPath: () => path.join(process.cwd(), ".neph", "claude.json"),
     templatePath: path.join(TOOLS_ROOT, "claude", "settings.json"),
     kind: "hooks",
     requiresCupcake: true,
@@ -817,7 +817,11 @@ export async function runIntegrationCommand(
     }
     const enabled = integrationEnabled(integration);
     applyIntegration(integration, !enabled);
-    process.stdout.write(`${integration.name}: ${enabled ? "disabled" : "enabled"}\n`);
+    if (integration.name === "claude" && !enabled) {
+      process.stdout.write(`claude: enabled — run with: claude --settings .neph/claude.json\n`);
+    } else {
+      process.stdout.write(`${integration.name}: ${enabled ? "disabled" : "enabled"}\n`);
+    }
     return;
   }
 

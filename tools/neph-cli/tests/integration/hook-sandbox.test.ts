@@ -257,12 +257,13 @@ describe("neph integration toggle sandbox", () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it("toggle claude: creates .claude/settings.json with neph hooks", () => {
+  it("toggle claude: creates .neph/claude.json with neph hooks", () => {
     const { stdout, exitCode } = runToggle("claude", tmpDir);
     expect(exitCode).toBe(0);
     expect(stdout).toContain("enabled");
+    expect(stdout).toContain("--settings .neph/claude.json");
 
-    const configPath = path.join(tmpDir, ".claude", "settings.json");
+    const configPath = path.join(tmpDir, ".neph", "claude.json");
     expect(fs.existsSync(configPath)).toBe(true);
 
     const config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
@@ -271,7 +272,7 @@ describe("neph integration toggle sandbox", () => {
   });
 
   it("toggle claude: written config has no _kind fields", () => {
-    const configPath = path.join(tmpDir, ".claude", "settings.json");
+    const configPath = path.join(tmpDir, ".neph", "claude.json");
     const raw = fs.readFileSync(configPath, "utf-8");
     expect(raw).not.toContain("_kind");
   });

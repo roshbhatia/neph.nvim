@@ -221,7 +221,25 @@ The diff review system is asynchronous. All agents go through the CLI review pat
 - Manages signs, virtual text hints, and winbar status display
 - Calls engine functions for logic
 
-### 4. Agent Submodules
+### 4. Claude Integration — `--settings` Separation
+
+Neph writes its Claude hooks to `.neph/claude.json` (not `.claude/settings.json`).
+This avoids mutating the user's own Claude Code settings file. Claude Code merges the
+file on top of existing settings when invoked with:
+
+```bash
+claude --settings .neph/claude.json
+```
+
+Add this as an alias or shell function to avoid repeating the flag:
+
+```bash
+alias claude='claude --settings .neph/claude.json'
+```
+
+`.neph/` is gitignored — the generated config is machine-local.
+
+### 5. Agent Submodules
 
 Each agent is a pure data table at `lua/neph/agents/<name>.lua` returning an `AgentDef`:
 
@@ -252,7 +270,7 @@ return {
 - `all.lua` re-exports all built-in agents as a convenience
 - The `type` field determines send routing: hook agents use the hook pipeline, others use the terminal
 
-### 5. Context Placeholders
+### 6. Context Placeholders
 
 Tokens like `+cursor`, `+selection`, `+diagnostics` are expanded before sending prompts.
 
@@ -277,7 +295,7 @@ end
 - `+diff` – `git diff` for current file
 - `+buffers`, `+quickfix`, `+loclist`, `+folder`, `+marks`, `+search` – Neovim state
 
-### 6. Socket Integration
+### 7. Socket Integration
 
 Neph forwards `$NVIM_SOCKET_PATH` to every agent terminal. The `neph` CLI uses this for one-off RPC calls to Neovim. The Amp plugin (`tools/amp/neph-plugin.ts`) uses it directly for real-time review interception.
 
