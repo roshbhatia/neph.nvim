@@ -9,6 +9,7 @@ local config = {}
 
 local READY_TIMEOUT_MS = 30000
 
+---@param opts table  neph config passed from setup()
 function M.setup(opts)
   config = opts or {}
 end
@@ -35,6 +36,7 @@ function M.open(termname, agent_config, cwd)
     cmd = agent_config.cmd,
     cwd = cwd,
     name = termname,
+    created_at = os.time(),
     ready = not agent_config.ready_pattern,
     -- Set to true by kill() so queued schedule_wrap callbacks can detect that
     -- the terminal has been torn down and skip on_ready invocation.
@@ -95,6 +97,8 @@ function M.open(termname, agent_config, cwd)
   return td
 end
 
+---@param term_data table|nil
+---@return boolean  true if focus was set, false if terminal is not visible
 function M.focus(term_data)
   if not M.is_visible(term_data) then
     return false
@@ -103,6 +107,7 @@ function M.focus(term_data)
   return true
 end
 
+---@param term_data table|nil
 function M.hide(term_data)
   if not term_data or not term_data.win then
     return
@@ -119,10 +124,13 @@ function M.show(_term_data)
   return nil -- reopen required
 end
 
+---@param term_data table|nil
+---@return boolean
 function M.is_visible(term_data)
   return term_data ~= nil and term_data.win ~= nil and vim.api.nvim_win_is_valid(term_data.win)
 end
 
+---@param term_data table|nil
 function M.kill(term_data)
   if not term_data then
     return
@@ -164,11 +172,14 @@ function M.send(td, text, opts)
   end
 end
 
+---@param terminals table<string, table>  map of name -> term_data
 function M.cleanup_all(terminals)
   if not terminals then
     return
   end
   for _, td in pairs(terminals) do
+    -- Mark killed first so any queued schedule_wrap timer callbacks observe it.
+    td._killed = true
     if td.ready_timer then
       pcall(td.ready_timer.stop, td.ready_timer)
       pcall(td.ready_timer.close, td.ready_timer)

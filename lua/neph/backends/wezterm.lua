@@ -169,14 +169,20 @@ end
 
 -- ---------------------------------------------------------------------------
 
+---@param opts table  neph config passed from setup()
 function M.setup(opts)
   config = opts or {}
   parent_pane_id = get_current_pane()
+  pane_errors = {}
   if not parent_pane_id then
     vim.notify("Neph/wezterm: WEZTERM_PANE not set – falling back to native", vim.log.levels.WARN)
   end
 end
 
+---@param termname    string
+---@param agent_config {cmd:string, args:string[], full_cmd:string, env:table<string,string>, ready_pattern?:string}
+---@param cwd         string
+---@return table|nil
 function M.open(termname, agent_config, cwd)
   if not parent_pane_id then
     vim.notify("Neph/wezterm: cannot spawn – parent pane unavailable", vim.log.levels.ERROR)
@@ -263,6 +269,8 @@ function M.open(termname, agent_config, cwd)
   return td
 end
 
+---@param term_data table|nil
+---@return boolean  true if focus was set, false if terminal has no pane
 function M.focus(term_data)
   if not term_data or not term_data.pane_id then
     return false
@@ -271,16 +279,23 @@ function M.focus(term_data)
   return true
 end
 
+---@param term_data table|nil
 function M.hide(term_data)
   if not term_data or not term_data.pane_id then
     return
   end
+  -- WezTerm has no native pane-hide API.  Kill the pane so state stays
+  -- consistent: callers expect hide() to remove the pane handle, and
+  -- session.lua clears the terminals entry immediately after hide().
+  term_data._killed = true
+  if term_data.ready_timer then
+    pcall(term_data.ready_timer.stop, term_data.ready_timer)
+    pcall(term_data.ready_timer.close, term_data.ready_timer)
+    term_data.ready_timer = nil
+  end
   pane_errors[term_data.pane_id] = nil
   kill_pane(term_data.pane_id)
   term_data.pane_id = nil
-  if parent_pane_id then
-    activate_pane(parent_pane_id)
-  end
 end
 
 function M.show(_term_data)
@@ -289,6 +304,8 @@ end
 
 --- Trust the cached pane_id — no subprocess call. Pane death is detected
 --- via send-text failures (on_exit) and the periodic async liveness check.
+---@param term_data table|nil
+---@return boolean
 function M.is_visible(term_data)
   return term_data ~= nil and term_data.pane_id ~= nil and not term_data._killed
 end
@@ -328,6 +345,7 @@ function M.check_alive_async(term_data, callback)
   })
 end
 
+---@param term_data table|nil
 function M.kill(term_data)
   if not term_data then
     return
@@ -347,6 +365,7 @@ function M.kill(term_data)
   term_data.pane_id = nil
 end
 
+---@param terminals table<string, table>  map of name -> term_data
 function M.cleanup_all(terminals)
   if not terminals then
     return
