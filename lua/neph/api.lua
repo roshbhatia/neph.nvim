@@ -75,21 +75,25 @@ local function input_for_active(action, default_text)
 end
 
 --- Toggle the active agent session, or open the picker if none is active.
+---@return nil
 function M.toggle()
   require("neph.internal.picker").pick_agent()
 end
 
 --- Kill the active session and open the picker to select a new one.
+---@return nil
 function M.kill_and_pick()
   require("neph.internal.picker").kill_and_pick()
 end
 
 --- Kill the active session.
+---@return nil
 function M.kill()
   require("neph.internal.picker").kill_active()
 end
 
 --- Open the ask prompt. In visual mode, prefills with +selection context.
+---@return nil
 function M.ask()
   local mode = vim.fn.mode()
   local default = mode:match("[vV\22]") and "+selection " or "+cursor "
@@ -97,11 +101,13 @@ function M.ask()
 end
 
 --- Open the fix-diagnostics prompt.
+---@return nil
 function M.fix()
   input_for_active("Fix diagnostics", "Fix +diagnostics ")
 end
 
 --- Open the comment prompt. In visual mode, prefills with +selection context.
+---@return nil
 function M.comment()
   local mode = vim.fn.mode()
   local default = mode:match("[vV\22]") and "Comment +selection " or "Comment +cursor "
@@ -146,6 +152,7 @@ local RESEND_MAX_BYTES = 8192
 --- Resend the previous prompt to the active agent.
 --- Prompts longer than RESEND_MAX_BYTES are blocked with a warning to avoid
 --- flooding the agent with accidentally-pasted file contents.
+---@return nil
 function M.resend()
   local active = get_active()
   if not active then
@@ -174,6 +181,7 @@ end
 --- normal: each write triggers an immediate review UI.
 --- hold: writes queue silently; drain on release.
 --- bypass: all writes auto-accepted without UI.
+---@return nil
 function M.gate()
   local gate = require("neph.internal.gate")
   local current = gate.get()
@@ -198,6 +206,7 @@ end
 
 --- Set gate to hold mode explicitly.
 --- No-op (with notification) if gate is already in hold mode.
+---@return nil
 function M.gate_hold()
   local gate = require("neph.internal.gate")
   if gate.is_hold() then
@@ -212,6 +221,7 @@ end
 
 --- Set gate to bypass mode explicitly (auto-accepts all writes without review).
 --- No-op (with notification) if gate is already in bypass mode.
+---@return nil
 function M.gate_bypass()
   local gate = require("neph.internal.gate")
   if gate.is_bypass() then
@@ -226,6 +236,7 @@ end
 
 --- Release hold or bypass, returning to normal state, and drain any accumulated reviews.
 --- No-op (with notification) if gate is already in normal state.
+---@return nil
 function M.gate_release()
   local gate = require("neph.internal.gate")
   if gate.is_normal() then
@@ -252,16 +263,19 @@ function M.gate_status()
 end
 
 --- Open the NephStatus floating buffer showing agent integration state.
+---@return nil
 function M.tools_status()
   require("neph.api.status_buf").open()
 end
 
 --- Show a dry-run preview of what tools.install would change.
+---@return nil
 function M.tools_preview()
   require("neph.api.status_buf").open_preview()
 end
 
 --- Open the review queue inspector floating window.
+---@return nil
 function M.queue()
   require("neph.api.review.queue_ui").open()
 end
