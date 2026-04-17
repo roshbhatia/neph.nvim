@@ -16,29 +16,94 @@ M.providers = {}
 local context = require("neph.internal.context")
 
 -- ---------------------------------------------------------------------------
+-- Internal helpers
+-- ---------------------------------------------------------------------------
+
+--- Return true when *buf* is a valid, loaded file buffer, without raising.
+---@param buf integer
+---@return boolean
+local function safe_is_file(buf)
+  if not buf then
+    return false
+  end
+  local ok, result = pcall(function()
+    return vim.api.nvim_buf_is_valid(buf) and context.is_file(buf)
+  end)
+  return ok and result == true
+end
+
+--- Return the buffer name only if *buf* is valid. Never raises.
+---@param buf integer
+---@return string|nil
+local function safe_buf_name(buf)
+  if not buf then
+    return nil
+  end
+  local ok, name = pcall(vim.api.nvim_buf_get_name, buf)
+  if not ok or not name or name == "" then
+    return nil
+  end
+  return name
+end
+
+--- Return lines from *buf* in [start, end_) (0-indexed). Never raises.
+--- Returns nil when buf is invalid/not loaded or the call errors.
+---@param buf integer
+---@param start integer
+---@param end_ integer
+---@return string[]|nil
+local function safe_buf_get_lines(buf, start, end_)
+  if not buf then
+    return nil
+  end
+  local ok, lines = pcall(function()
+    if not vim.api.nvim_buf_is_valid(buf) or not vim.api.nvim_buf_is_loaded(buf) then
+      return nil
+    end
+    return vim.api.nvim_buf_get_lines(buf, start, end_, false)
+  end)
+  if not ok or type(lines) ~= "table" then
+    return nil
+  end
+  return lines
+end
+
+-- ---------------------------------------------------------------------------
 -- Position / location
 -- ---------------------------------------------------------------------------
 
 M.providers.position = function(ctx)
-  if not context.is_file(ctx.buf) then
+  if not safe_is_file(ctx.buf) then
     return nil
   end
-  local path = context.strip_git_root(vim.api.nvim_buf_get_name(ctx.buf))
+  local name = safe_buf_name(ctx.buf)
+  if not name then
+    return nil
+  end
+  local path = context.strip_git_root(name)
   return string.format("@%s:%d:%d", path, ctx.row, ctx.col)
 end
 
 M.providers.file = function(ctx)
-  if not context.is_file(ctx.buf) then
+  if not safe_is_file(ctx.buf) then
     return nil
   end
-  return "@" .. context.strip_git_root(vim.api.nvim_buf_get_name(ctx.buf))
+  local name = safe_buf_name(ctx.buf)
+  if not name then
+    return nil
+  end
+  return "@" .. context.strip_git_root(name)
 end
 
 M.providers.line = function(ctx)
-  if not context.is_file(ctx.buf) then
+  if not safe_is_file(ctx.buf) then
     return nil
   end
-  local path = context.strip_git_root(vim.api.nvim_buf_get_name(ctx.buf))
+  local name = safe_buf_name(ctx.buf)
+  if not name then
+    return nil
+  end
+  local path = context.strip_git_root(name)
   return string.format("@%s:%d", path, ctx.row)
 end
 
@@ -54,8 +119,8 @@ M.providers.buffers = function(_ctx)
   local items = {}
   for _, b in ipairs(vim.api.nvim_list_bufs()) do
     if vim.api.nvim_buf_is_loaded(b) and vim.bo[b].buflisted and context.is_file(b) then
-      local name = vim.api.nvim_buf_get_name(b)
-      if name ~= "" then
+      local name = safe_buf_name(b)
+      if name then
         table.insert(items, "- " .. context.strip_git_root(name))
       end
     end
@@ -71,8 +136,8 @@ M.providers.selection = function(ctx)
   if not ctx.range then
     return nil
   end
-  local lines = vim.api.nvim_buf_get_lines(ctx.buf, ctx.range.from[1] - 1, ctx.range.to[1], false)
-  if #lines == 0 then
+  local lines = safe_buf_get_lines(ctx.buf, ctx.range.from[1] - 1, ctx.range.to[1])
+  if not lines or #lines == 0 then
     return nil
   end
   if #lines == 1 then
@@ -85,12 +150,20 @@ M.providers.selection = function(ctx)
   if text == "" then
     return nil
   end
-  local path = context.strip_git_root(vim.api.nvim_buf_get_name(ctx.buf))
+  local name = safe_buf_name(ctx.buf)
+  if not name then
+    return nil
+  end
+  local path = context.strip_git_root(name)
   return string.format("@%s:%d-%d\n%s", path, ctx.range.from[1], ctx.range.to[1], text)
 end
 
 M.providers.word = function(ctx)
-  local line = vim.api.nvim_buf_get_lines(ctx.buf, ctx.row - 1, ctx.row, false)[1]
+  local lines = safe_buf_get_lines(ctx.buf, ctx.row - 1, ctx.row)
+  if not lines then
+    return nil
+  end
+  local line = lines[1]
   if not line then
     return nil
   end
@@ -112,21 +185,25 @@ local severity_map = {
 }
 
 M.providers.diagnostic = function(ctx)
-  local diags = vim.diagnostic.get(ctx.buf, { lnum = ctx.row - 1 })
-  if #diags == 0 then
+  if not ctx.row then
+    return nil
+  end
+  local ok, diags = pcall(vim.diagnostic.get, ctx.buf, { lnum = ctx.row - 1 })
+  if not ok or #diags == 0 then
     return nil
   end
   local lines = {}
   for _, d in ipairs(diags) do
     local sev = severity_map[d.severity] or "INFO"
-    table.insert(lines, string.format("[%s] %s", sev, d.message))
+    local msg = type(d.message) == "string" and d.message or tostring(d.message or "")
+    table.insert(lines, string.format("[%s] %s", sev, msg))
   end
-  return table.concat(lines, "\n")
+  return #lines > 0 and table.concat(lines, "\n") or nil
 end
 
 M.providers.diagnostics = function(ctx)
-  local diags = vim.diagnostic.get(ctx.buf)
-  if #diags == 0 then
+  local ok, diags = pcall(vim.diagnostic.get, ctx.buf)
+  if not ok or #diags == 0 then
     return nil
   end
   local lines = {}
@@ -137,29 +214,45 @@ M.providers.diagnostics = function(ctx)
       break
     end
     local sev = severity_map[d.severity] or "INFO"
-    table.insert(lines, string.format("Line %d: [%s] %s", d.lnum + 1, sev, d.message))
+    local msg = type(d.message) == "string" and d.message or tostring(d.message or "")
+    table.insert(lines, string.format("Line %d: [%s] %s", d.lnum + 1, sev, msg))
   end
-  return table.concat(lines, "\n")
+  return #lines > 0 and table.concat(lines, "\n") or nil
 end
 
 -- ---------------------------------------------------------------------------
 -- Treesitter textobjects
 -- ---------------------------------------------------------------------------
 
+---@param ctx neph.EditorState
+---@param type_patterns string[]
+---@return string|nil
 local function ts_ancestor(ctx, type_patterns)
   local ok, ts_utils = pcall(require, "nvim-treesitter.ts_utils")
   if not ok then
     return nil
   end
-  local node = ts_utils.get_node_at_cursor()
+  -- Guard: ensure a parser is loaded for this buffer before proceeding
+  local parser_ok, _ = pcall(vim.treesitter.get_parser, ctx.buf)
+  if not parser_ok then
+    return nil
+  end
+  local get_ok, node = pcall(ts_utils.get_node_at_cursor)
+  if not get_ok or not node then
+    return nil
+  end
   while node do
     local nt = node:type()
     for _, pat in ipairs(type_patterns) do
       if nt:match(pat) then
         local sr, _, er, _ = node:range()
-        local lines = vim.api.nvim_buf_get_lines(ctx.buf, sr, er + 1, false)
-        if #lines > 0 then
-          local path = context.strip_git_root(vim.api.nvim_buf_get_name(ctx.buf))
+        local lines = safe_buf_get_lines(ctx.buf, sr, er + 1)
+        if lines and #lines > 0 then
+          local name = safe_buf_name(ctx.buf)
+          if not name then
+            return nil
+          end
+          local path = context.strip_git_root(name)
           return string.format("@%s:%d-%d\n```\n%s\n```", path, sr + 1, er + 1, table.concat(lines, "\n"))
         end
         return nil
@@ -182,6 +275,9 @@ end
 -- Git
 -- ---------------------------------------------------------------------------
 
+--- Maximum number of bytes returned by the +diff provider.
+local DIFF_MAX_BYTES = 32768
+
 M.providers.git = function(_ctx)
   local result = vim.fn.system("git status --short --branch 2>/dev/null")
   if vim.v.shell_error ~= 0 or result == "" then
@@ -191,10 +287,13 @@ M.providers.git = function(_ctx)
 end
 
 M.providers.diff = function(ctx)
-  if not context.is_file(ctx.buf) then
+  if not safe_is_file(ctx.buf) then
     return nil
   end
-  local path = vim.api.nvim_buf_get_name(ctx.buf)
+  local path = safe_buf_name(ctx.buf)
+  if not path then
+    return nil
+  end
   local root = context.get_git_root()
   if not root then
     return nil
@@ -205,7 +304,12 @@ M.providers.diff = function(ctx)
   if vim.v.shell_error ~= 0 or result == "" then
     return nil
   end
-  return vim.trim(result)
+  result = vim.trim(result)
+  -- Cap output to avoid sending enormous diffs
+  if #result > DIFF_MAX_BYTES then
+    result = result:sub(1, DIFF_MAX_BYTES) .. "\n... (diff truncated)"
+  end
+  return result
 end
 
 -- ---------------------------------------------------------------------------
@@ -220,7 +324,13 @@ M.providers.quickfix = function(_ctx)
   local lines = {}
   for _, e in ipairs(qf) do
     if e.valid == 1 then
-      local fname = vim.fn.fnamemodify(vim.api.nvim_buf_get_name(e.bufnr), ":t")
+      local fname = ""
+      if e.bufnr and e.bufnr ~= 0 and vim.api.nvim_buf_is_valid(e.bufnr) then
+        local ok, name = pcall(vim.api.nvim_buf_get_name, e.bufnr)
+        if ok and name and name ~= "" then
+          fname = vim.fn.fnamemodify(name, ":t")
+        end
+      end
       table.insert(lines, string.format("%s:%d: %s", fname, e.lnum, e.text or ""))
     end
   end
@@ -237,7 +347,13 @@ M.providers.loclist = function(ctx)
   local lines = {}
   for _, e in ipairs(ll) do
     if e.valid == 1 then
-      local fname = vim.fn.fnamemodify(vim.api.nvim_buf_get_name(e.bufnr), ":t")
+      local fname = ""
+      if e.bufnr and e.bufnr ~= 0 and vim.api.nvim_buf_is_valid(e.bufnr) then
+        local ok, name = pcall(vim.api.nvim_buf_get_name, e.bufnr)
+        if ok and name and name ~= "" then
+          fname = vim.fn.fnamemodify(name, ":t")
+        end
+      end
       table.insert(lines, string.format("%s:%d: %s", fname, e.lnum, e.text or ""))
     end
   end
@@ -249,16 +365,20 @@ end
 -- ---------------------------------------------------------------------------
 
 M.providers.folder = function(ctx)
-  if not context.is_file(ctx.buf) then
+  if not safe_is_file(ctx.buf) then
     return nil
   end
-  local dir = vim.fn.fnamemodify(vim.api.nvim_buf_get_name(ctx.buf), ":h")
+  local name = safe_buf_name(ctx.buf)
+  if not name then
+    return nil
+  end
+  local dir = vim.fn.fnamemodify(name, ":h")
   return "@" .. context.strip_git_root(dir)
 end
 
 M.providers.marks = function(ctx)
-  local marks = vim.fn.getmarklist(ctx.buf)
-  if not marks or #marks == 0 then
+  local ok, marks = pcall(vim.fn.getmarklist, ctx.buf)
+  if not ok or not marks or #marks == 0 then
     return nil
   end
   local result = {}
@@ -271,7 +391,10 @@ M.providers.marks = function(ctx)
 end
 
 M.providers.search = function(_ctx)
-  local pat = vim.fn.getreg("/")
+  local ok, pat = pcall(vim.fn.getreg, "/")
+  if not ok then
+    return nil
+  end
   return (pat and pat ~= "") and pat or nil
 end
 
@@ -294,7 +417,7 @@ M.descriptions = {
   { token = "+function", description = "Surrounding function (treesitter)" },
   { token = "+class", description = "Surrounding class (treesitter)" },
   { token = "+git", description = "Git status" },
-  { token = "+diff", description = "Git diff for current file" },
+  { token = "+diff", description = "Git diff for current file (max 32 KiB)" },
   { token = "+quickfix", description = "Quickfix list entries" },
   { token = "+qflist", description = "Alias for +quickfix" },
   { token = "+loclist", description = "Location list entries" },
@@ -304,12 +427,47 @@ M.descriptions = {
 }
 
 -- ---------------------------------------------------------------------------
+-- Internal: whitespace collapse helper
+-- ---------------------------------------------------------------------------
+
+--- Collapse surrounding whitespace after a token is stripped from *parts*.
+--- Advances *pos* past any leading whitespace following the stripped token,
+--- trims trailing whitespace from the last element of *parts*, and inserts a
+--- single space when content exists on both sides.
+---@param parts  string[]  Accumulated result parts (mutated in-place)
+---@param pos    integer   Current position in the input after the token end
+---@param input  string    Full input string
+---@param len    integer   Length of input
+---@return integer  New position after skipping post-token whitespace
+local function strip_token_whitespace(parts, pos, input, len)
+  -- Skip whitespace that immediately follows the stripped token
+  while pos <= len and input:sub(pos, pos) == " " do
+    pos = pos + 1
+  end
+  -- Trim trailing whitespace from accumulated parts
+  while #parts > 0 and parts[#parts]:match("^%s*$") do
+    table.remove(parts)
+  end
+  if #parts > 0 then
+    parts[#parts] = parts[#parts]:gsub("%s+$", "")
+  end
+  -- Insert a single space if there is content on both sides
+  local has_before = #parts > 0 and parts[#parts] ~= ""
+  local has_after = pos <= len
+  if has_before and has_after then
+    table.insert(parts, " ")
+  end
+  return pos
+end
+
+-- ---------------------------------------------------------------------------
 -- Apply placeholders to a string
 -- ---------------------------------------------------------------------------
 
 --- Expand all +token placeholders in *input* using *state*.
 --- Supports escape syntax: \+token is preserved as literal +token.
 --- Failed expansions (nil provider result) are stripped.
+--- Provider errors are caught with pcall and treated as nil.
 ---@param input  string
 ---@param state? neph.Context|table
 ---@return string
@@ -351,33 +509,17 @@ function M.apply(input, state)
     elseif input:sub(pos, pos) == "+" then
       local token_match = input:match("^%+([%w_]+)", pos)
       if token_match then
-        local value = ctx:get(token_match)
+        -- Wrap provider call in pcall so no individual provider can crash apply()
+        local call_ok, value = pcall(ctx.get, ctx, token_match)
+        if not call_ok then
+          value = nil
+        end
         if value then
           table.insert(parts, value)
         end
         if not value then
-          -- Token stripped. Collapse surrounding whitespace:
-          -- Remove trailing whitespace from previous part, skip leading whitespace
-          -- after the token, then insert a single space if between content.
-          local after = pos + 1 + #token_match
-          -- Skip whitespace after stripped token
-          while after <= len and input:sub(after, after) == " " do
-            after = after + 1
-          end
-          -- Trim trailing whitespace from all trailing empty/whitespace parts
-          while #parts > 0 and parts[#parts]:match("^%s*$") do
-            table.remove(parts)
-          end
-          if #parts > 0 then
-            parts[#parts] = parts[#parts]:gsub("%s+$", "")
-          end
-          -- Insert a single space if there's content on both sides
-          local has_before = #parts > 0 and parts[#parts] ~= ""
-          local has_after = after <= len
-          if has_before and has_after then
-            table.insert(parts, " ")
-          end
-          pos = after
+          -- Token stripped — collapse surrounding whitespace
+          pos = strip_token_whitespace(parts, pos + 1 + #token_match, input, len)
         else
           pos = pos + 1 + #token_match
         end

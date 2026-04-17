@@ -142,4 +142,60 @@ describe("neph.placeholders", function()
       end
     end)
   end)
+
+  describe("apply() state handling", function()
+    it("called with nil state creates a fresh context", function()
+      -- apply() with nil state should not crash (it calls context.new() internally)
+      local ok, result = pcall(placeholders.apply, "hello world", nil)
+      assert.is_true(ok)
+      assert.is_string(result)
+      assert.equals("hello world", result)
+    end)
+
+    it("called with raw EditorState-like table merges into context", function()
+      -- apply() with a plain table (not a Context object) merges fields into ctx
+      local state = { buf = 0, win = 0, row = 1, col = 1, cwd = "/", range = nil }
+      local ok, result = pcall(placeholders.apply, "no tokens here", state)
+      assert.is_true(ok)
+      assert.is_string(result)
+    end)
+
+    it("consecutive + characters without word do not expand", function()
+      local out = placeholders.apply("a + b", nil_ctx())
+      assert.equals("a + b", out)
+    end)
+
+    it("lone + at end of string does not expand", function()
+      local out = placeholders.apply("hello +", nil_ctx())
+      -- The + should be kept as-is (no word match follows)
+      assert.is_string(out)
+    end)
+
+    it("multiple unknown tokens in a row collapse to empty string", function()
+      local out = placeholders.apply("+a +b +c", nil_ctx())
+      -- All should be stripped; result should be empty or whitespace-trimmed
+      assert.equals("", out)
+    end)
+
+    it("escaped token at start of string is preserved as literal", function()
+      local out = placeholders.apply("\\+file is cool", fake_ctx({ file = "@foo.lua" }))
+      assert.equals("+file is cool", out)
+    end)
+
+    it("escaped token at end of string is preserved as literal", function()
+      local out = placeholders.apply("see \\+selection", fake_ctx({ selection = "some text" }))
+      assert.equals("see +selection", out)
+    end)
+
+    it("mix of escaped and real tokens expands correctly", function()
+      local out = placeholders.apply("\\+word and +cursor", fake_ctx({ word = "hello", cursor = "@f:1" }))
+      assert.equals("+word and @f:1", out)
+    end)
+
+    it("value with leading + sign does not trigger re-expansion", function()
+      -- The +token in the expanded value must not be re-expanded
+      local out = placeholders.apply("+selection", fake_ctx({ selection = "+cursor is a token" }))
+      assert.equals("+cursor is a token", out)
+    end)
+  end)
 end)

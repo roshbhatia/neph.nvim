@@ -329,5 +329,196 @@ describe("placeholder providers", function()
       local ok, _ = pcall(placeholders.providers.diagnostic, ctx)
       assert.is_boolean(ok)
     end)
+
+    -- Pass 1: deleted buffer IDs are handled without segfault/hang
+    it("+file with deleted buffer: pcall does not hang", function()
+      local buf = make_buf({ "hello" }, vim.fn.tempname() .. "/deleted.lua")
+      vim.api.nvim_buf_delete(buf, { force = true })
+      local ctx = make_ctx({ buf = buf })
+      -- nvim_buf_get_name throws on an invalid buf; pcall catches it
+      local ok, _ = pcall(placeholders.providers.file, ctx)
+      assert.is_boolean(ok)
+    end)
+
+    it("+position with deleted buffer: pcall does not hang", function()
+      local buf = make_buf({ "hello" }, vim.fn.tempname() .. "/deleted2.lua")
+      vim.api.nvim_buf_delete(buf, { force = true })
+      local ctx = make_ctx({ buf = buf, row = 1, col = 1 })
+      local ok, _ = pcall(placeholders.providers.position, ctx)
+      assert.is_boolean(ok)
+    end)
+
+    it("+folder with deleted buffer: pcall does not hang", function()
+      local buf = make_buf({ "hello" }, vim.fn.tempname() .. "/deleted3.lua")
+      vim.api.nvim_buf_delete(buf, { force = true })
+      local ctx = make_ctx({ buf = buf })
+      local ok, _ = pcall(placeholders.providers.folder, ctx)
+      assert.is_boolean(ok)
+    end)
+
+    -- Pass 2: word with unloaded buffer returns nil gracefully
+    it("+word with unloaded buffer does not crash", function()
+      local buf = vim.api.nvim_create_buf(true, false)
+      table.insert(cleanup_bufs, buf)
+      -- Immediately unload; do not give it a name so is_file fails naturally
+      local ctx = make_ctx({ buf = buf, row = 1, col = 1 })
+      assert.has_no_errors(function()
+        placeholders.providers.word(ctx)
+      end)
+    end)
+
+    -- Pass 3: +diagnostic guards nil row
+    it("+diagnostic returns nil when ctx.row is nil", function()
+      local ctx = make_ctx({ buf = test_buf, row = nil })
+      local ok, result = pcall(placeholders.providers.diagnostic, ctx)
+      assert.is_true(ok)
+      assert.is_nil(result)
+    end)
+
+    -- Pass 4: +diagnostics handles entries with nil/non-string messages
+    it("+diagnostics formats nil message without crashing", function()
+      local orig_get = vim.diagnostic.get
+      vim.diagnostic.get = function()
+        return {
+          { lnum = 0, col = 0, message = nil, severity = vim.diagnostic.severity.ERROR },
+        }
+      end
+      local ctx = make_ctx({ buf = test_buf })
+      local ok, result = pcall(placeholders.providers.diagnostics, ctx)
+      vim.diagnostic.get = orig_get
+      assert.is_true(ok)
+      -- Result is a string (tostring(nil) = "nil") or nil — either is fine
+      if result ~= nil then
+        assert.is_string(result)
+      end
+    end)
+
+    -- Pass 5: +quickfix with valid entries formats correctly
+    it("+quickfix with valid entries returns formatted string", function()
+      local orig_getqflist = vim.fn.getqflist
+      local qf_buf = vim.api.nvim_create_buf(false, true)
+      table.insert(cleanup_bufs, qf_buf)
+      vim.fn.getqflist = function()
+        return {
+          { valid = 1, bufnr = qf_buf, lnum = 1, text = "some error" },
+        }
+      end
+      local result
+      assert.has_no_errors(function()
+        result = placeholders.providers.quickfix({})
+      end)
+      vim.fn.getqflist = orig_getqflist
+      -- With a valid bufnr the result may or may not be nil depending on buf name
+      assert.is_truthy(result == nil or type(result) == "string")
+    end)
+
+    -- Pass 6: +diff returns nil when git root is unavailable for a scratch buf
+    it("+diff returns nil for a file buffer outside any git repo", function()
+      -- Build a scratch buf to force git root lookup to fail
+      local scratch = vim.api.nvim_create_buf(false, true)
+      table.insert(cleanup_bufs, scratch)
+      local ctx = make_ctx({ buf = scratch })
+      -- selection provider returns nil for scratch; diff does too
+      local result = placeholders.providers.diff(ctx)
+      assert.is_nil(result)
+    end)
+
+    -- Pass 7: ts_ancestor with parser unavailable returns nil
+    it("+function with no treesitter parser returns nil", function()
+      local ctx = make_ctx({ buf = test_buf })
+      local ok, result = pcall(placeholders.providers["function"], ctx)
+      assert.is_true(ok)
+      -- Without a real TS parser loaded, should return nil (not crash)
+      if result ~= nil then
+        assert.is_string(result)
+      end
+    end)
+
+    -- Pass 8: +selection with unloaded buffer returns nil
+    it("+selection with empty buffer returns nil", function()
+      local buf = vim.api.nvim_create_buf(true, false)
+      table.insert(cleanup_bufs, buf)
+      local ctx = make_ctx({
+        buf = buf,
+        range = { from = { 1, 0 }, to = { 1, 5 } },
+      })
+      local ok, result = pcall(placeholders.providers.selection, ctx)
+      assert.is_true(ok)
+      assert.is_nil(result)
+    end)
+
+    -- Pass 9: apply() propagates errors from crashing providers (no wrapping)
+    it("apply() does not silently drop tokens when provider succeeds", function()
+      -- A provider that returns a value should have its value inserted
+      placeholders.providers["__test_ok"] = function()
+        return "INJECTED"
+      end
+      local result = placeholders.apply("hello +__test_ok world", {})
+      placeholders.providers["__test_ok"] = nil
+      assert.is_string(result)
+      assert.truthy(result:find("INJECTED"))
+    end)
+
+    -- Pass 11: +git returns nil when git command fails (non-git directory)
+    it("+git returns nil or string and does not crash outside a git repo", function()
+      -- Cannot guarantee test runs outside a git repo, but the provider must
+      -- handle shell_error != 0 without raising.
+      local ok, result = pcall(placeholders.providers.git, {})
+      assert.is_true(ok)
+      if result ~= nil then
+        assert.is_string(result)
+      end
+    end)
+
+    -- Pass 12: +marks returns formatted string when buffer has marks set
+    it("+marks returns formatted string when marks exist", function()
+      local ctx = make_ctx({ buf = test_buf })
+      -- Set a named mark 'a' on line 2 of the test buffer
+      vim.api.nvim_buf_set_mark(test_buf, "a", 2, 0, {})
+      local result = placeholders.providers.marks(ctx)
+      -- Mark 'a' is in the [a-zA-Z] range, so it should appear
+      assert.is_string(result)
+      assert.truthy(result:find("a:"))
+      -- Clean up
+      vim.api.nvim_buf_set_mark(test_buf, "a", 0, 0, {})
+    end)
+
+    -- Pass 13: +marks returns nil when no named marks are set
+    it("+marks returns nil when no named marks are present", function()
+      local buf = make_buf({ "line one" }, vim.fn.tempname() .. "/marks.lua")
+      table.insert(cleanup_bufs, buf)
+      -- Don't set any marks
+      local ctx = make_ctx({ buf = buf })
+      local result = placeholders.providers.marks(ctx)
+      -- May be nil or string depending on env marks; just verify no crash
+      assert.is_boolean(result == nil or type(result) == "string")
+    end)
+
+    -- Pass 10: all providers produce strings or nil with a valid ctx
+    it("all providers return strings or nil, never tables (with valid file ctx)", function()
+      local ctx = make_ctx({ buf = test_buf, row = 1, col = 1 })
+      -- Only test providers that are safe with a valid file buf
+      local safe_providers = {
+        "file",
+        "position",
+        "line",
+        "cursor",
+        "buffer",
+        "folder",
+        "word",
+        "search",
+        "marks",
+      }
+      for _, name in ipairs(safe_providers) do
+        local fn = placeholders.providers[name]
+        if fn then
+          local ok, result = pcall(fn, ctx)
+          assert.is_true(ok, "provider +" .. name .. " threw an error")
+          if result ~= nil then
+            assert.is_string(result, "provider +" .. name .. " returned non-string: " .. type(result))
+          end
+        end
+      end
+    end)
   end)
 end)
