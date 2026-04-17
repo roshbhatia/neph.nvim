@@ -27,7 +27,7 @@ describe("neph.context", function()
 
     it("returns false for unnamed buffers", function()
       local buf = vim.api.nvim_create_buf(false, true)
-      -- No name set → empty string
+      -- No name set -> empty string
       assert.equal("", vim.api.nvim_buf_get_name(buf))
       assert.is_false(context.is_file(buf))
       vim.api.nvim_buf_delete(buf, { force = true })
@@ -116,7 +116,7 @@ describe("neph.context", function()
     it("strips the git root prefix from a path inside the repo", function()
       local root = context.get_git_root()
       if root == nil then
-        -- Not inside a git repo in this environment – skip
+        -- Not inside a git repo in this environment - skip
         return
       end
       local full_path = root .. "/lua/neph/internal/context.lua"
@@ -190,6 +190,117 @@ describe("neph.context", function()
       assert.is_string(state.cwd)
       assert.is_number(state.row)
       assert.is_number(state.col)
+    end)
+
+    it(":get() caches provider result on first call", function()
+      local ctx = context.new()
+      -- Call get() for search provider twice; second call must hit cache
+      local call_count = 0
+      local placeholders = require("neph.internal.placeholders")
+      local orig = placeholders.providers.search
+      placeholders.providers.search = function(s)
+        call_count = call_count + 1
+        return orig(s)
+      end
+      ctx:get("search")
+      ctx:get("search")
+      placeholders.providers.search = orig
+      assert.equals(1, call_count)
+    end)
+
+    it(":get() with pipe fallback returns first non-nil provider", function()
+      local ctx = context.new()
+      -- "__nonexistent__|search" should fall through to search
+      vim.fn.setreg("/", "testpattern")
+      local result = ctx:get("__nonexistent__|search")
+      vim.fn.setreg("/", "")
+      assert.equals("testpattern", result)
+    end)
+
+    it(":get() with all-nil pipe returns nil", function()
+      local ctx = context.new()
+      local result = ctx:get("__no1__|__no2__")
+      assert.is_nil(result)
+    end)
+  end)
+
+  describe("get_selection_range()", function()
+    it("returns nil when not in visual mode", function()
+      -- Ensure we are in normal mode
+      vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", true, false, true), "nx", false)
+      local result = context.get_selection_range()
+      assert.is_nil(result)
+    end)
+  end)
+
+  describe("strip_git_root() edge cases", function()
+    it("returns path unchanged when path does not start with git root", function()
+      local root = context.get_git_root()
+      if root == nil then
+        return
+      end
+      local unrelated = "/some/unrelated/path.lua"
+      local result = context.strip_git_root(unrelated)
+      assert.equals(unrelated, result)
+    end)
+
+    it("returns relative path with no leading slash", function()
+      local root = context.get_git_root()
+      if root == nil then
+        return
+      end
+      -- Path exactly equal to root + "/" should strip to ""
+      local result = context.strip_git_root(root .. "/")
+      assert.is_string(result)
+    end)
+
+    it("path exactly equal to root strips to empty string", function()
+      local root = context.get_git_root()
+      if root == nil then
+        return
+      end
+      local result = context.strip_git_root(root)
+      -- root with no trailing slash: remainder is "" which has no leading slash
+      assert.is_string(result)
+    end)
+
+    it("path is root/subdir/file.lua → only the relative part remains", function()
+      local root = context.get_git_root()
+      if root == nil then
+        return
+      end
+      local full = root .. "/subdir/file.lua"
+      local result = context.strip_git_root(full)
+      assert.equals("subdir/file.lua", result)
+    end)
+  end)
+
+  describe("get_git_root() cache interactions", function()
+    it("stores false for a non-git directory after a failed lookup", function()
+      context._clear_git_root_cache()
+      -- Save and override getcwd to point to a guaranteed non-git dir
+      local orig_getcwd = vim.fn.getcwd
+      vim.fn.getcwd = function()
+        return "/tmp"
+      end
+      context.get_git_root()
+      local cache = context._git_root_cache()
+      -- /tmp is not a git repo; cache entry should be false (not nil)
+      assert.is_not_nil(cache["/tmp"])
+      assert.is_false(cache["/tmp"])
+      vim.fn.getcwd = orig_getcwd
+    end)
+
+    it("returns nil (not false) to callers for non-git directory", function()
+      context._clear_git_root_cache()
+      local orig_getcwd = vim.fn.getcwd
+      vim.fn.getcwd = function()
+        return "/tmp"
+      end
+      local result = context.get_git_root()
+      vim.fn.getcwd = orig_getcwd
+      -- Public API must expose nil, not false
+      assert.is_nil(result)
     end)
   end)
 end)

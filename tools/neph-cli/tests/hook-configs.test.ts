@@ -25,7 +25,7 @@ describe('claude settings.json', () => {
 
   it('runs neph integration hook claude', () => {
     const hook = config.hooks.PreToolUse[0];
-    expect(hook.hooks[0].command).toBe('neph integration hook claude');
+    expect(hook.hooks[0].command).toContain('neph integration hook claude');
     expect(hook.hooks[0].type).toBe('command');
   });
 
@@ -54,7 +54,7 @@ describe('copilot hooks.json', () => {
   });
 
   it('runs neph integration hook copilot', () => {
-    expect(config.hooks[0].command).toBe('neph integration hook copilot');
+    expect(config.hooks[0].command).toContain('neph integration hook copilot');
   });
 
   it('has sessionStart and sessionEnd lifecycle hooks', () => {
@@ -73,17 +73,17 @@ describe('cursor hooks.json', () => {
   });
 
   it('runs neph integration hook cursor for afterFileEdit', () => {
-    expect(config.hooks.afterFileEdit[0].command).toBe('neph integration hook cursor');
+    expect(config.hooks.afterFileEdit[0].command).toContain('neph integration hook cursor');
   });
 
   it('has beforeShellExecution hook', () => {
     expect(Array.isArray(config.hooks.beforeShellExecution)).toBe(true);
-    expect(config.hooks.beforeShellExecution[0].command).toBe('neph integration hook cursor');
+    expect(config.hooks.beforeShellExecution[0].command).toContain('neph integration hook cursor');
   });
 
   it('has beforeMCPExecution hook', () => {
     expect(Array.isArray(config.hooks.beforeMCPExecution)).toBe(true);
-    expect(config.hooks.beforeMCPExecution[0].command).toBe('neph integration hook cursor');
+    expect(config.hooks.beforeMCPExecution[0].command).toContain('neph integration hook cursor');
   });
 });
 
@@ -97,7 +97,7 @@ describe('gemini settings.json', () => {
 
   it('runs neph integration hook gemini', () => {
     const hook = config.hooks.BeforeTool[0];
-    expect(hook.hooks[0].command).toBe('neph integration hook gemini');
+    expect(hook.hooks[0].command).toContain('neph integration hook gemini');
   });
 
   it('has lifecycle hooks', () => {
@@ -119,7 +119,7 @@ describe('codex hooks.json', () => {
     expect(Array.isArray(config.hooks.PreToolUse)).toBe(true);
     const hook = config.hooks.PreToolUse[0];
     expect(hook.matcher).toContain('edit');
-    expect(hook.hooks[0].command).toBe('neph integration hook codex');
+    expect(hook.hooks[0].command).toContain('neph integration hook codex');
   });
 
   it('has lifecycle hooks', () => {

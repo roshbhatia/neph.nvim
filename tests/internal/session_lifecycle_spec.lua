@@ -352,3 +352,222 @@ describe("session lifecycle: periodic stale timer", function()
     assert.is_nil(session.get_active())
   end)
 end)
+
+-- ---------------------------------------------------------------------------
+-- Pass 7: get_active_session() returns nil when no session is active
+-- ---------------------------------------------------------------------------
+describe("session lifecycle: get_active_session()", function()
+  it("returns nil when no session has been opened", function()
+    fresh_session()
+    assert.is_nil(session.get_active_session())
+  end)
+
+  it("returns the terminal name after open()", function()
+    fresh_session({
+      open = function(_, cfg, _)
+        return { pane_id = 1, cmd = cfg.cmd, cwd = "/tmp", ready = true }
+      end,
+    })
+    register_agent("gas_open")
+    session.open("gas_open")
+    assert.are.equal("gas_open", session.get_active_session())
+  end)
+
+  it("returns nil again after kill_session()", function()
+    fresh_session({
+      open = function(_, cfg, _)
+        return { pane_id = 1, cmd = cfg.cmd, cwd = "/tmp", ready = true }
+      end,
+    })
+    register_agent("gas_kill")
+    session.open("gas_kill")
+    session.kill_session("gas_kill")
+    assert.is_nil(session.get_active_session())
+  end)
+end)
+
+-- ---------------------------------------------------------------------------
+-- Pass 8: agent switch — open A then open B removes A from active
+-- ---------------------------------------------------------------------------
+describe("session lifecycle: agent switch", function()
+  it("switching to a second agent makes it the active terminal", function()
+    local open_count = 0
+    fresh_session({
+      open = function(name, cfg, _)
+        open_count = open_count + 1
+        return { pane_id = open_count, cmd = cfg.cmd, cwd = "/tmp", ready = true, name = name }
+      end,
+    })
+
+    require("neph.internal.agents").init({
+      helpers.make_valid_agent({ name = "switch_a", label = "A", cmd = "true" }),
+      helpers.make_valid_agent({ name = "switch_b", label = "B", cmd = "true" }),
+    })
+
+    session.open("switch_a")
+    assert.are.equal("switch_a", session.get_active())
+
+    session.open("switch_b")
+    assert.are.equal("switch_b", session.get_active())
+  end)
+
+  it("both agents remain tracked after sequential opens", function()
+    local open_count = 0
+    fresh_session({
+      open = function(name, cfg, _)
+        open_count = open_count + 1
+        return { pane_id = open_count, cmd = cfg.cmd, cwd = "/tmp", ready = true, name = name }
+      end,
+    })
+
+    require("neph.internal.agents").init({
+      helpers.make_valid_agent({ name = "both_a", label = "A", cmd = "true" }),
+      helpers.make_valid_agent({ name = "both_b", label = "B", cmd = "true" }),
+    })
+
+    session.open("both_a")
+    session.open("both_b")
+
+    -- Both should be tracked (non-single-pane backend)
+    assert.is_not_nil(session.get_info("both_a"))
+    assert.is_not_nil(session.get_info("both_b"))
+  end)
+
+  it("single_pane_only backend kills first agent before opening second", function()
+    local killed = {}
+    local open_count = 0
+    fresh_session({
+      single_pane_only = true,
+      open = function(name, cfg, _)
+        open_count = open_count + 1
+        return { pane_id = open_count, cmd = cfg.cmd, cwd = "/tmp", ready = true, name = name }
+      end,
+      kill = function(td)
+        table.insert(killed, td.name)
+        td.pane_id = nil
+      end,
+    })
+
+    require("neph.internal.agents").init({
+      helpers.make_valid_agent({ name = "sp_a", label = "A", cmd = "true" }),
+      helpers.make_valid_agent({ name = "sp_b", label = "B", cmd = "true" }),
+    })
+
+    session.open("sp_a")
+    session.open("sp_b")
+
+    assert.are.equal(1, #killed)
+    assert.are.equal("sp_a", killed[1])
+    assert.are.equal("sp_b", session.get_active())
+  end)
+end)
+
+-- ---------------------------------------------------------------------------
+-- Pass 9: hide() clears vim.g state
+-- ---------------------------------------------------------------------------
+describe("session lifecycle: hide() clears vim.g", function()
+  it("vim.g[name..'_active'] is nil after hide()", function()
+    fresh_session({
+      open = function(_, cfg, _)
+        return { pane_id = 1, cmd = cfg.cmd, cwd = "/tmp", ready = true }
+      end,
+    })
+    register_agent("hide_g")
+
+    session.open("hide_g")
+    assert.is_not_nil(vim.g["hide_g_active"])
+
+    session.hide("hide_g")
+    assert.is_nil(vim.g["hide_g_active"])
+  end)
+
+  it("active_terminal is nil after hiding the active session", function()
+    fresh_session({
+      open = function(_, cfg, _)
+        return { pane_id = 1, cmd = cfg.cmd, cwd = "/tmp", ready = true }
+      end,
+    })
+    register_agent("hide_active")
+
+    session.open("hide_active")
+    assert.are.equal("hide_active", session.get_active())
+    session.hide("hide_active")
+    assert.is_nil(session.get_active())
+  end)
+end)
+
+-- ---------------------------------------------------------------------------
+-- Pass 10: kill_session cancels ready_timer before backend.kill
+-- ---------------------------------------------------------------------------
+describe("session lifecycle: kill_session cancels ready_timer", function()
+  it("ready_timer.stop is called before backend.kill when timer is present", function()
+    local timer_stopped = false
+    local kill_called = false
+    local stop_before_kill = false
+
+    local fake_timer = {
+      stop = function()
+        timer_stopped = true
+        if not kill_called then
+          stop_before_kill = true
+        end
+      end,
+      close = function() end,
+    }
+
+    fresh_session({
+      open = function(_, cfg, _)
+        local td = { pane_id = 1, cmd = cfg.cmd, cwd = "/tmp", ready = false, ready_timer = fake_timer }
+        return td
+      end,
+      kill = function(_)
+        kill_called = true
+      end,
+    })
+    register_agent("timer_kill")
+
+    session.open("timer_kill")
+    session.kill_session("timer_kill")
+
+    assert.is_true(timer_stopped, "ready_timer.stop was not called")
+    assert.is_true(stop_before_kill, "ready_timer.stop was called after backend.kill")
+  end)
+
+  it("on_ready does not fire after kill_session even if timer was active", function()
+    local on_ready_fired = false
+    local captured_td = nil
+
+    local fake_timer = {
+      stop = function() end,
+      close = function() end,
+    }
+
+    fresh_session({
+      open = function(_, cfg, _)
+        captured_td = { pane_id = 1, cmd = cfg.cmd, cwd = "/tmp", ready = false, ready_timer = fake_timer }
+        return captured_td
+      end,
+    })
+    register_agent("no_ready_after_kill")
+
+    session.open("no_ready_after_kill")
+    -- Assign on_ready after open (mirrors what session.open sets internally)
+    if captured_td then
+      local orig = captured_td.on_ready
+      captured_td.on_ready = function()
+        on_ready_fired = true
+        if orig then
+          orig()
+        end
+      end
+    end
+
+    session.kill_session("no_ready_after_kill")
+
+    -- After kill, the ready_timer should be nil on td so it cannot fire
+    if captured_td then
+      assert.is_nil(captured_td.ready_timer)
+    end
+    assert.is_false(on_ready_fired)
+  end)
+end)

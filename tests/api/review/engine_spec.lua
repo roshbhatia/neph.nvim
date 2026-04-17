@@ -66,6 +66,38 @@ describe("neph.api.review.engine", function()
       assert.are.same("line 1\nold 2\nline 3", result)
     end)
 
+    it("does not mutate old_lines input", function()
+      local old = { "line 1", "old 2", "line 3" }
+      local old_copy = { "line 1", "old 2", "line 3" }
+      local new = { "line 1", "new 2", "line 3" }
+      local decisions = { { index = 1, decision = "accept" } }
+      engine.apply_decisions(old, new, decisions)
+      assert.are.same(old_copy, old)
+    end)
+
+    it("nil/missing decision entry is treated as reject (determinism)", function()
+      local old = { "A", "sep", "B" }
+      local new = { "X", "sep", "Y" }
+      -- Two hunks; only provide decision for hunk 2; hunk 1 missing → treated as reject
+      local decisions = { nil, { index = 2, decision = "accept" } }
+      local result = engine.apply_decisions(old, new, decisions)
+      -- hunk 1 (A→X) rejected: keep A; hunk 2 (B→Y) accepted: use Y
+      assert.are.equal("A\nsep\nY", result)
+    end)
+
+    it("apply_decisions is deterministic: same inputs always produce same output", function()
+      local old = { "A", "sep", "B", "sep", "C" }
+      local new = { "X", "sep", "Y", "sep", "Z" }
+      local decisions = {
+        { index = 1, decision = "accept" },
+        { index = 2, decision = "reject" },
+        { index = 3, decision = "accept" },
+      }
+      local r1 = engine.apply_decisions(old, new, decisions)
+      local r2 = engine.apply_decisions(old, new, decisions)
+      assert.are.equal(r1, r2)
+    end)
+
     it("applies multiple changes correctly with offset", function()
       local old = { "A", "B", "C" }
       local new = { "A", "B1", "B2", "C" }
@@ -75,6 +107,53 @@ describe("neph.api.review.engine", function()
       local decisions = { { index = 1, decision = "accept" } }
       local result = engine.apply_decisions(old, new, decisions)
       assert.are.same("A\nB1\nB2\nC", result)
+    end)
+
+    it("multi-hunk: accept first, reject second keeps first new and second old", function()
+      -- 3 hunks separated by unchanging "sep" lines
+      local old = { "old1", "sep", "old2", "sep", "old3" }
+      local new = { "new1", "sep", "new2", "sep", "new3" }
+      local decisions = {
+        { index = 1, decision = "accept" },
+        { index = 2, decision = "reject" },
+        { index = 3, decision = "accept" },
+      }
+      local result = engine.apply_decisions(old, new, decisions)
+      assert.are.equal("new1\nsep\nold2\nsep\nnew3", result)
+    end)
+
+    it("multi-hunk: reject first, accept second keeps first old and second new", function()
+      local old = { "old1", "sep", "old2", "sep", "old3" }
+      local new = { "new1", "sep", "new2", "sep", "new3" }
+      local decisions = {
+        { index = 1, decision = "reject" },
+        { index = 2, decision = "accept" },
+        { index = 3, decision = "reject" },
+      }
+      local result = engine.apply_decisions(old, new, decisions)
+      assert.are.equal("old1\nsep\nnew2\nsep\nold3", result)
+    end)
+
+    it("all hunks accepted: result equals new content joined", function()
+      local old = { "old1", "sep", "old2" }
+      local new = { "new1", "sep", "new2" }
+      local decisions = {
+        { index = 1, decision = "accept" },
+        { index = 2, decision = "accept" },
+      }
+      local result = engine.apply_decisions(old, new, decisions)
+      assert.are.equal("new1\nsep\nnew2", result)
+    end)
+
+    it("all hunks rejected: result equals old content joined", function()
+      local old = { "old1", "sep", "old2" }
+      local new = { "new1", "sep", "new2" }
+      local decisions = {
+        { index = 1, decision = "reject" },
+        { index = 2, decision = "reject" },
+      }
+      local result = engine.apply_decisions(old, new, decisions)
+      assert.are.equal("old1\nsep\nold2", result)
     end)
 
     it("is deterministic: same inputs always yield same output", function()
@@ -339,6 +418,28 @@ describe("neph.api.review.engine", function()
       assert.are.equal(1, session.next_undecided(999))
     end)
 
+    it("next_undecided(0) is clamped: finds first undecided from start", function()
+      local old, new = make_multi_hunk(3)
+      local session = engine.create_session(old, new)
+      -- All undecided; from=0 clamps to 1, should return 1
+      assert.are.equal(1, session.next_undecided(0))
+    end)
+
+    it("next_undecided with from > total wraps and scans all", function()
+      local old, new = make_multi_hunk(3)
+      local session = engine.create_session(old, new)
+      session.accept_at(1)
+      session.accept_at(2)
+      -- from=999 clamped past end, wrap-around finds 3
+      assert.are.equal(3, session.next_undecided(999))
+    end)
+
+    it("next_undecided returns nil on empty hunk list", function()
+      local session = engine.create_session({}, {})
+      assert.are.equal(0, session.get_total_hunks())
+      assert.is_nil(session.next_undecided())
+    end)
+
     it("finalize treats undecided as rejected", function()
       local old, new = make_multi_hunk(3)
       local session = engine.create_session(old, new)
@@ -531,6 +632,16 @@ describe("neph.api.review.engine", function()
   end)
 
   describe("state machine edge cases", function()
+    it("finalize is idempotent: second call returns same envelope object", function()
+      local old = { "A" }
+      local new = { "B" }
+      local session = engine.create_session(old, new)
+      session.accept()
+      local e1 = session.finalize()
+      local e2 = session.finalize()
+      assert.are.equal(e1, e2)
+    end)
+
     it("no hunks (identical input) → is_done immediately, finalize gives accept", function()
       local lines = { "same", "lines" }
       local session = engine.create_session(lines, lines)
@@ -631,11 +742,53 @@ describe("neph.api.review.engine boundary tests", function()
     it("pure insertion at BOF: compute_hunks({}, new_lines) yields 1 hunk", function()
       local hunks = engine.compute_hunks({}, { "line1", "line2" })
       assert.are.equal(1, #hunks)
+      -- start_b/end_b cover all inserted lines
+      assert.are.equal(1, hunks[1].start_b)
+      assert.are.equal(2, hunks[1].end_b)
+    end)
+
+    it("accepting a BOF insertion produces the new lines", function()
+      local new = { "line1", "line2" }
+      local session = engine.create_session({}, new)
+      assert.are.equal(1, session.get_total_hunks())
+      session.accept()
+      local envelope = session.finalize()
+      assert.are.equal("accept", envelope.decision)
+      assert.are.equal("line1\nline2", envelope.content)
+    end)
+
+    it("rejecting a BOF insertion keeps old (empty) content", function()
+      local session = engine.create_session({}, { "line1" })
+      session.reject("no")
+      local envelope = session.finalize()
+      assert.are.equal("reject", envelope.decision)
+      assert.are.equal("", envelope.content)
     end)
 
     it("pure deletion: compute_hunks(old_lines, {}) yields 1 hunk", function()
       local hunks = engine.compute_hunks({ "line1", "line2" }, {})
       assert.are.equal(1, #hunks)
+    end)
+
+    it("accepting a full deletion produces empty content", function()
+      local old = { "line1", "line2" }
+      local session = engine.create_session(old, {})
+      assert.are.equal(1, session.get_total_hunks())
+      session.accept()
+      local envelope = session.finalize()
+      assert.are.equal("accept", envelope.decision)
+      assert.are.equal("", envelope.content)
+    end)
+
+    it("rejecting a full deletion: decision=reject, content='' (all-reject contract)", function()
+      -- When all hunks are rejected, build_envelope sets content="" to signal
+      -- "no accepted changes"; the caller is responsible for falling back to old.
+      local old = { "line1", "line2" }
+      local session = engine.create_session(old, {})
+      session.reject("keep it")
+      local envelope = session.finalize()
+      assert.are.equal("reject", envelope.decision)
+      assert.are.equal("", envelope.content)
     end)
 
     it("both empty: compute_hunks({}, {}) yields 0 hunks", function()
@@ -790,6 +943,53 @@ describe("neph.api.review.engine boundary tests", function()
     it("accept_at negative index returns false without crash", function()
       local session = engine.create_session({ "A" }, { "B" })
       assert.is_false(session.accept_at(-1))
+    end)
+  end)
+
+  describe("build_envelope JSON-serializability", function()
+    -- ReviewEnvelope must only contain primitive types (string, number, boolean, nil)
+    -- and arrays/maps of those — no functions, no metatables, no circular refs.
+    local function assert_json_safe(value, path)
+      path = path or "envelope"
+      local t = type(value)
+      if t == "nil" or t == "string" or t == "number" or t == "boolean" then
+        return
+      end
+      assert.are.equal("table", t, path .. " must be table/primitive, got " .. t)
+      for k, v in pairs(value) do
+        assert_json_safe(v, path .. "." .. tostring(k))
+      end
+    end
+
+    it("all-accept envelope is JSON-safe", function()
+      local decisions = { { index = 1, decision = "accept" } }
+      local env = engine.build_envelope(decisions, "content")
+      assert_json_safe(env)
+    end)
+
+    it("all-reject envelope is JSON-safe", function()
+      local decisions = { { index = 1, decision = "reject", reason = "bad" } }
+      local env = engine.build_envelope(decisions, "content")
+      assert_json_safe(env)
+    end)
+
+    it("partial envelope is JSON-safe", function()
+      local decisions = {
+        { index = 1, decision = "accept" },
+        { index = 2, decision = "reject", reason = "nope" },
+      }
+      local env = engine.build_envelope(decisions, "partial")
+      assert_json_safe(env)
+    end)
+
+    it("empty decisions envelope is JSON-safe", function()
+      local env = engine.build_envelope({}, "")
+      assert_json_safe(env)
+    end)
+
+    it("schema field is always the literal string 'review/v1'", function()
+      local env = engine.build_envelope({}, "x")
+      assert.are.equal("review/v1", env.schema)
     end)
   end)
 

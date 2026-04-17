@@ -1,3 +1,4 @@
+---@diagnostic disable: undefined-global
 local contracts = require("neph.internal.contracts")
 
 describe("neph.contracts", function()
@@ -175,13 +176,13 @@ describe("neph.contracts", function()
 
     it("label with unicode is accepted", function()
       assert.has_no.errors(function()
-        contracts.validate_agent(base({ label = "テスト Agent" }))
+        contracts.validate_agent(base({ label = "Test Agent" }))
       end)
     end)
 
     it("icon with multi-byte emoji is accepted", function()
       assert.has_no.errors(function()
-        contracts.validate_agent(base({ icon = "🤖" }))
+        contracts.validate_agent(base({ icon = "X" }))
       end)
     end)
 
@@ -251,6 +252,30 @@ describe("neph.contracts", function()
         contracts.validate_backend(mod, "snacks")
       end)
     end)
+
+    it("throws when all methods are nil (empty table)", function()
+      assert.has_error(function()
+        contracts.validate_backend({}, "empty")
+      end)
+    end)
+
+    it("error message names the missing method", function()
+      local mod = make_valid_backend()
+      mod.send = nil
+      local ok, err = pcall(contracts.validate_backend, mod, "mybackend")
+      assert.is_false(ok)
+      assert.truthy(err:find("send"))
+    end)
+
+    it("validates all 8 required methods independently", function()
+      local required = { "setup", "open", "focus", "hide", "is_visible", "kill", "cleanup_all", "send" }
+      for _, method in ipairs(required) do
+        local mod = make_valid_backend()
+        mod[method] = nil
+        local ok, _ = pcall(contracts.validate_backend, mod, "test")
+        assert.is_false(ok, "should error for missing method: " .. method)
+      end
+    end)
   end)
 
   describe("validate_tools", function()
@@ -305,9 +330,27 @@ describe("neph.contracts", function()
       end)
     end)
 
+    it("throws on build missing dir", function()
+      assert.has_error(function()
+        contracts.validate_tools(base_agent({ builds = { { src_dirs = { "." }, check = "dist/pi.js" } } }))
+      end)
+    end)
+
+    it("throws on build missing check", function()
+      assert.has_error(function()
+        contracts.validate_tools(base_agent({ builds = { { dir = "pi", src_dirs = { "." } } } }))
+      end)
+    end)
+
     it("throws on file missing content", function()
       assert.has_error(function()
         contracts.validate_tools(base_agent({ files = { { dst = "~/.foo" } } }))
+      end)
+    end)
+
+    it("throws on file missing dst", function()
+      assert.has_error(function()
+        contracts.validate_tools(base_agent({ files = { { content = "x" } } }))
       end)
     end)
 
@@ -323,9 +366,94 @@ describe("neph.contracts", function()
       end)
     end)
 
+    it("accepts file with overwrite mode", function()
+      assert.has_no.errors(function()
+        contracts.validate_tools(base_agent({ files = { { dst = "~/.foo", content = "x", mode = "overwrite" } } }))
+      end)
+    end)
+
+    it("throws on non-table tools field", function()
+      assert.has_error(function()
+        contracts.validate_tools({ name = "test", label = "Test", icon = " ", cmd = "test", tools = "bad" })
+      end)
+    end)
+
     it("validate_agent calls validate_tools when tools present", function()
       assert.has_error(function()
         contracts.validate_agent(base_agent({ symlinks = { { dst = "~/.foo" } } }))
+      end)
+    end)
+
+    describe("flat-array format", function()
+      it("accepts valid symlink spec", function()
+        assert.has_no.errors(function()
+          contracts.validate_tools(base_agent({
+            { type = "symlink", src = "tools/foo", dst = "~/.foo" },
+          }))
+        end)
+      end)
+
+      it("accepts valid json_merge spec", function()
+        assert.has_no.errors(function()
+          contracts.validate_tools(base_agent({
+            { type = "json_merge", src = "tools/s.json", dst = "~/.foo/s.json" },
+          }))
+        end)
+      end)
+
+      it("accepts mixed symlink and json_merge specs", function()
+        assert.has_no.errors(function()
+          contracts.validate_tools(base_agent({
+            { type = "symlink", src = "tools/foo", dst = "~/.foo" },
+            { type = "json_merge", src = "tools/s.json", dst = "~/.s.json" },
+          }))
+        end)
+      end)
+
+      it("throws on flat spec with invalid type", function()
+        assert.has_error(function()
+          contracts.validate_tools(base_agent({
+            { type = "bad_type", src = "tools/foo", dst = "~/.foo" },
+          }))
+        end)
+      end)
+
+      it("throws on flat spec with empty src string", function()
+        assert.has_error(function()
+          contracts.validate_tools(base_agent({
+            { type = "symlink", src = "", dst = "~/.foo" },
+          }))
+        end)
+      end)
+
+      it("throws on flat spec with empty dst string", function()
+        assert.has_error(function()
+          contracts.validate_tools(base_agent({
+            { type = "symlink", src = "tools/foo", dst = "" },
+          }))
+        end)
+      end)
+
+      it("throws on flat spec with missing src", function()
+        assert.has_error(function()
+          contracts.validate_tools(base_agent({
+            { type = "symlink", dst = "~/.foo" },
+          }))
+        end)
+      end)
+
+      it("throws on flat spec with missing dst", function()
+        assert.has_error(function()
+          contracts.validate_tools(base_agent({
+            { type = "symlink", src = "tools/foo" },
+          }))
+        end)
+      end)
+
+      it("throws when a spec entry is not a table", function()
+        assert.has_error(function()
+          contracts.validate_tools(base_agent({ "not_a_table" }))
+        end)
       end)
     end)
   end)

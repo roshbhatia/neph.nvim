@@ -384,3 +384,207 @@ describe("runCursorHook", () => {
     expect(JSON.parse(out)).toEqual({});
   });
 });
+
+// ---------------------------------------------------------------------------
+// runCodexHook tests
+// ---------------------------------------------------------------------------
+
+describe("runCodexHook", () => {
+  const transport = fakeTransport();
+
+  function invoke(event: Record<string, unknown>) {
+    const chunks: string[] = [];
+    const orig = process.stdout.write.bind(process.stdout);
+    process.stdout.write = ((c: any) => { chunks.push(c.toString()); return true; }) as any;
+    return runIntegrationCommand(
+      ["integration", "hook", "codex"],
+      JSON.stringify(event),
+      transport,
+    ).then(() => {
+      process.stdout.write = orig;
+      return chunks.join("");
+    });
+  }
+
+  it("SessionStart → sets active and outputs {}", async () => {
+    const signals = fakeSignals();
+    mockCreateSessionSignals.mockReturnValueOnce(signals);
+    const out = await invoke({ hook_event_name: "SessionStart" });
+    expect(signals.setActive).toHaveBeenCalled();
+    expect(JSON.parse(out)).toEqual({});
+  });
+
+  it("SessionEnd → unsets active and outputs {}", async () => {
+    const signals = fakeSignals();
+    mockCreateSessionSignals.mockReturnValueOnce(signals);
+    const out = await invoke({ hook_event_name: "SessionEnd" });
+    expect(signals.unsetActive).toHaveBeenCalled();
+    expect(JSON.parse(out)).toEqual({});
+  });
+
+  it("UserPromptSubmit → sets running", async () => {
+    const signals = fakeSignals();
+    mockCreateSessionSignals.mockReturnValueOnce(signals);
+    await invoke({ hook_event_name: "UserPromptSubmit" });
+    expect(signals.setRunning).toHaveBeenCalled();
+  });
+
+  it("Stop → unsets running and calls checktime", async () => {
+    const signals = fakeSignals();
+    mockCreateSessionSignals.mockReturnValueOnce(signals);
+    await invoke({ hook_event_name: "Stop" });
+    expect(signals.unsetRunning).toHaveBeenCalled();
+    expect(signals.checktime).toHaveBeenCalled();
+  });
+
+  it("PostToolUse → calls checktime", async () => {
+    const sig1 = fakeSignals();
+    const sig2 = fakeSignals();
+    mockCreateSessionSignals
+      .mockReturnValueOnce(sig1)
+      .mockReturnValueOnce(sig2);
+    await invoke({ hook_event_name: "PostToolUse" });
+    expect(sig2.checktime).toHaveBeenCalled();
+  });
+
+  it("PreToolUse with allow → permissionDecision allow", async () => {
+    mockCupcakeEval.mockReturnValue({ decision: "allow" });
+    const out = await invoke({
+      hook_event_name: "PreToolUse",
+      tool_name: "Edit",
+      tool_input: { file_path: "/tmp/test.lua", content: "hello" },
+    });
+    const parsed = JSON.parse(out);
+    expect(parsed.hookSpecificOutput.permissionDecision).toBe("allow");
+  });
+
+  it("PreToolUse with deny → permissionDecision deny", async () => {
+    mockCupcakeEval.mockReturnValue({ decision: "deny", reason: "Blocked" });
+    const out = await invoke({
+      hook_event_name: "PreToolUse",
+      tool_name: "Write",
+      tool_input: { file_path: "/tmp/.env", content: "SECRET=x" },
+    });
+    const parsed = JSON.parse(out);
+    expect(parsed.hookSpecificOutput.permissionDecision).toBe("deny");
+  });
+
+  it("PreToolUse with no filePath → allow passthrough", async () => {
+    const out = await invoke({
+      hook_event_name: "PreToolUse",
+      tool_name: "Bash",
+      tool_input: { command: "ls" },
+    });
+    const parsed = JSON.parse(out);
+    expect(parsed.hookSpecificOutput.permissionDecision).toBe("allow");
+  });
+
+  it("unknown hook → outputs {}", async () => {
+    const out = await invoke({ hook_event_name: "unknown_codex_hook" });
+    expect(JSON.parse(out)).toEqual({});
+  });
+
+  it("invalid JSON input → outputs {}", async () => {
+    const chunks: string[] = [];
+    const orig = process.stdout.write.bind(process.stdout);
+    process.stdout.write = ((c: any) => { chunks.push(c.toString()); return true; }) as any;
+    await runIntegrationCommand(["integration", "hook", "codex"], "not json", transport);
+    process.stdout.write = orig;
+    expect(JSON.parse(chunks.join(""))).toEqual({});
+  });
+});
+
+// ---------------------------------------------------------------------------
+// runCopilotHook tests
+// ---------------------------------------------------------------------------
+
+describe("runCopilotHook", () => {
+  const transport = fakeTransport();
+
+  function invoke(event: Record<string, unknown>) {
+    const chunks: string[] = [];
+    const orig = process.stdout.write.bind(process.stdout);
+    process.stdout.write = ((c: any) => { chunks.push(c.toString()); return true; }) as any;
+    return runIntegrationCommand(
+      ["integration", "hook", "copilot"],
+      JSON.stringify(event),
+      transport,
+    ).then(() => {
+      process.stdout.write = orig;
+      return chunks.join("");
+    });
+  }
+
+  it("sessionStart → sets active and outputs {}", async () => {
+    const signals = fakeSignals();
+    mockCreateSessionSignals.mockReturnValueOnce(signals);
+    const out = await invoke({ hook_event_name: "sessionStart" });
+    expect(signals.setActive).toHaveBeenCalled();
+    expect(JSON.parse(out)).toEqual({});
+  });
+
+  it("sessionEnd → unsets active and outputs {}", async () => {
+    const signals = fakeSignals();
+    mockCreateSessionSignals.mockReturnValueOnce(signals);
+    const out = await invoke({ hook_event_name: "sessionEnd" });
+    expect(signals.unsetActive).toHaveBeenCalled();
+    expect(JSON.parse(out)).toEqual({});
+  });
+
+  it("postToolUse → calls checktime", async () => {
+    const sig1 = fakeSignals();
+    const sig2 = fakeSignals();
+    mockCreateSessionSignals
+      .mockReturnValueOnce(sig1)
+      .mockReturnValueOnce(sig2);
+    await invoke({ hook_event_name: "postToolUse" });
+    expect(sig2.checktime).toHaveBeenCalled();
+  });
+
+  it("preToolUse with allow → permissionDecision allow", async () => {
+    mockCupcakeEval.mockReturnValue({ decision: "allow" });
+    const out = await invoke({
+      hook_event_name: "preToolUse",
+      tool_input: { file_path: "/tmp/test.lua", content: "hello" },
+    });
+    const parsed = JSON.parse(out);
+    expect(parsed.permissionDecision).toBe("allow");
+  });
+
+  it("preToolUse with deny → permissionDecision deny (copilot does not pass reason)", async () => {
+    mockCupcakeEval.mockReturnValue({ decision: "deny", reason: "Protected" });
+    const out = await invoke({
+      hook_event_name: "preToolUse",
+      tool_input: { file_path: "/tmp/.env", content: "SECRET=x" },
+    });
+    const parsed = JSON.parse(out);
+    expect(parsed.permissionDecision).toBe("deny");
+  });
+
+  it("preToolUse with no filePath → allow passthrough", async () => {
+    const out = await invoke({
+      hook_event_name: "preToolUse",
+      tool_input: { command: "ls" },
+    });
+    const parsed = JSON.parse(out);
+    expect(parsed.permissionDecision).toBe("allow");
+  });
+
+  it("preToolUse with modify → degrades to allow (copilot cannot modify)", async () => {
+    mockCupcakeEval.mockReturnValue({
+      decision: "modify",
+      updated_input: { content: "modified content" },
+    });
+    const out = await invoke({
+      hook_event_name: "preToolUse",
+      tool_input: { file_path: "/tmp/test.lua", content: "original" },
+    });
+    const parsed = JSON.parse(out);
+    expect(parsed.permissionDecision).toBe("allow");
+  });
+
+  it("unknown hook → outputs {}", async () => {
+    const out = await invoke({ hook_event_name: "unknown_copilot_event" });
+    expect(JSON.parse(out)).toEqual({});
+  });
+});

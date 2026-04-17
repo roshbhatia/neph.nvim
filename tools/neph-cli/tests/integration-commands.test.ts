@@ -60,6 +60,54 @@ describe("integration commands", () => {
   });
 });
 
+describe("integration error paths", () => {
+  it("toggle: surfaces write error with actionable message", async () => {
+    mockWriteFileSync.mockImplementationOnce(() => {
+      throw new Error("EACCES: permission denied");
+    });
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation(() => undefined as never);
+    await runIntegrationCommand(["integration", "toggle", "claude"], "", null);
+    expect(stderrSpy).toHaveBeenCalledWith(
+      expect.stringContaining("failed to update claude config"),
+    );
+    expect(stderrSpy).toHaveBeenCalledWith(
+      expect.stringContaining("EACCES"),
+    );
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    stderrSpy.mockRestore();
+    exitSpy.mockRestore();
+  });
+
+  it("status: surfaces read error when direct readFileSync throws during --show-config", async () => {
+    // The --show-config block calls fs.readFileSync(configPath) directly after
+    // integrationEnabled() succeeds. Mock readFileSync to throw only for non-real paths.
+    vi.mocked(fs.readFileSync).mockImplementation((filePath: unknown, encoding?: unknown) => {
+      const p = String(filePath);
+      // Real on-disk files (template files) go through actual fs.
+      const realFs = require("node:fs");
+      if (realFs.existsSync(p)) {
+        return realFs.readFileSync(p, encoding ?? "utf-8");
+      }
+      // Fake config path (not on disk) — throw permission error.
+      throw new Error(`EACCES: permission denied, open '${p}'`);
+    });
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation(() => undefined as never);
+    await runIntegrationCommand(["integration", "status", "claude", "--show-config"], "", null);
+    expect(stderrSpy).toHaveBeenCalledWith(
+      expect.stringContaining("neph integration status: cannot read"),
+    );
+    expect(stderrSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Check file permissions"),
+    );
+    stderrSpy.mockRestore();
+    stdoutSpy.mockRestore();
+    exitSpy.mockRestore();
+  });
+});
+
 describe("deps command", () => {
   it("prints deps status", async () => {
     const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);

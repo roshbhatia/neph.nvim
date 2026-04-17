@@ -182,9 +182,12 @@ describe("snacks backend integration", function()
       _G.Snacks.terminal.open = function()
         return nil
       end
-      assert.has_error(function()
-        snacks_backend.open("t", make_agent_config(), "/tmp")
+      -- open() must handle nil gracefully and return nil rather than crashing.
+      local td
+      assert.has_no_errors(function()
+        td = snacks_backend.open("t", make_agent_config(), "/tmp")
       end)
+      assert.is_nil(td)
     end)
 
     it("handles Snacks.terminal.open throwing an error", function()

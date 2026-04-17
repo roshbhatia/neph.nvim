@@ -313,9 +313,9 @@ describe("neph integration toggle sandbox", () => {
     expect(raw).not.toContain("_kind");
   });
 
-  it("toggle copilot: creates .copilot/hooks.json with lifecycle hooks only", () => {
+  it("toggle copilot: creates .github/hooks/neph.json with lifecycle hooks only", () => {
     runToggle("copilot", tmpDir);
-    const configPath = path.join(tmpDir, ".copilot", "hooks.json");
+    const configPath = path.join(tmpDir, ".github", "hooks", "neph.json");
     expect(fs.existsSync(configPath)).toBe(true);
     const config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
     const events = config.hooks.map((h: any) => h.event);
