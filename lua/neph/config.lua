@@ -39,7 +39,7 @@ local M = {}
 ---@field adapter?        string   Adapter id
 
 ---@class neph.ReviewProvider
----@field name string
+---@field name string  Provider identifier (e.g. "vimdiff", "noop")
 
 --- Valid layout values for the diff review split.
 ---@alias neph.ReviewLayout "vertical" | "horizontal"
@@ -63,7 +63,7 @@ local M = {}
 ---@field review_keymaps? neph.ReviewKeymapsConfig  Keymaps for diff review UI
 ---@field review_layout?  neph.ReviewLayout    Default diff split layout: "vertical" (default) | "horizontal"
 ---@field review?         neph.ReviewConfig    Review system configuration
----@field review_provider? neph.ReviewProvider Explicit review provider (default: noop)
+---@field review_provider? neph.ReviewProvider|string  Explicit review provider: a provider table or a name string like "vimdiff" (default: noop)
 ---@field integration_groups? table<string, neph.IntegrationGroup>  Integration group defaults
 ---@field integration_default_group? string    Default integration group name
 ---@field diff?           neph.DiffConfig      Git diff review configuration
