@@ -5,7 +5,7 @@
  * for write tools, or reconstructs edits into full content for edit tools.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import { writeFileSync, mkdirSync, rmSync } from 'node:fs';
 import * as path from 'node:path';

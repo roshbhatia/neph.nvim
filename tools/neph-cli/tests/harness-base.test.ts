@@ -2,7 +2,7 @@
 // Unit tests for tools/lib/harness-base.ts covering ContentHelper.reconstructContent,
 // CupcakeHelper.cupcakeEval, and createSessionSignals.
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const mockReadFileSync = vi.fn();
 const mockExecFileSync = vi.fn();
