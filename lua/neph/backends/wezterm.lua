@@ -270,9 +270,9 @@ function M.open(termname, agent_config, cwd)
 end
 
 ---@param term_data table|nil
----@return boolean  true if focus was set, false if terminal has no pane
+---@return boolean  true if focus was set, false if terminal is not visible
 function M.focus(term_data)
-  if not term_data or not term_data.pane_id then
+  if not M.is_visible(term_data) then
     return false
   end
   activate_pane(term_data.pane_id)
@@ -298,6 +298,8 @@ function M.hide(term_data)
   term_data.pane_id = nil
 end
 
+---@param _term_data table|nil
+---@return nil  wezterm backend requires reopen; show is a no-op
 function M.show(_term_data)
   return nil
 end
@@ -307,7 +309,10 @@ end
 ---@param term_data table|nil
 ---@return boolean
 function M.is_visible(term_data)
-  return term_data ~= nil and term_data.pane_id ~= nil and not term_data._killed
+  if not term_data or not term_data.pane_id then
+    return false
+  end
+  return not term_data._killed
 end
 
 --- Async pane liveness check. Runs wezterm cli list in a non-blocking job
@@ -379,6 +384,7 @@ function M.cleanup_all(terminals)
     end
     if td.pane_id then
       kill_pane(td.pane_id)
+      td.pane_id = nil
     end
   end
   pane_errors = {}

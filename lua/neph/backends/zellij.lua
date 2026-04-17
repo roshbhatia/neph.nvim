@@ -159,10 +159,13 @@ function M.open(termname, agent_config, cwd)
     -- Set to true by kill() so deferred callbacks can detect teardown and
     -- skip on_ready invocation on an already-killed terminal.
     _killed = false,
+    -- Timer handle stored so kill() can cancel it before it fires.
+    timeout_timer = nil,
   }
 
   -- Timeout: if we don't get pane ID, fail
   local timeout_timer = vim.uv.new_timer()
+  td.timeout_timer = timeout_timer
   timeout_timer:start(
     FIFO_TIMEOUT_MS,
     0,
@@ -170,6 +173,7 @@ function M.open(termname, agent_config, cwd)
       if td.pane_id then
         return
       end
+      td.timeout_timer = nil
       timeout_timer:close()
       pcall(vim.fn.delete, fifo_path)
       -- The pane was already spawned via jobstart; without a pane ID we have no
@@ -194,6 +198,7 @@ function M.open(termname, agent_config, cwd)
         local raw = vim.trim(table.concat(data, ""))
         if raw ~= "" then
           td.pane_id = normalize_pane_id(raw)
+          td.timeout_timer = nil
           timeout_timer:stop()
           timeout_timer:close()
           pcall(vim.fn.delete, fifo_path)
@@ -256,6 +261,12 @@ function M.hide(term_data)
   -- consistent: callers expect hide() to remove the pane handle, and
   -- session.lua clears the terminals entry immediately after hide().
   term_data._killed = true
+  -- Cancel FIFO timeout timer if still pending.
+  if term_data.timeout_timer then
+    pcall(term_data.timeout_timer.stop, term_data.timeout_timer)
+    pcall(term_data.timeout_timer.close, term_data.timeout_timer)
+    term_data.timeout_timer = nil
+  end
   zellij_actions_chain({
     { "move-focus", "left" },
     { "move-focus", "right" },
@@ -264,6 +275,8 @@ function M.hide(term_data)
   term_data.pane_id = nil
 end
 
+---@param _term_data table|nil
+---@return nil  zellij backend requires reopen; show is a no-op
 function M.show(_term_data)
   return nil
 end
@@ -291,6 +304,17 @@ function M.kill(term_data)
   -- Mark killed before clearing pane_id so deferred callbacks can detect
   -- teardown and skip on_ready invocation.
   term_data._killed = true
+  -- Cancel the FIFO timeout timer if still pending.
+  if term_data.timeout_timer then
+    pcall(term_data.timeout_timer.stop, term_data.timeout_timer)
+    pcall(term_data.timeout_timer.close, term_data.timeout_timer)
+    term_data.timeout_timer = nil
+  end
+  -- Clean up FIFO if open() was killed before the pane ID arrived.
+  if term_data.fifo_path then
+    pcall(vim.fn.delete, term_data.fifo_path)
+    term_data.fifo_path = nil
+  end
   zellij_actions_chain({
     { "move-focus", "left" },
     { "move-focus", "right" },
@@ -305,7 +329,8 @@ function M.cleanup_all(terminals)
     return
   end
   for _, td in pairs(terminals) do
-    if td and td.pane_id then
+    if td then
+      -- Always mark killed and cancel pending timers, even if pane_id not yet set.
       M.kill(td)
     end
   end

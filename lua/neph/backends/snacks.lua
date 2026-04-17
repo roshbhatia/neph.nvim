@@ -29,6 +29,11 @@ function M.open(termname, agent_config, cwd)
     win = { position = "right", width = 0.5 },
   })
 
+  if not term then
+    vim.notify("Neph/snacks: terminal.open returned nil", vim.log.levels.ERROR)
+    return nil
+  end
+
   local td = {
     buf = term.buf,
     win = term.win,
@@ -120,6 +125,8 @@ function M.hide(term_data)
   term_data.term = nil
 end
 
+---@param _term_data table|nil
+---@return nil  snacks backend requires reopen; show is a no-op
 function M.show(_term_data)
   return nil -- reopen required
 end
@@ -127,7 +134,10 @@ end
 ---@param term_data table|nil
 ---@return boolean
 function M.is_visible(term_data)
-  return term_data ~= nil and term_data.win ~= nil and vim.api.nvim_win_is_valid(term_data.win)
+  if not term_data or not term_data.win then
+    return false
+  end
+  return vim.api.nvim_win_is_valid(term_data.win) == true
 end
 
 ---@param term_data table|nil
@@ -142,6 +152,14 @@ function M.kill(term_data)
     pcall(term_data.ready_timer.stop, term_data.ready_timer)
     pcall(term_data.ready_timer.close, term_data.ready_timer)
     term_data.ready_timer = nil
+  end
+  -- Terminate the underlying terminal job process before closing the window.
+  -- Without this the shell process (and the agent) keeps running after kill().
+  if term_data.buf and vim.api.nvim_buf_is_valid(term_data.buf) then
+    local chan = vim.b[term_data.buf].terminal_job_id
+    if chan then
+      pcall(vim.fn.jobstop, chan)
+    end
   end
   if term_data.win and vim.api.nvim_win_is_valid(term_data.win) then
     vim.api.nvim_win_close(term_data.win, true)
@@ -185,9 +203,19 @@ function M.cleanup_all(terminals)
       pcall(td.ready_timer.close, td.ready_timer)
       td.ready_timer = nil
     end
+    -- Terminate the underlying terminal job process.
+    if td.buf and vim.api.nvim_buf_is_valid(td.buf) then
+      local chan = vim.b[td.buf].terminal_job_id
+      if chan then
+        pcall(vim.fn.jobstop, chan)
+      end
+    end
     if td.win and vim.api.nvim_win_is_valid(td.win) then
       vim.api.nvim_win_close(td.win, true)
     end
+    td.win = nil
+    td.buf = nil
+    td.term = nil
   end
 end
 
