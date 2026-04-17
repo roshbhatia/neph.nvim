@@ -43,7 +43,7 @@ const INTEGRATIONS: Integration[] = [
   {
     name: "copilot",
     label: "Copilot",
-    configPath: () => path.join(process.cwd(), ".copilot", "hooks.json"),
+    configPath: () => path.join(process.cwd(), ".github", "hooks", "neph.json"),
     templatePath: path.join(TOOLS_ROOT, "copilot", "hooks.json"),
     kind: "copilot",
     requiresCupcake: true,
@@ -51,7 +51,7 @@ const INTEGRATIONS: Integration[] = [
   {
     name: "codex",
     label: "Codex",
-    configPath: () => path.join(process.env.HOME ?? "~", ".codex", "hooks.json"),
+    configPath: () => path.join(process.cwd(), ".codex", "hooks.json"),
     templatePath: path.join(TOOLS_ROOT, "codex", "hooks.json"),
     kind: "hooks",
     requiresCupcake: true,
@@ -68,20 +68,47 @@ const INTEGRATIONS: Integration[] = [
   },
 ];
 
-function readJson(filePath: string): any {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type JsonValue = Record<string, any>;
+
+function readJson(filePath: string): JsonValue {
   if (!fs.existsSync(filePath)) return {};
-  const content = fs.readFileSync(filePath, "utf-8");
+  let content: string;
+  try {
+    content = fs.readFileSync(filePath, "utf-8");
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(`Cannot read ${filePath}: ${msg}. Check file permissions.`);
+  }
   if (!content.trim()) return {};
   try {
-    return JSON.parse(content);
+    const parsed: unknown = JSON.parse(content);
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new Error(`Expected a JSON object at ${filePath}, got ${typeof parsed}`);
+    }
+    return parsed as JsonValue;
   } catch (err) {
-    throw new Error(`Invalid JSON at ${filePath}: ${err}`);
+    if (err instanceof SyntaxError) {
+      throw new Error(`Invalid JSON at ${filePath}: ${err.message}. Try deleting and re-creating the file.`);
+    }
+    throw err;
   }
 }
 
-function writeJson(filePath: string, data: any): void {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, JSON.stringify(data, null, 2) + "\n", "utf-8");
+function writeJson(filePath: string, data: JsonValue): void {
+  const dir = path.dirname(filePath);
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(`Cannot create directory ${dir}: ${msg}. Check permissions.`);
+  }
+  try {
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 2) + "\n", "utf-8");
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(`Cannot write ${filePath}: ${msg}. Check file permissions and disk space.`);
+  }
 }
 
 function stripKind(entry: Record<string, unknown>): Record<string, unknown> {
@@ -101,22 +128,63 @@ function installCupcakeAssets(projectRoot: string): void {
 
   if (!fs.existsSync(srcRoot)) return;
 
-  fs.mkdirSync(policyDst, { recursive: true });
-  fs.mkdirSync(signalsDst, { recursive: true });
+  try {
+    fs.mkdirSync(policyDst, { recursive: true });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(`Cannot create cupcake policy directory ${policyDst}: ${msg}. Check permissions.`);
+  }
+  try {
+    fs.mkdirSync(signalsDst, { recursive: true });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(`Cannot create cupcake signals directory ${signalsDst}: ${msg}. Check permissions.`);
+  }
 
   if (fs.existsSync(policySrc)) {
-    for (const entry of fs.readdirSync(policySrc)) {
+    let entries: string[];
+    try {
+      entries = fs.readdirSync(policySrc);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new Error(`Cannot read cupcake policy source ${policySrc}: ${msg}.`);
+    }
+    for (const entry of entries) {
       if (!entry.endsWith(".rego")) continue;
-      fs.copyFileSync(path.join(policySrc, entry), path.join(policyDst, entry));
+      const src = path.join(policySrc, entry);
+      const dst = path.join(policyDst, entry);
+      try {
+        fs.copyFileSync(src, dst);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        throw new Error(`Cannot copy ${src} to ${dst}: ${msg}. Check permissions.`);
+      }
     }
   }
   if (fs.existsSync(rulebookSrc)) {
-    fs.copyFileSync(rulebookSrc, rulebookDst);
+    try {
+      fs.copyFileSync(rulebookSrc, rulebookDst);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new Error(`Cannot copy rulebook ${rulebookSrc} to ${rulebookDst}: ${msg}. Check permissions.`);
+    }
   }
   if (fs.existsSync(signalsSrc)) {
-    for (const entry of fs.readdirSync(signalsSrc)) {
+    let entries: string[];
+    try {
+      entries = fs.readdirSync(signalsSrc);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new Error(`Cannot read cupcake signals source ${signalsSrc}: ${msg}.`);
+    }
+    for (const entry of entries) {
       const dst = path.join(signalsDst, entry);
-      fs.copyFileSync(path.join(signalsSrc, entry), dst);
+      try {
+        fs.copyFileSync(path.join(signalsSrc, entry), dst);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        throw new Error(`Cannot copy signal ${entry} to ${dst}: ${msg}. Check permissions.`);
+      }
       try {
         fs.chmodSync(dst, 0o755);
       } catch {}
@@ -124,12 +192,17 @@ function installCupcakeAssets(projectRoot: string): void {
   }
 }
 
+function normalizeCommand(cmd: string): string {
+  // Strip any leading PATH=... prefix so old hooks match new PATH-prefixed template entries.
+  return cmd.replace(/^PATH=[^\s]+ /, "");
+}
+
 function hookEntryMatches(existing: any, entry: any): boolean {
   const existingCommand = existing?.hooks?.[0]?.command || existing?.command;
   const entryCommand = entry?.hooks?.[0]?.command || entry?.command;
   if (!existingCommand || !entryCommand) return false;
   if (existing.matcher && entry.matcher && existing.matcher !== entry.matcher) return false;
-  return existingCommand === entryCommand;
+  return normalizeCommand(existingCommand) === normalizeCommand(entryCommand);
 }
 
 function mergeHooks(dst: any, src: any): any {
@@ -177,7 +250,7 @@ function mergeCopilot(dst: any, src: any): any {
   out.hooks = out.hooks ?? [];
   for (const entry of src.hooks ?? []) {
     const exists = out.hooks.some(
-      (e: any) => e.command === entry.command && e.event === entry.event,
+      (e: any) => normalizeCommand(e.command) === normalizeCommand(entry.command) && e.event === entry.event,
     );
     if (!exists) out.hooks.push(stripKind(entry));
   }
@@ -187,7 +260,9 @@ function mergeCopilot(dst: any, src: any): any {
 function unmergeCopilot(dst: any, src: any): any {
   if (!dst?.hooks) return dst ?? {};
   dst.hooks = dst.hooks.filter(
-    (e: any) => !src.hooks.some((entry: any) => e.command === entry.command && e.event === entry.event),
+    (e: any) => !src.hooks.some(
+      (entry: any) => normalizeCommand(e.command) === normalizeCommand(entry.command) && e.event === entry.event,
+    ),
   );
   return dst;
 }
@@ -195,7 +270,9 @@ function unmergeCopilot(dst: any, src: any): any {
 function copilotEnabled(dst: any, src: any): boolean {
   if (!Array.isArray(dst?.hooks)) return false;
   for (const entry of src.hooks ?? []) {
-    const exists = dst.hooks.some((e: any) => e.command === entry.command && e.event === entry.event);
+    const exists = dst.hooks.some(
+      (e: any) => normalizeCommand(e.command) === normalizeCommand(entry.command) && e.event === entry.event,
+    );
     if (!exists) return false;
   }
   return true;
@@ -254,7 +331,8 @@ async function promptForIntegration(): Promise<Integration> {
   }
 }
 
-function templateFor(integration: Integration): any {
+function templateFor(integration: Integration): JsonValue {
+  if (!integration.templatePath) return {};
   return readJson(integration.templatePath);
 }
 
@@ -421,117 +499,21 @@ async function runGeminiHook(stdin: string, transport: NvimTransport | null): Pr
 }
 
 // ---------------------------------------------------------------------------
-// Claude hook handler
+// Shared PreToolUse handler — used by Claude and Codex (identical logic)
 // ---------------------------------------------------------------------------
 
-async function runClaudeHook(stdin: string, transport: NvimTransport | null): Promise<void> {
-  if (transport === null) {
-    process.stdout.write("{}\n");
-    return;
-  }
-  let event: Record<string, unknown>;
-  try {
-    event = JSON.parse(stdin);
-  } catch {
-    process.stdout.write("{}\n");
-    return;
-  }
+/**
+ * Evaluate the cupcake pre-tool-use policy for the given agent and write the
+ * appropriate hookSpecificOutput JSON line to stdout.
+ */
+async function handlePreToolUse(
+  agentName: string,
+  event: Record<string, unknown>,
+): Promise<void> {
+  const toolInput = (event.tool_input ?? {}) as Record<string, unknown>;
+  const filePath = (toolInput.file_path ?? toolInput.path) as string | undefined;
 
-  const hookName = event.hook_event_name as string | undefined;
-  const signals = createSessionSignals("claude");
-
-  // Lifecycle events
-  if (hookName === "SessionStart") {
-    signals.setActive();
-    signals.close();
-    process.stdout.write("{}\n");
-    return;
-  }
-  if (hookName === "SessionEnd") {
-    signals.unsetActive();
-    signals.close();
-    process.stdout.write("{}\n");
-    return;
-  }
-  if (hookName === "UserPromptSubmit") {
-    signals.setRunning();
-    signals.close();
-    process.stdout.write("{}\n");
-    return;
-  }
-  if (hookName === "Stop") {
-    signals.unsetRunning();
-    signals.checktime();
-    signals.close();
-    process.stdout.write("{}\n");
-    return;
-  }
-
-  signals.close();
-
-  if (hookName === "PostToolUse") {
-    const newSignals = createSessionSignals("claude");
-    newSignals.checktime();
-    newSignals.close();
-    process.stdout.write("{}\n");
-    return;
-  }
-
-  if (hookName === "PreToolUse") {
-    const toolName = event.tool_name as string | undefined;
-    const toolInput = (event.tool_input ?? {}) as Record<string, unknown>;
-    const filePath = (toolInput.file_path ?? toolInput.path) as string | undefined;
-
-    if (!filePath) {
-      process.stdout.write(
-        JSON.stringify({
-          hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "allow" },
-        }) + "\n",
-      );
-      return;
-    }
-
-    const resolvedPath = path.resolve(filePath);
-    const content = ContentHelper.reconstructContent(resolvedPath, toolInput);
-
-    const cupcakeEvent = {
-      ...event,
-      tool_input: { ...toolInput, file_path: resolvedPath, content },
-    };
-
-    const decision = CupcakeHelper.cupcakeEval("claude", cupcakeEvent);
-
-    if (decision.decision === "deny" || decision.decision === "block") {
-      process.stdout.write(
-        JSON.stringify({
-          hookSpecificOutput: {
-            hookEventName: "PreToolUse",
-            permissionDecision: "deny",
-            reason: decision.reason,
-          },
-        }) + "\n",
-      );
-      return;
-    }
-
-    if (decision.decision === "modify" && decision.updated_input !== undefined) {
-      process.stdout.write(
-        JSON.stringify({
-          hookSpecificOutput: {
-            hookEventName: "PreToolUse",
-            permissionDecision: "allow",
-            updatedInput: {
-              ...toolInput,
-              ...(decision.updated_input.content !== undefined
-                ? { content: decision.updated_input.content }
-                : {}),
-            },
-          },
-        }) + "\n",
-      );
-      return;
-    }
-
+  if (!filePath) {
     process.stdout.write(
       JSON.stringify({
         hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "allow" },
@@ -540,15 +522,67 @@ async function runClaudeHook(stdin: string, transport: NvimTransport | null): Pr
     return;
   }
 
-  // Pass-through for unknown hook names
-  process.stdout.write("{}\n");
+  const resolvedPath = path.resolve(filePath);
+  const content = ContentHelper.reconstructContent(resolvedPath, toolInput);
+  const cupcakeEvent = {
+    ...event,
+    tool_input: { ...toolInput, file_path: resolvedPath, content },
+  };
+  const decision = CupcakeHelper.cupcakeEval(agentName, cupcakeEvent);
+
+  if (decision.decision === "deny" || decision.decision === "block") {
+    process.stdout.write(
+      JSON.stringify({
+        hookSpecificOutput: {
+          hookEventName: "PreToolUse",
+          permissionDecision: "deny",
+          reason: decision.reason,
+        },
+      }) + "\n",
+    );
+    return;
+  }
+
+  if (decision.decision === "modify" && decision.updated_input !== undefined) {
+    process.stdout.write(
+      JSON.stringify({
+        hookSpecificOutput: {
+          hookEventName: "PreToolUse",
+          permissionDecision: "allow",
+          updatedInput: {
+            ...toolInput,
+            ...(decision.updated_input.content !== undefined
+              ? { content: decision.updated_input.content }
+              : {}),
+          },
+        },
+      }) + "\n",
+    );
+    return;
+  }
+
+  process.stdout.write(
+    JSON.stringify({
+      hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "allow" },
+    }) + "\n",
+  );
 }
 
 // ---------------------------------------------------------------------------
-// Codex hook handler — same pattern as Claude
+// Claude / Codex hook handler (shared — identical lifecycle model)
 // ---------------------------------------------------------------------------
 
-async function runCodexHook(stdin: string, transport: NvimTransport | null): Promise<void> {
+/**
+ * Handle a Claude-style hook event (used by both Claude and Codex agents).
+ * Lifecycle events: SessionStart → setActive, SessionEnd → unsetActive,
+ * UserPromptSubmit → setRunning, Stop → unsetRunning+checktime.
+ * Tool events: PostToolUse → checktime, PreToolUse → cupcake policy check.
+ */
+async function runClaudeStyleHook(
+  agentName: string,
+  stdin: string,
+  transport: NvimTransport | null,
+): Promise<void> {
   if (transport === null) {
     process.stdout.write("{}\n");
     return;
@@ -562,30 +596,25 @@ async function runCodexHook(stdin: string, transport: NvimTransport | null): Pro
   }
 
   const hookName = event.hook_event_name as string | undefined;
-  const signals = createSessionSignals("codex");
+  const signals = createSessionSignals(agentName);
 
   if (hookName === "SessionStart") {
-    signals.setActive();
-    signals.close();
+    signals.setActive(); signals.close();
     process.stdout.write("{}\n");
     return;
   }
   if (hookName === "SessionEnd") {
-    signals.unsetActive();
-    signals.close();
+    signals.unsetActive(); signals.close();
     process.stdout.write("{}\n");
     return;
   }
   if (hookName === "UserPromptSubmit") {
-    signals.setRunning();
-    signals.close();
+    signals.setRunning(); signals.close();
     process.stdout.write("{}\n");
     return;
   }
   if (hookName === "Stop") {
-    signals.unsetRunning();
-    signals.checktime();
-    signals.close();
+    signals.unsetRunning(); signals.checktime(); signals.close();
     process.stdout.write("{}\n");
     return;
   }
@@ -593,76 +622,30 @@ async function runCodexHook(stdin: string, transport: NvimTransport | null): Pro
   signals.close();
 
   if (hookName === "PostToolUse") {
-    const newSignals = createSessionSignals("codex");
-    newSignals.checktime();
-    newSignals.close();
+    const s2 = createSessionSignals(agentName);
+    s2.checktime(); s2.close();
     process.stdout.write("{}\n");
     return;
   }
 
   if (hookName === "PreToolUse") {
-    const toolInput = (event.tool_input ?? {}) as Record<string, unknown>;
-    const filePath = (toolInput.file_path ?? toolInput.path) as string | undefined;
-
-    if (!filePath) {
-      process.stdout.write(
-        JSON.stringify({
-          hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "allow" },
-        }) + "\n",
-      );
-      return;
-    }
-
-    const resolvedPath = path.resolve(filePath);
-    const content = ContentHelper.reconstructContent(resolvedPath, toolInput);
-
-    const cupcakeEvent = {
-      ...event,
-      tool_input: { ...toolInput, file_path: resolvedPath, content },
-    };
-
-    const decision = CupcakeHelper.cupcakeEval("codex", cupcakeEvent);
-
-    if (decision.decision === "deny" || decision.decision === "block") {
-      process.stdout.write(
-        JSON.stringify({
-          hookSpecificOutput: {
-            hookEventName: "PreToolUse",
-            permissionDecision: "deny",
-            reason: decision.reason,
-          },
-        }) + "\n",
-      );
-      return;
-    }
-
-    if (decision.decision === "modify" && decision.updated_input !== undefined) {
-      process.stdout.write(
-        JSON.stringify({
-          hookSpecificOutput: {
-            hookEventName: "PreToolUse",
-            permissionDecision: "allow",
-            updatedInput: {
-              ...toolInput,
-              ...(decision.updated_input.content !== undefined
-                ? { content: decision.updated_input.content }
-                : {}),
-            },
-          },
-        }) + "\n",
-      );
-      return;
-    }
-
-    process.stdout.write(
-      JSON.stringify({
-        hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "allow" },
-      }) + "\n",
-    );
+    await handlePreToolUse(agentName, event);
     return;
   }
 
   process.stdout.write("{}\n");
+}
+
+async function runClaudeHook(stdin: string, transport: NvimTransport | null): Promise<void> {
+  return runClaudeStyleHook("claude", stdin, transport);
+}
+
+// ---------------------------------------------------------------------------
+// Codex hook handler — same lifecycle model as Claude
+// ---------------------------------------------------------------------------
+
+async function runCodexHook(stdin: string, transport: NvimTransport | null): Promise<void> {
+  return runClaudeStyleHook("codex", stdin, transport);
 }
 
 // ---------------------------------------------------------------------------
@@ -810,13 +793,33 @@ export async function runIntegrationCommand(
 
   if (sub === "toggle") {
     const name = args[2];
-    const integration = name ? getIntegration(name) : await promptForIntegration();
+    let integration: Integration | undefined;
+    try {
+      integration = name ? getIntegration(name) : await promptForIntegration();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`neph integration toggle: ${msg}\n`);
+      process.exit(1);
+    }
     if (!integration) {
       process.stderr.write(`Unknown integration: ${name}\n`);
       process.exit(1);
     }
-    const enabled = integrationEnabled(integration);
-    applyIntegration(integration, !enabled);
+    let enabled: boolean;
+    try {
+      enabled = integrationEnabled(integration);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`neph integration toggle: failed to read ${integration.name} config — ${msg}\n`);
+      process.exit(1);
+    }
+    try {
+      applyIntegration(integration, !enabled);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`neph integration toggle: failed to update ${integration.name} config — ${msg}\n`);
+      process.exit(1);
+    }
     if (integration.name === "claude" && !enabled) {
       process.stdout.write(`claude: enabled — run with: claude --settings .neph/claude.json\n`);
     } else {
@@ -834,7 +837,14 @@ export async function runIntegrationCommand(
       process.exit(1);
     }
     for (const integration of list) {
-      const enabled = integrationEnabled(integration);
+      let enabled: boolean;
+      try {
+        enabled = integrationEnabled(integration);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        process.stderr.write(`neph integration status: failed to read ${integration.name} config — ${msg}\n`);
+        process.exit(1);
+      }
       process.stdout.write(`${integration.name}: ${enabled ? "enabled" : "disabled"}\n`);
       if (showConfig) {
         const configPath = integration.configPath();
@@ -843,10 +853,19 @@ export async function runIntegrationCommand(
         } else {
           const template = templateFor(integration);
           const commands = extractCommands(template);
-          let content = fs.readFileSync(configPath, "utf-8");
+          let content: string;
+          try {
+            content = fs.readFileSync(configPath, "utf-8");
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            process.stderr.write(`neph integration status: cannot read ${configPath} — ${msg}. Check file permissions.\n`);
+            continue;
+          }
           try {
             content = JSON.stringify(JSON.parse(content), null, 2);
-          } catch {}
+          } catch {
+            // Not valid JSON — show raw content as-is
+          }
           process.stdout.write(highlightConfig(content, commands) + "\n");
         }
       }

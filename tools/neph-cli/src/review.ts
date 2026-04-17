@@ -107,8 +107,10 @@ export async function runReview(opts: ReviewOptions): Promise<number> {
       // A late notification arriving after timeout is safely ignored here.
       if (done) return;
       try {
-        const payload = args[0] as Record<string, unknown> | undefined;
-        if (!payload || payload.request_id !== requestId) return;
+        const raw = args[0];
+        if (raw === null || raw === undefined || typeof raw !== 'object' || Array.isArray(raw)) return;
+        const payload = raw as Record<string, unknown>;
+        if (payload.request_id !== requestId) return;
 
         const decision = (typeof payload.decision === 'string' ? payload.decision : 'accept') as ReviewEnvelope['decision'];
         // content from the notification arrives as `unknown`; coerce to string
@@ -138,7 +140,8 @@ export async function runReview(opts: ReviewOptions): Promise<number> {
         await cleanup();
         resolve(decision === 'reject' ? 2 : 0);
       } catch (err) {
-        process.stderr.write(`neph review: notification handler error: ${err}\n`);
+        const msg = err instanceof Error ? err.message : String(err);
+        process.stderr.write(`neph review: notification handler error: ${msg}\n`);
       }
     });
 
@@ -166,8 +169,9 @@ export async function runReview(opts: ReviewOptions): Promise<number> {
       }
       // Any other msg (e.g. 'Review enqueued', 'Review started') means the
       // review is in progress — remain pending and wait for neph:review_done.
-    }).catch(async (err) => {
-      process.stderr.write(`neph review: RPC error: ${err}\n`);
+    }).catch(async (err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`neph review: RPC error: ${msg}\n`);
       const envelope: ReviewEnvelope = { schema: 'review/v1', decision: 'accept', content: input.content, hunks: [], reason: 'RPC error (fail-open)' };
       process.stdout.write(JSON.stringify(envelope) + '\n');
       await cleanup();
@@ -177,11 +181,13 @@ export async function runReview(opts: ReviewOptions): Promise<number> {
     // Timeout.  After this fires, done=true so any late neph:review_done
     // notification is silently ignored (the `if (done) return` guard above).
     // Exit code 3 is propagated to process.exit() by the caller in index.ts.
-    setTimeout(async () => {
+    setTimeout(() => {
       if (!done) {
         process.stderr.write(`neph review: timed out after ${timeout}s\n`);
-        await cleanup();
-        resolve(3);
+        cleanup().then(() => { resolve(3); }).catch((cleanupErr: unknown) => {
+          process.stderr.write(`neph review: cleanup error after timeout: ${cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr)}\n`);
+          resolve(3);
+        });
       }
     }, timeout * 1000);
   });

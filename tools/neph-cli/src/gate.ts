@@ -35,6 +35,10 @@ export async function runGateCommand(args: string[], transport: NvimTransport | 
       }
       case "status": {
         const result = await transport.executeLua('return require("neph.internal.gate").get()', []);
+        if (result === null || result === undefined) {
+          process.stderr.write("neph gate: status returned no value — is the neph plugin loaded? Check :NephHealth.\n");
+          process.exit(1);
+        }
         process.stdout.write(String(result) + "\n");
         break;
       }
@@ -44,9 +48,10 @@ export async function runGateCommand(args: string[], transport: NvimTransport | 
       }
     }
   } catch (err) {
-    process.stderr.write(`neph gate: RPC call failed — ${err}\n`);
+    const msg = err instanceof Error ? err.message : String(err);
+    process.stderr.write(`neph gate: RPC call failed — ${msg}\n`);
     process.exit(1);
   } finally {
-    await transport.close();
+    try { await transport.close(); } catch {}
   }
 }

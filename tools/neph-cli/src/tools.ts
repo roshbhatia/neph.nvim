@@ -2,6 +2,10 @@ import { NvimTransport } from "./transport";
 
 const RPC_CALL = 'return require("neph.rpc").request(...)';
 
+function errMsg(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
 export async function runToolsCommand(args: string[], transport: NvimTransport | null): Promise<void> {
   const sub = args[1];
   if (!sub || sub === "--help" || sub === "-h") {
@@ -38,10 +42,10 @@ export async function runToolsCommand(args: string[], transport: NvimTransport |
         process.stdout.write(String(result) + "\n");
       }
     } catch (err) {
-      process.stderr.write(`neph tools: RPC call failed — ${err}\n`);
+      process.stderr.write(`neph tools: RPC call failed — ${errMsg(err)}\n`);
       process.exit(1);
     } finally {
-      await transport.close();
+      try { await transport.close(); } catch {}
     }
     return;
   }
@@ -62,10 +66,10 @@ export async function runToolsCommand(args: string[], transport: NvimTransport |
         process.stdout.write("tools: installed all\n");
       }
     } catch (err) {
-      process.stderr.write(`neph tools: RPC call failed — ${err}\n`);
+      process.stderr.write(`neph tools: RPC call failed — ${errMsg(err)}\n`);
       process.exit(1);
     } finally {
-      await transport.close();
+      try { await transport.close(); } catch {}
     }
     return;
   }
@@ -86,10 +90,10 @@ export async function runToolsCommand(args: string[], transport: NvimTransport |
       await transport.executeLua(RPC_CALL, ["tools.uninstall", { name }]);
       process.stdout.write(`tools: uninstalled ${name}\n`);
     } catch (err) {
-      process.stderr.write(`neph tools: RPC call failed — ${err}\n`);
+      process.stderr.write(`neph tools: RPC call failed — ${errMsg(err)}\n`);
       process.exit(1);
     } finally {
-      await transport.close();
+      try { await transport.close(); } catch {}
     }
     return;
   }
@@ -110,10 +114,10 @@ export async function runToolsCommand(args: string[], transport: NvimTransport |
       const result = await transport.executeLua(RPC_CALL, ["tools.preview", { name }]);
       process.stdout.write(String(result) + "\n");
     } catch (err) {
-      process.stderr.write(`neph tools: RPC call failed — ${err}\n`);
+      process.stderr.write(`neph tools: RPC call failed — ${errMsg(err)}\n`);
       process.exit(1);
     } finally {
-      await transport.close();
+      try { await transport.close(); } catch {}
     }
     return;
   }
