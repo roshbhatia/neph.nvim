@@ -2,7 +2,36 @@
 ---@brief [[
 --- Manages open agent terminal sessions.
 --- The backend is injected via setup(opts, backend_mod) — no auto-detection.
+---
+--- Session lifecycle state machine:
+---   ABSENT  → open()          → OPENING (backend.open called)
+---   OPENING → (ready signal)  → READY
+---   READY   → kill_session()  → ABSENT  (idempotent; safe to call twice)
+---   READY   → hide()          → ABSENT  (pane destroyed; re-open required)
+---   READY   → TermClose       → STALE   (process exited unexpectedly)
+---   STALE   → kill_session()  → ABSENT
+---
+--- Valid transitions summary:
+---   open():         ABSENT → OPENING/READY
+---   kill_session(): any    → ABSENT  (idempotent)
+---   hide():         READY  → ABSENT
+---   focus():        READY  → READY   (no state change; reopens if invisible)
+---   toggle():       ABSENT → READY   | READY → READY (focus)
 ---@brief ]]
+
+---@class neph.TermData
+---@field pane_id    number|string|nil  Backend-specific pane handle (nil when killed/hidden)
+---@field buf        integer|nil        Neovim buffer handle (snacks backend only)
+---@field win        integer|nil        Neovim window handle (snacks backend only)
+---@field cmd        string|nil         Executable name used to spawn the agent (may be nil from backend)
+---@field cwd        string|nil         Working directory at spawn time (may be nil from backend)
+---@field name       string|nil         Terminal name — same as the key in `terminals` (may be nil from backend)
+---@field created_at integer|nil        os.time() at spawn
+---@field ready      boolean            True once the agent has printed its ready prompt
+---@field on_ready   fun()|nil          Callback set by open(); drains ready_queue
+---@field ready_timer userdata|nil      Active vim.uv timer waiting for ready_pattern match
+---@field stale_since integer|nil       os.time() when pane was detected dead; nil if healthy
+---@field _killed    boolean|nil        Set true by kill_session() before backend.kill; guards deferred async callbacks from acting on dead sessions
 
 local M = {}
 
@@ -12,7 +41,7 @@ local log = require("neph.internal.log")
 local backend = nil
 ---@type neph.Config
 local config = {}
----@type table<string, table>  termname → term_data
+---@type table<string, neph.TermData>  termname → term_data
 local terminals = {}
 ---@type string|nil
 local active_terminal = nil
@@ -24,6 +53,60 @@ local stale_timer = nil
 local pending_timers = {}
 ---@type table<string, {text:string, opts:table}[]>  termname → queued sends
 local ready_queue = {}
+
+-- ---------------------------------------------------------------------------
+-- Private helpers
+-- ---------------------------------------------------------------------------
+
+--- Stop and close a uv timer, swallowing errors.
+---@param t userdata|nil  Timer handle
+local function cancel_timer(t)
+  if not t then
+    return
+  end
+  pcall(t.stop, t)
+  pcall(t.close, t)
+end
+
+--- Mark a terminal stale and clear its active state.
+---@param name string
+---@param td neph.TermData
+local function mark_stale(name, td)
+  td.stale_since = os.time()
+  vim.g[name .. "_active"] = nil
+  if active_terminal == name then
+    active_terminal = nil
+  end
+end
+
+--- Run an async liveness check on every tracked terminal.
+--- For each terminal that responds "alive=false", call mark_stale().
+--- For terminals that recover (stale_since set but now alive), clear stale_since.
+--- The callback guards against _killed so a result arriving after kill_session()
+--- does not act on a td that is no longer owned by the session table.
+local function check_all_alive()
+  if not backend or not backend.check_alive_async then
+    return
+  end
+  local keys = vim.tbl_keys(terminals)
+  for _, name in ipairs(keys) do
+    local td = terminals[name]
+    if td then
+      backend.check_alive_async(td, function(alive)
+        -- Drop callbacks for sessions killed while the async request was in flight.
+        if td._killed then
+          return
+        end
+        if not alive then
+          mark_stale(name, td)
+        elseif td.stale_since then
+          td.stale_since = nil
+        end
+      end)
+    end
+  end
+end
+
 -- ---------------------------------------------------------------------------
 -- Setup
 -- ---------------------------------------------------------------------------
@@ -43,28 +126,7 @@ function M.setup(opts, backend_mod)
     -- Async pane health check on focus events — never blocks the event loop.
     vim.api.nvim_create_autocmd({ "CursorHold", "FocusGained" }, {
       group = augroup,
-      callback = function()
-        if not backend.check_alive_async then
-          return
-        end
-        local keys = vim.tbl_keys(terminals)
-        for _, name in ipairs(keys) do
-          local td = terminals[name]
-          if td then
-            backend.check_alive_async(td, function(alive)
-              if not alive then
-                td.stale_since = os.time()
-                vim.g[name .. "_active"] = nil
-                if active_terminal == name then
-                  active_terminal = nil
-                end
-              elseif td.stale_since then
-                td.stale_since = nil
-              end
-            end)
-          end
-        end
-      end,
+      callback = check_all_alive,
     })
 
     -- Detect native (snacks) terminal processes that die unexpectedly.
@@ -81,21 +143,14 @@ function M.setup(opts, backend_mod)
         for name, td in pairs(terminals) do
           if td and td.buf == closed_buf then
             log.debug("session", "TermClose: agent process exited for %s (buf=%d)", name, closed_buf)
-            -- Cancel the ready-timer if it is still running.
-            if td.ready_timer then
-              pcall(td.ready_timer.stop, td.ready_timer)
-              pcall(td.ready_timer.close, td.ready_timer)
-              td.ready_timer = nil
-            end
+            -- Cancel the ready-timer so it cannot fire on_ready into a dead buffer.
+            cancel_timer(td.ready_timer)
+            td.ready_timer = nil
             -- Drop any queued sends that would target the dead channel.
             ready_queue[name] = nil
             -- Mark stale so all callers observe the dead state without a
             -- backend.is_visible() round-trip.
-            td.stale_since = os.time()
-            vim.g[name .. "_active"] = nil
-            if active_terminal == name then
-              active_terminal = nil
-            end
+            mark_stale(name, td)
             break
           end
         end
@@ -110,11 +165,8 @@ function M.setup(opts, backend_mod)
           vim.g[name .. "_active"] = nil
         end
         -- Stop periodic staleness timer
-        if stale_timer then
-          pcall(stale_timer.stop, stale_timer)
-          pcall(stale_timer.close, stale_timer)
-          stale_timer = nil
-        end
+        cancel_timer(stale_timer)
+        stale_timer = nil
         -- Reject all pending queued reviews BEFORE tearing down backend
         -- so CLI callers receive a reject response before panes/channels close.
         pcall(function()
@@ -124,8 +176,7 @@ function M.setup(opts, backend_mod)
         pcall(backend.cleanup_all, terminals)
         -- Clean up all pending timers
         for name, pt in pairs(pending_timers) do
-          pcall(pt.stop, pt)
-          pcall(pt.close, pt)
+          cancel_timer(pt)
           pending_timers[name] = nil
         end
         -- Tear down file refresh polling
@@ -150,29 +201,7 @@ function M.setup(opts, backend_mod)
     if vim.uv then
       stale_timer = vim.uv.new_timer()
       if stale_timer then
-        stale_timer:start(
-          30000,
-          30000,
-          vim.schedule_wrap(function()
-            local keys = vim.tbl_keys(terminals)
-            for _, name in ipairs(keys) do
-              local td = terminals[name]
-              if td and backend.check_alive_async then
-                backend.check_alive_async(td, function(alive)
-                  if not alive then
-                    td.stale_since = os.time()
-                    vim.g[name .. "_active"] = nil
-                    if active_terminal == name then
-                      active_terminal = nil
-                    end
-                  elseif td.stale_since then
-                    td.stale_since = nil
-                  end
-                end)
-              end
-            end
-          end)
-        )
+        stale_timer:start(30000, 30000, vim.schedule_wrap(check_all_alive))
       end
     end
   end
@@ -182,6 +211,7 @@ end
 -- Core operations
 -- ---------------------------------------------------------------------------
 
+---@param termname string
 function M.open(termname)
   if not backend then
     vim.notify("Neph: not initialized (call setup first)", vim.log.levels.ERROR)
@@ -198,12 +228,22 @@ function M.open(termname)
     return
   end
 
-  -- Single-pane backends (e.g. Zellij): kill other agents before opening
+  -- Single-pane backends (e.g. Zellij): kill other agents before opening.
+  -- Cancel the ready-timer and set _killed before backend.kill so deferred
+  -- callbacks cannot act on the evicted td. backend.kill is wrapped in pcall
+  -- so a throw cannot leave terminals[] in a partially-mutated state.
   if backend.single_pane_only then
     for name, td in pairs(terminals) do
       if name ~= termname and backend.is_visible(td) then
-        backend.kill(td)
+        td._killed = true
+        cancel_timer(td.ready_timer)
+        td.ready_timer = nil
+        local ok, err = pcall(backend.kill, td)
+        if not ok then
+          log.debug("session", "single_pane_only kill error for %s: %s", name, tostring(err))
+        end
         terminals[name] = nil
+        ready_queue[name] = nil
         if active_terminal == name then
           active_terminal = nil
         end
@@ -243,6 +283,15 @@ function M.open(termname)
     ready_pattern = agent.ready_pattern,
   }
 
+  -- If a stale/invisible entry exists for this terminal, cancel its ready-timer
+  -- before we start a fresh backend.open so the timer cannot fire on_ready for
+  -- the old td after the new session is registered.
+  local stale_td = terminals[termname]
+  if stale_td and stale_td.ready_timer then
+    cancel_timer(stale_td.ready_timer)
+    stale_td.ready_timer = nil
+  end
+
   log.debug("session", "open: %s (cmd=%s)", termname, agent_config.cmd)
   local td = backend.open(termname, agent_config, cwd)
   if td then
@@ -279,8 +328,17 @@ function M.open(termname)
     -- Set on_ready callback to drain queued text.
     -- The queue may already contain entries added before open() was called
     -- (e.g. via ensure_active_and_send racing with a slow open).
+    -- Chain any existing on_ready set by the backend so both fire in order.
+    local backend_on_ready = td.on_ready
     td.on_ready = function()
+      -- Guard: do not fire for sessions already killed while this callback was pending.
+      if td._killed then
+        return
+      end
       log.debug("session", "ready: %s", termname)
+      if backend_on_ready then
+        pcall(backend_on_ready)
+      end
       local queue = ready_queue[termname]
       if queue then
         ready_queue[termname] = nil
@@ -304,6 +362,7 @@ function M.open(termname)
   end
 end
 
+---@param termname string
 function M.toggle(termname)
   local td = terminals[termname]
   if td and backend and backend.is_visible(td) then
@@ -313,6 +372,7 @@ function M.toggle(termname)
   end
 end
 
+---@param termname string
 function M.focus(termname)
   log.debug("session", "focus: %s", termname)
   local td = terminals[termname]
@@ -330,19 +390,34 @@ function M.focus(termname)
   active_terminal = termname
 end
 
+--- Hide a named agent terminal and remove it from session tracking.
+--- Clears vim.g[name.."_active"] so statusline integrations reflect the change.
+--- Cancels any pending ready_timer so it cannot fire on_ready after the session
+--- is removed from the tracking table.
+---@param termname string
 function M.hide(termname)
   log.debug("session", "hide: %s", termname)
   local td = terminals[termname]
   if not td or not backend then
     return
   end
+  -- Cancel ready-timer before hiding so it cannot drain the queue into a dead
+  -- pane after terminals[termname] is cleared.
+  cancel_timer(td.ready_timer)
+  td.ready_timer = nil
+  ready_queue[termname] = nil
   backend.hide(td)
   terminals[termname] = nil
+  vim.g[termname .. "_active"] = nil
   if active_terminal == termname then
     active_terminal = nil
   end
 end
 
+--- Activate a named agent terminal (open or focus) and mark it as active.
+--- Only updates active_terminal when the terminal is successfully tracked after
+--- open/focus — if backend.open returns nil the active terminal is not changed.
+---@param termname string
 function M.activate(termname)
   local td = terminals[termname]
   if not td or not backend or not backend.is_visible(td) then
@@ -350,25 +425,42 @@ function M.activate(termname)
   else
     M.focus(termname)
   end
-  active_terminal = termname
+  -- Guard: only mark as active when the terminal was actually registered.
+  -- If open() failed (backend returned nil) terminals[termname] is still nil
+  -- and we must not claim an active session that does not exist.
+  if terminals[termname] then
+    active_terminal = termname
+  end
 end
 
+--- Kill a named agent terminal session and clean up all associated state.
+--- Idempotent: safe to call on an already-killed terminal or a terminal that
+--- was never opened. backend.kill is wrapped in pcall so a backend failure
+--- cannot prevent the in-process state from being fully reset.
+---@param termname string
 function M.kill_session(termname)
   log.debug("session", "kill_session: %s", termname)
   -- Cancel any pending retry timer
-  local pt = pending_timers[termname]
-  if pt then
-    pcall(pt.stop, pt)
-    pcall(pt.close, pt)
-    pending_timers[termname] = nil
-  end
+  cancel_timer(pending_timers[termname])
+  pending_timers[termname] = nil
 
   local td = terminals[termname]
-  if td and backend then
-    -- Wrap in pcall: a backend failure must not prevent cleanup below.
-    local ok, err = pcall(backend.kill, td)
-    if not ok then
-      log.debug("session", "kill_session: backend.kill error for %s: %s", termname, tostring(err))
+  if td then
+    -- Set _killed FIRST so deferred async callbacks (check_alive_async result,
+    -- on_ready timer) that arrive after this point see the dead flag and exit
+    -- without side-effects. This must happen before backend.kill so the flag is
+    -- visible even if backend.kill throws.
+    td._killed = true
+    -- Cancel the ready-timer BEFORE backend.kill so it cannot fire on_ready
+    -- on an already-destroyed session even if backend.kill itself throws.
+    cancel_timer(td.ready_timer)
+    td.ready_timer = nil
+    if backend then
+      -- Wrap in pcall: a backend failure must not prevent cleanup below.
+      local ok, err = pcall(backend.kill, td)
+      if not ok then
+        log.debug("session", "kill_session: backend.kill error for %s: %s", termname, tostring(err))
+      end
     end
   end
   terminals[termname] = nil
@@ -413,7 +505,17 @@ function M.kill_session(termname)
   end)
 end
 
+--- Send text to a named agent terminal. No-op when:
+---   * termname is nil or not tracked
+---   * the terminal is marked stale
+---   * the terminal window is no longer visible
+---@param termname string|nil
+---@param text     string  Text to send to the terminal process
+---@param opts?    {submit?: boolean}  When submit=true the backend appends a newline
 function M.send(termname, text, opts)
+  if not termname then
+    return
+  end
   opts = opts or {}
   local td = terminals[termname]
   if not td then
@@ -432,6 +534,9 @@ function M.send(termname, text, opts)
   backend.send(td, text, opts)
 end
 
+--- Ensure the active agent terminal is open and send text to it.
+--- Queues the text until the terminal is ready if it was just opened.
+---@param text string  Prompt text to send (submitted automatically)
 function M.ensure_active_and_send(text)
   if not active_terminal then
     vim.notify("Neph: no active terminal – pick one with <leader>jj", vim.log.levels.WARN)
@@ -469,20 +574,40 @@ end
 -- Query helpers
 -- ---------------------------------------------------------------------------
 
+--- Return the name of the currently active terminal, or nil if none.
+---@return string|nil
 function M.get_active()
   return active_terminal
 end
+
+--- Alias of get_active() for explicitness in lifecycle-aware callers.
+--- Always returns nil when no session is active — never crashes.
+---@return string|nil
+function M.get_active_session()
+  return active_terminal
+end
+
+--- Set the active terminal by name.
+--- No-op (with a debug log) when the terminal is not currently tracked,
+--- so callers cannot set an active session that does not exist.
+---@param n string
 function M.set_active(n)
   if terminals[n] then
     active_terminal = n
+  else
+    log.debug("session", "set_active: %s is not a tracked terminal — ignored", tostring(n))
   end
 end
 
+---@param termname string
+---@return boolean
 function M.is_visible(termname)
   local td = terminals[termname]
   return td and backend and backend.is_visible(td) or false
 end
 
+---@param termname string
+---@return boolean
 function M.is_tracked(termname)
   local td = terminals[termname]
   if not td then
@@ -491,10 +616,14 @@ function M.is_tracked(termname)
   return backend and backend.is_visible(td) or false
 end
 
+---@param termname string
+---@return boolean
 function M.exists(termname)
   return M.is_visible(termname)
 end
 
+---@param termname string
+---@return {name:string, visible:boolean, cmd:string|nil, cwd:string|nil}|nil
 function M.get_info(termname)
   local td = terminals[termname]
   if not td or not backend then
@@ -508,6 +637,7 @@ function M.get_info(termname)
   }
 end
 
+---@return table<string, {name:string, visible:boolean, cmd:string|nil, cwd:string|nil}|nil>
 function M.get_all()
   local result = {}
   for name in pairs(terminals) do
