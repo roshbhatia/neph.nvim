@@ -221,6 +221,10 @@ local dispatch = {
 ---@field result any?          Handler return value (only present when ok = true)
 ---@field error  neph.RpcError? Error details (only present when ok = false)
 
+-- Maximum number of characters echoed back in a METHOD_NOT_FOUND message.
+-- Caps pathologically long method names so error responses stay small.
+local MAX_METHOD_ECHO = 200
+
 --- Dispatch an RPC method call to the registered handler.
 --- Always returns an RpcResponse — never throws. Handler errors are caught and
 --- returned as an INTERNAL error response with a truncated traceback.
@@ -229,11 +233,26 @@ local dispatch = {
 ---@return neph.RpcResponse
 function M.request(method, params)
   log.debug("rpc", "dispatch: %s params=%s", method, vim.inspect(params, { newline = " ", indent = "" }))
+
   local handler = dispatch[method]
   if not handler then
+    local echo = type(method) == "string" and method:sub(1, MAX_METHOD_ECHO) or tostring(method):sub(1, MAX_METHOD_ECHO)
     log.debug("rpc", "dispatch: METHOD_NOT_FOUND %s", method)
-    return { ok = false, error = { code = "METHOD_NOT_FOUND", message = method } }
+    return { ok = false, error = { code = "METHOD_NOT_FOUND", message = echo } }
   end
+
+  -- Reject non-table params at the dispatch boundary.
+  -- nil -> {} is safe (handlers treat missing params as "no arguments").
+  -- A non-table scalar is a caller bug and returns INVALID_PARAMS instead
+  -- of an opaque INTERNAL traceback.
+  if params ~= nil and type(params) ~= "table" then
+    log.debug("rpc", "dispatch: INVALID_PARAMS %s params type=%s", method, type(params))
+    return {
+      ok = false,
+      error = { code = "INVALID_PARAMS", message = "params must be a table, got " .. type(params) },
+    }
+  end
+
   local ok, result = pcall(handler, params or {})
   if not ok then
     local trace = debug.traceback(tostring(result), 2)
