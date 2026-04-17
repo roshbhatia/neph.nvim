@@ -52,9 +52,12 @@ function getGitRoot(dir: string): string | null {
   }
 }
 
+// Pass 1: DiscoverResult carries diagnostic context so callers can produce
+// descriptive error messages that include the socket paths that were tried.
 export type DiscoverResult =
   | { path: string }
-  | { error: 'none' | 'ambiguous' };
+  | { error: 'none'; triedPatterns: string[] }
+  | { error: 'ambiguous'; candidatePaths: string[] };
 
 export function discoverNvimSocket(): DiscoverResult {
   const patterns = [
@@ -92,7 +95,7 @@ export function discoverNvimSocket(): DiscoverResult {
     }
   }
 
-  if (candidates.length === 0) return { error: 'none' };
+  if (candidates.length === 0) return { error: 'none', triedPatterns: patterns };
 
   // Single instance: return it without requiring a cwd match.
   if (candidates.length === 1) return { path: candidates[0].path };
@@ -128,20 +131,37 @@ export function discoverNvimSocket(): DiscoverResult {
 
   // No match found among multiple Neovim instances — refuse to guess.
   // The caller must set NVIM_SOCKET_PATH explicitly.
-  return { error: 'ambiguous' };
+  return { error: 'ambiguous', candidatePaths: candidates.map(c => c.path) };
 }
 
+/** Pass 2: Default per-request RPC timeout exported for testing and configuration. */
+export const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
+
+// Pass 5: No global state — all deps injected via SocketTransportDeps.
 // Visible for testing: allows injecting a fake socket and client.
 export interface SocketTransportDeps {
   socketFactory: (path: string) => net.Socket;
   clientFactory: (socket: net.Socket) => NeovimClient;
+  /** Per-request timeout in milliseconds. Defaults to DEFAULT_REQUEST_TIMEOUT_MS (30 s). */
+  requestTimeoutMs?: number;
+}
+
+// Pass 4/8: Fully typed pending-request entry — tracks both the reject callback
+// and the timeout handle so close() can cancel timers without leaving stray callbacks.
+interface PendingEntry {
+  reject: (err: Error) => void;
+  timeoutId: ReturnType<typeof setTimeout> | null;
 }
 
 export class SocketTransport implements NvimTransport {
-  private client: NeovimClient;
+  // Pass 8: All instance fields are fully annotated.
+  private readonly client: NeovimClient;
+  /** Pass 7: Stored so error messages can include the socket path that was tried. */
+  private readonly socketPath: string;
+  private readonly requestTimeoutMs: number;
   private notificationListeners: Array<(method: string, args: unknown[]) => void> = [];
-  // Tracks in-flight requests so they can be rejected on close().
-  private pendingRequests: Set<{ reject: (err: Error) => void }> = new Set();
+  // Pass 3/4: Tracks in-flight requests so they can be rejected on close() or socket death.
+  private readonly pendingRequests: Set<PendingEntry> = new Set();
   private closed = false;
   // Resolves once the socket connects; rejects on connection error.
   private readonly connectionReady: Promise<void>;
@@ -150,6 +170,9 @@ export class SocketTransport implements NvimTransport {
   private readonly closeSignal: Promise<never>;
 
   constructor(socketPath: string, deps?: Partial<SocketTransportDeps>) {
+    this.socketPath = socketPath;
+    this.requestTimeoutMs = deps?.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+
     // Create the socket ourselves so we can track connect/error before the
     // neovim client makes its first RPC call.
     const socketFactory = deps?.socketFactory ?? ((p: string) => net.createConnection(p));
@@ -170,6 +193,20 @@ export class SocketTransport implements NvimTransport {
       socket.once('connect', resolve);
       socket.once('error', reject);
     });
+
+    // Pass 3: Drain pending requests if the socket dies unexpectedly mid-session.
+    // This covers Neovim crash / OS-level socket close after a successful connect.
+    const drainOnSocketDeath = (err?: Error): void => {
+      if (this.closed) return; // close() already handled this
+      const drainErr =
+        err ?? new Error(`Neovim socket closed unexpectedly (${socketPath})`);
+      this.drainPendingRequests(drainErr);
+    };
+    socket.on('close', (hadError: boolean) => {
+      if (!hadError) drainOnSocketDeath();
+    });
+    socket.on('error', (err: Error) => drainOnSocketDeath(err));
+
     this.client = clientFactory(socket);
     this.client.on('error', (_err: Error) => {
       // The neovim library emits errors on the client; surface them to any
@@ -210,11 +247,25 @@ export class SocketTransport implements NvimTransport {
     await this.ensureConnected();
     const apiInfo = await this.trackRequest(this.client.request('nvim_get_api_info'));
     if (!Array.isArray(apiInfo) || apiInfo.length < 1 || typeof apiInfo[0] !== 'number') {
+      // Pass 7: Include socket path so operators can identify which Neovim was queried.
       throw new Error(
-        `nvim_get_api_info returned unexpected value: ${JSON.stringify(apiInfo)}`,
+        `nvim_get_api_info returned unexpected value: ${JSON.stringify(apiInfo)} ` +
+        `(socket: ${this.socketPath})`,
       );
     }
     return apiInfo[0];
+  }
+
+  // Pass 3: Extracted drain helper — safe to call from close() and socket event handlers.
+  // Clears all timeout timers and rejects every in-flight request with the given error.
+  private drainPendingRequests(err: Error): void {
+    for (const entry of this.pendingRequests) {
+      if (entry.timeoutId !== null) {
+        clearTimeout(entry.timeoutId);
+      }
+      entry.reject(err);
+    }
+    this.pendingRequests.clear();
   }
 
   async close(): Promise<void> {
@@ -225,11 +276,8 @@ export class SocketTransport implements NvimTransport {
     const closeError = new Error('Transport is closed');
     this.rejectClose(closeError);
 
-    // Reject any in-flight requests so callers are not left hanging.
-    for (const entry of this.pendingRequests) {
-      entry.reject(closeError);
-    }
-    this.pendingRequests.clear();
+    // Reject any in-flight requests and cancel their timeout timers.
+    this.drainPendingRequests(closeError);
 
     for (const listener of this.notificationListeners) {
       this.client.off('notification', listener);
@@ -238,19 +286,39 @@ export class SocketTransport implements NvimTransport {
     await this.client.close();
   }
 
-  // Wraps a promise so that it can be cancelled when close() is called.
+  // Pass 2: Wraps a promise so that it can be cancelled when close() is called,
+  // and rejects after requestTimeoutMs if the underlying call never resolves.
+  // Pass 7: Timeout message includes the socket path for diagnostics.
   private trackRequest<T>(promise: Promise<T>): Promise<T> {
     return new Promise<T>((resolve, reject) => {
-      const entry = { reject };
+      const entry: PendingEntry = { reject, timeoutId: null };
       this.pendingRequests.add(entry);
+
+      const cleanup = (): void => {
+        this.pendingRequests.delete(entry);
+        if (entry.timeoutId !== null) {
+          clearTimeout(entry.timeoutId);
+          entry.timeoutId = null;
+        }
+      };
+
+      entry.timeoutId = setTimeout(() => {
+        cleanup();
+        reject(
+          new Error(
+            `RPC request timed out after ${this.requestTimeoutMs}ms on socket ${this.socketPath}`,
+          ),
+        );
+      }, this.requestTimeoutMs);
+
       promise.then(
-        (value) => {
-          this.pendingRequests.delete(entry);
+        (value: T) => {
+          cleanup();
           resolve(value);
         },
-        (err) => {
-          this.pendingRequests.delete(entry);
-          reject(err);
+        (err: unknown) => {
+          cleanup();
+          reject(err instanceof Error ? err : new Error(String(err)));
         },
       );
     });
