@@ -134,4 +134,90 @@ describe("health checks", function()
     end
     assert.is_true(found)
   end)
+
+  it("errors when Node.js is not on PATH", function()
+    local orig_executable = vim.fn.executable
+    vim.fn.executable = function(cmd)
+      if cmd == "node" then
+        return 0
+      end
+      return orig_executable(cmd)
+    end
+    vim.fn.systemlist = function()
+      vim.g.neph_test_shell_error = 0
+      return {}
+    end
+
+    health.check()
+
+    local found = false
+    for _, msg in ipairs(messages.error) do
+      if msg:match("[Nn]ode") then
+        found = true
+        break
+      end
+    end
+    assert.is_true(found, "expected error about missing Node.js")
+    vim.fn.executable = orig_executable
+  end)
+
+  it("reports ok when Node.js is on PATH", function()
+    vim.fn.executable = function()
+      return 1
+    end
+    vim.fn.systemlist = function(cmd)
+      if cmd:match("node --version") then
+        vim.g.neph_test_shell_error = 0
+        return { "v20.11.0" }
+      end
+      vim.g.neph_test_shell_error = 0
+      return { "claude: enabled" }
+    end
+
+    health.check()
+
+    local found = false
+    for _, msg in ipairs(messages.ok) do
+      if msg:match("[Nn]ode") then
+        found = true
+        break
+      end
+    end
+    assert.is_true(found, "expected ok message about Node.js")
+  end)
+
+  it("warns when snacks.nvim is not available", function()
+    -- Temporarily hide snacks from require
+    local orig_snacks = package.loaded["snacks"]
+    package.loaded["snacks"] = nil
+    -- Override require to fail for snacks only
+    local orig_require = _G.require
+    _G.require = function(mod)
+      if mod == "snacks" then
+        error("module 'snacks' not found")
+      end
+      return orig_require(mod)
+    end
+    vim.fn.executable = function()
+      return 1
+    end
+    vim.fn.systemlist = function()
+      vim.g.neph_test_shell_error = 0
+      return { "claude: enabled" }
+    end
+
+    health.check()
+
+    _G.require = orig_require
+    package.loaded["snacks"] = orig_snacks
+
+    local found = false
+    for _, msg in ipairs(messages.warn) do
+      if msg:match("[Ss]nacks") then
+        found = true
+        break
+      end
+    end
+    assert.is_true(found, "expected warning about missing snacks.nvim")
+  end)
 end)

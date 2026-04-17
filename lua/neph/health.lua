@@ -1,5 +1,44 @@
 local M = {}
 
+local function check_runtime_deps()
+  vim.health.start("neph: runtime dependencies")
+
+  -- Node.js is required to build and run the neph-cli TypeScript bundle.
+  if vim.fn.executable("node") == 1 then
+    local ver_out = vim.fn.systemlist("node --version 2>&1")
+    local ver_str = (ver_out and ver_out[1]) or "unknown"
+    vim.health.ok("Node.js: " .. ver_str)
+  else
+    vim.health.error(
+      "Node.js not found on $PATH — neph TypeScript tools (neph-cli, amp, pi) require Node.js.\n"
+        .. "  Install Node.js >= 18 from https://nodejs.org or via your system package manager."
+    )
+  end
+
+  -- snacks.nvim is the only required Neovim plugin (provides the terminal backend).
+  -- Check by attempting to require it; this works even in headless/test context.
+  local ok_snacks = pcall(require, "snacks")
+  if ok_snacks then
+    vim.health.ok("snacks.nvim: available")
+  else
+    vim.health.warn(
+      "snacks.nvim not found — the default backend (neph.backends.snacks) requires folke/snacks.nvim.\n"
+        .. "  Add it to your plugin manager: { 'folke/snacks.nvim' }\n"
+        .. "  If you are using a custom backend this warning can be ignored."
+    )
+  end
+
+  -- plenary.nvim is required to run the test suite but is optional at runtime.
+  local ok_plenary = pcall(require, "plenary")
+  if ok_plenary then
+    vim.health.ok("plenary.nvim: available")
+  else
+    vim.health.info(
+      "plenary.nvim not found — only required for running the neph.nvim test suite, not for normal use."
+    )
+  end
+end
+
 local function check_neovim_version()
   vim.health.start("neph: Neovim version")
 
@@ -329,6 +368,7 @@ local function check_runtime_deps()
 end
 
 function M.check()
+  check_runtime_deps()
   check_neovim_version()
   check_runtime_deps()
   check_build()

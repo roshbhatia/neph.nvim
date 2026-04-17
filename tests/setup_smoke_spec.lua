@@ -399,4 +399,117 @@ describe("setup command idempotency", function()
       neph.setup({ agents = { agent }, backend = stub })
     end)
   end)
+
+  it("emits vim.notify(ERROR) before throwing on missing backend", function()
+    local notifications, restore = helpers.capture_notifications()
+    local ok = pcall(neph.setup, { agents = { make_valid_agent() } })
+    restore()
+    assert.is_false(ok)
+    helpers.assert_notify(notifications, vim.log.levels.ERROR, "no backend registered")
+  end)
+
+  it("emits vim.notify(ERROR) before throwing on invalid agent", function()
+    local notifications, restore = helpers.capture_notifications()
+    local ok = pcall(neph.setup, {
+      agents = { { name = "bad", label = "Bad", icon = " " } },
+      backend = make_stub_backend(),
+    })
+    restore()
+    assert.is_false(ok)
+    helpers.assert_notify(notifications, vim.log.levels.ERROR, "missing required field 'cmd'")
+  end)
+
+  it("does not commit config.current when backend is missing", function()
+    local cfg = require("neph.config")
+    local prev = cfg.current
+    pcall(neph.setup, { agents = { make_valid_agent() } })
+    -- config.current must be unchanged after a failed setup()
+    assert.are.equal(prev, cfg.current)
+  end)
+
+  it("throws when agents is a non-table value", function()
+    assert.has_error(function()
+      neph.setup({
+        agents = "not-a-table",
+        backend = make_stub_backend(),
+      })
+    end)
+  end)
+
+  it("throws when an agent element is not a table", function()
+    assert.has_error(function()
+      neph.setup({
+        agents = { "not-a-table-agent" },
+        backend = make_stub_backend(),
+      })
+    end)
+  end)
+end)
+
+describe("setup config validation", function()
+  local neph
+
+  before_each(function()
+    package.loaded["neph"] = nil
+    package.loaded["neph.init"] = nil
+    package.loaded["neph.internal.agents"] = nil
+    package.loaded["neph.internal.session"] = nil
+    neph = require("neph")
+  end)
+
+  it("warns and coerces invalid review_layout to 'vertical'", function()
+    local notifications, restore = helpers.capture_notifications()
+    neph.setup({
+      agents = {},
+      backend = make_stub_backend(),
+      review_layout = "diagonal",
+    })
+    restore()
+    local cfg = require("neph.config").current
+    assert.equals("vertical", cfg.review_layout)
+    helpers.assert_notify(notifications, vim.log.levels.WARN, "review_layout")
+  end)
+
+  it("warns and coerces negative file_refresh.interval to 1000", function()
+    local notifications, restore = helpers.capture_notifications()
+    neph.setup({
+      agents = {},
+      backend = make_stub_backend(),
+      file_refresh = { enable = true, interval = -5 },
+    })
+    restore()
+    local cfg = require("neph.config").current
+    assert.equals(1000, cfg.file_refresh.interval)
+    helpers.assert_notify(notifications, vim.log.levels.WARN, "file_refresh.interval")
+  end)
+
+  it("warns and coerces float file_refresh.interval to default", function()
+    local notifications, restore = helpers.capture_notifications()
+    neph.setup({
+      agents = {},
+      backend = make_stub_backend(),
+      file_refresh = { enable = true, interval = 1.5 },
+    })
+    restore()
+    local cfg = require("neph.config").current
+    assert.equals(1000, cfg.file_refresh.interval)
+    helpers.assert_notify(notifications, vim.log.levels.WARN, "file_refresh.interval")
+  end)
+
+  it("accepts valid positive integer file_refresh.interval without warning", function()
+    local notifications, restore = helpers.capture_notifications()
+    neph.setup({
+      agents = {},
+      backend = make_stub_backend(),
+      file_refresh = { enable = true, interval = 500 },
+    })
+    restore()
+    local cfg = require("neph.config").current
+    assert.equals(500, cfg.file_refresh.interval)
+    for _, n in ipairs(notifications) do
+      if n.level == vim.log.levels.WARN and tostring(n.msg):find("file_refresh.interval") then
+        error("unexpected warning about file_refresh.interval")
+      end
+    end
+  end)
 end)
