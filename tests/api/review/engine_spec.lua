@@ -76,6 +76,26 @@ describe("neph.api.review.engine", function()
       local result = engine.apply_decisions(old, new, decisions)
       assert.are.same("A\nB1\nB2\nC", result)
     end)
+
+    it("is deterministic: same inputs always yield same output", function()
+      local old = { "A", "B", "C" }
+      local new = { "A", "X", "C" }
+      local decisions = { { index = 1, decision = "accept" } }
+      local r1 = engine.apply_decisions(old, new, decisions)
+      local r2 = engine.apply_decisions(old, new, decisions)
+      local r3 = engine.apply_decisions(old, new, decisions)
+      assert.are.equal(r1, r2)
+      assert.are.equal(r2, r3)
+    end)
+
+    it("does not mutate old_lines when applying patches", function()
+      local old = { "A", "B", "C" }
+      local old_copy = { "A", "B", "C" }
+      local new = { "A", "X", "C" }
+      local decisions = { { index = 1, decision = "accept" } }
+      engine.apply_decisions(old, new, decisions)
+      assert.are.same(old_copy, old)
+    end)
   end)
 
   describe("state machine", function()
@@ -180,6 +200,20 @@ describe("neph.api.review.engine", function()
       assert.are.equal("reject", envelope.decision)
       assert.is_nil(envelope.reason)
     end)
+
+    it("envelope.hunks is a snapshot: mutating input decisions does not affect envelope", function()
+      local decisions = {
+        { index = 1, decision = "accept" },
+        { index = 2, decision = "reject", reason = "bad" },
+      }
+      local envelope = engine.build_envelope(decisions, "content")
+      -- Mutate the original decisions table after building the envelope
+      decisions[1].decision = "reject"
+      table.insert(decisions, { index = 3, decision = "accept" })
+      -- Envelope hunks must be unchanged
+      assert.are.equal(2, #envelope.hunks)
+      assert.are.equal("accept", envelope.hunks[1].decision)
+    end)
   end)
 
   describe("random-access session", function()
@@ -275,6 +309,34 @@ describe("neph.api.review.engine", function()
       session.accept_at(3)
       -- Starting from 2, should wrap and find 1
       assert.are.equal(1, session.next_undecided(2))
+    end)
+
+    it("next_undecided on session with 0 hunks returns nil", function()
+      local session = engine.create_session({}, {})
+      assert.is_nil(session.next_undecided())
+      assert.is_nil(session.next_undecided(1))
+      assert.is_nil(session.next_undecided(0))
+    end)
+
+    it("next_undecided on fully decided session returns nil", function()
+      local old, new = make_multi_hunk(3)
+      local session = engine.create_session(old, new)
+      session.accept_at(1)
+      session.accept_at(2)
+      session.accept_at(3)
+      assert.is_nil(session.next_undecided())
+      assert.is_nil(session.next_undecided(1))
+      assert.is_nil(session.next_undecided(4))
+    end)
+
+    it("next_undecided with out-of-bounds from clamps correctly", function()
+      local old, new = make_multi_hunk(2)
+      local session = engine.create_session(old, new)
+      -- from < 1 should be treated as 1
+      assert.are.equal(1, session.next_undecided(0))
+      assert.are.equal(1, session.next_undecided(-5))
+      -- from > #hunks should still find undecided via wrap
+      assert.are.equal(1, session.next_undecided(999))
     end)
 
     it("finalize treats undecided as rejected", function()
@@ -537,6 +599,30 @@ describe("neph.api.review.engine", function()
       end
       assert.are.equal(1, found_reasons)
     end)
+
+    it("finalize() is idempotent: second call returns identical envelope", function()
+      -- Use two separate hunks separated by an unchanged line
+      local old = { "line 1", "old 2", "line 3", "old 4" }
+      local new = { "line 1", "new 2", "line 3", "new 4" }
+      local session = engine.create_session(old, new)
+      assert.are.equal(2, session.get_total_hunks())
+      session.accept_at(1)
+      session.reject_at(2, "no")
+      local e1 = session.finalize()
+      local e2 = session.finalize()
+      -- Must be the exact same table reference (cached)
+      assert.are.equal(e1, e2)
+      assert.are.equal("partial", e1.decision)
+    end)
+
+    it("finalize() with zero hunks is idempotent", function()
+      local lines = { "same" }
+      local session = engine.create_session(lines, lines)
+      local e1 = session.finalize()
+      local e2 = session.finalize()
+      assert.are.equal(e1, e2)
+      assert.are.equal("accept", e1.decision)
+    end)
   end)
 end)
 
@@ -557,9 +643,67 @@ describe("neph.api.review.engine boundary tests", function()
       assert.are.equal(0, #hunks)
     end)
 
+    it("insertion into empty file: hunk range fields are valid (no zero or negative)", function()
+      local hunks = engine.compute_hunks({}, { "line1", "line2" })
+      assert.are.equal(1, #hunks)
+      local h = hunks[1]
+      -- start_a clamped to 1 (not 0) for pure insertion into empty file
+      assert.is_true(h.start_a >= 1)
+      assert.is_true(h.end_a >= h.start_a)
+      assert.is_true(h.start_b >= 1)
+      assert.is_true(h.end_b >= h.start_b)
+    end)
+
+    it("deletion to empty file: hunk range fields are valid (no zero or negative)", function()
+      local hunks = engine.compute_hunks({ "line1", "line2" }, {})
+      assert.are.equal(1, #hunks)
+      local h = hunks[1]
+      assert.is_true(h.start_a >= 1)
+      assert.is_true(h.end_a >= h.start_a)
+      -- start_b clamped to 1 (not 0) for pure deletion resulting in empty
+      assert.is_true(h.start_b >= 1)
+      assert.is_true(h.end_b >= h.start_b)
+    end)
+
     it("apply_decisions with all-empty inputs returns empty string without crash", function()
       local result = engine.apply_decisions({}, {}, {})
       assert.are.equal("", result)
+    end)
+
+    it("accept pure insertion (empty old → lines added) produces new content", function()
+      local old = {}
+      local new = { "a", "b" }
+      local hunks = engine.compute_hunks(old, new)
+      assert.are.equal(1, #hunks)
+      local decisions = { { index = 1, decision = "accept" } }
+      local result = engine.apply_decisions(old, new, decisions)
+      assert.are.equal("a\nb", result)
+    end)
+
+    it("reject pure insertion (empty old → lines added) keeps empty result", function()
+      local old = {}
+      local new = { "a", "b" }
+      local decisions = { { index = 1, decision = "reject" } }
+      local result = engine.apply_decisions(old, new, decisions)
+      assert.are.equal("", result)
+    end)
+
+    it("accept pure deletion (all lines removed) produces empty result", function()
+      local old = { "x", "y" }
+      local new = {}
+      local hunks = engine.compute_hunks(old, new)
+      assert.are.equal(1, #hunks)
+      local decisions = { { index = 1, decision = "accept" } }
+      local result = engine.apply_decisions(old, new, decisions)
+      assert.are.equal("", result)
+    end)
+
+    it("reject pure deletion (all lines removed) preserves original content", function()
+      local old = { "x", "y" }
+      local new = {}
+      local decisions = { { index = 1, decision = "reject" } }
+      local result = engine.apply_decisions(old, new, decisions)
+      assert.are.equal("x\ny", result)
     end)
 
     it("create_session with empty old lines does not crash", function()
@@ -683,6 +827,19 @@ describe("neph.api.review.engine boundary tests", function()
       assert.are.equal("accept", envelope.decision)
       assert.are.equal("some content", envelope.content)
       assert.are.equal("review/v1", envelope.schema)
+    end)
+
+    it("envelope content is always a string (JSON-serializable)", function()
+      -- Accept case
+      local e1 = engine.build_envelope({ { index = 1, decision = "accept" } }, "text")
+      assert.are.equal("string", type(e1.content))
+      -- Reject case forces content to ""
+      local e2 = engine.build_envelope({ { index = 1, decision = "reject" } }, "text")
+      assert.are.equal("string", type(e2.content))
+      assert.are.equal("", e2.content)
+      -- schema must be the literal string "review/v1"
+      assert.are.equal("string", type(e1.schema))
+      assert.are.equal("review/v1", e1.schema)
     end)
   end)
 end)
