@@ -218,39 +218,185 @@ describe("setup negative paths", function()
     neph = require("neph")
   end)
 
-  it("throws without backend", function()
-    assert.has_error(function()
+  -- setup() now emits vim.notify(ERROR) and returns early instead of throwing,
+  -- so callers do not need pcall.  Each test verifies the notification was
+  -- issued and that no partial state was committed.
+
+  it("notifies ERROR and returns without backend", function()
+    local notifs, restore = helpers.capture_notifications()
+    assert.has_no.errors(function()
       neph.setup({ agents = { make_valid_agent() } })
     end)
+    restore()
+    helpers.assert_notify(notifs, vim.log.levels.ERROR, "backend")
   end)
 
-  it("throws with invalid agent (missing cmd)", function()
-    assert.has_error(function()
+  it("notifies ERROR and returns with invalid agent (missing cmd)", function()
+    local notifs, restore = helpers.capture_notifications()
+    assert.has_no.errors(function()
       neph.setup({
         agents = { { name = "bad", label = "Bad", icon = " " } },
         backend = make_stub_backend(),
       })
     end)
+    restore()
+    helpers.assert_notify(notifs, vim.log.levels.ERROR, "cmd")
   end)
 
-  it("throws with invalid backend (missing methods)", function()
-    assert.has_error(function()
+  it("notifies ERROR and returns with invalid backend (missing methods)", function()
+    local notifs, restore = helpers.capture_notifications()
+    assert.has_no.errors(function()
       neph.setup({
         agents = { make_valid_agent() },
         backend = { setup = function() end },
       })
     end)
+    restore()
+    helpers.assert_notify(notifs, vim.log.levels.ERROR, "backend")
   end)
 
-  it("throws with malformed tools manifest", function()
+  it("notifies ERROR and returns with malformed tools manifest", function()
     local agent = make_valid_agent()
     agent.tools = { symlinks = { { dst = "~/.foo" } } } -- missing src
 
-    assert.has_error(function()
+    local notifs, restore = helpers.capture_notifications()
+    assert.has_no.errors(function()
       neph.setup({
         agents = { agent },
         backend = make_stub_backend(),
       })
+    end)
+    restore()
+    helpers.assert_notify(notifs, vim.log.levels.ERROR, "src")
+  end)
+
+  it("notifies ERROR when agents is not a table", function()
+    local notifs, restore = helpers.capture_notifications()
+    assert.has_no.errors(function()
+      neph.setup({
+        agents = "not-a-table",
+        backend = make_stub_backend(),
+      })
+    end)
+    restore()
+    helpers.assert_notify(notifs, vim.log.levels.ERROR, "agents")
+  end)
+
+  it("does not commit config when backend is missing", function()
+    -- Capture old config state
+    local cfg_mod = require("neph.config")
+    local old_current = cfg_mod.current
+    local notifs, restore = helpers.capture_notifications()
+
+    neph.setup({ agents = { make_valid_agent() } })
+    restore()
+
+    -- config.current should not have changed
+    assert.are.equal(old_current, cfg_mod.current)
+  end)
+end)
+
+describe("setup config validation", function()
+  local neph
+
+  before_each(function()
+    package.loaded["neph"] = nil
+    package.loaded["neph.init"] = nil
+    package.loaded["neph.internal.agents"] = nil
+    package.loaded["neph.internal.session"] = nil
+    neph = require("neph")
+  end)
+
+  it("warns when file_refresh.interval is zero and falls back to 1000", function()
+    local notifs, restore = helpers.capture_notifications()
+    assert.has_no.errors(function()
+      neph.setup({
+        agents = { make_valid_agent("fr_zero") },
+        backend = make_stub_backend(),
+        file_refresh = { interval = 0 },
+      })
+    end)
+    restore()
+    helpers.assert_notify(notifs, vim.log.levels.WARN, "file_refresh.interval")
+    local cfg = require("neph.config").current
+    assert.are.equal(1000, cfg.file_refresh.interval)
+  end)
+
+  it("warns when file_refresh.interval is negative", function()
+    local notifs, restore = helpers.capture_notifications()
+    assert.has_no.errors(function()
+      neph.setup({
+        agents = { make_valid_agent("fr_neg") },
+        backend = make_stub_backend(),
+        file_refresh = { interval = -500 },
+      })
+    end)
+    restore()
+    helpers.assert_notify(notifs, vim.log.levels.WARN, "file_refresh.interval")
+  end)
+
+  it("accepts a valid positive integer file_refresh.interval", function()
+    assert.has_no.errors(function()
+      neph.setup({
+        agents = { make_valid_agent("fr_ok") },
+        backend = make_stub_backend(),
+        file_refresh = { interval = 500 },
+      })
+    end)
+    local cfg = require("neph.config").current
+    assert.are.equal(500, cfg.file_refresh.interval)
+  end)
+
+  it("warns when integration_default_group names a missing group", function()
+    local notifs, restore = helpers.capture_notifications()
+    assert.has_no.errors(function()
+      neph.setup({
+        agents = { make_valid_agent("ig_missing") },
+        backend = make_stub_backend(),
+        integration_default_group = "nonexistent_group",
+      })
+    end)
+    restore()
+    helpers.assert_notify(notifs, vim.log.levels.WARN, "integration_default_group")
+  end)
+
+  it("does not warn when integration_default_group names a known group", function()
+    local notifs, restore = helpers.capture_notifications()
+    assert.has_no.errors(function()
+      neph.setup({
+        agents = { make_valid_agent("ig_ok") },
+        backend = make_stub_backend(),
+        integration_default_group = "default",
+      })
+    end)
+    restore()
+    for _, n in ipairs(notifs) do
+      if n.level == vim.log.levels.WARN and n.msg:find("integration_default_group") then
+        error("unexpected WARN about integration_default_group: " .. n.msg)
+      end
+    end
+  end)
+end)
+
+describe("setup command idempotency", function()
+  local neph
+
+  before_each(function()
+    package.loaded["neph"] = nil
+    package.loaded["neph.init"] = nil
+    package.loaded["neph.internal.agents"] = nil
+    package.loaded["neph.internal.session"] = nil
+    neph = require("neph")
+  end)
+
+  it("calling setup() twice does not error on duplicate user commands", function()
+    local agent = make_valid_agent("cmd_idem")
+    local stub = make_stub_backend()
+
+    neph.setup({ agents = { agent }, backend = stub })
+
+    assert.has_no.errors(function()
+      neph.setup({ agents = { agent }, backend = stub })
     end)
   end)
 end)

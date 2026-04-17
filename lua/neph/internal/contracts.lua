@@ -17,6 +17,7 @@ local AGENT_REQUIRED_FIELDS = {
 ---@type table<string, string>
 local AGENT_OPTIONAL_FIELDS = {
   args = "table",
+  env = "table",
   type = "string",
   launch_args_fn = "function",
   ready_pattern = "string",
@@ -34,7 +35,11 @@ local REMOVED_FIELDS = {
 
 local BACKEND_REQUIRED_METHODS = { "setup", "open", "focus", "hide", "is_visible", "kill", "cleanup_all", "send" }
 
----@param def table
+--- Validate a raw agent definition table, raising an error on the first violation.
+--- Checks required fields, optional field types, deprecated fields, type enum,
+--- and delegates to validate_tools() when a tools field is present.
+---@param def neph.AgentDef|table  Raw agent definition to validate
+---@return nil
 function M.validate_agent(def)
   local name = type(def.name) == "string" and def.name or tostring(def.name or "?")
 
@@ -86,7 +91,11 @@ end
 local VALID_FILE_MODES = { create_only = true, overwrite = true }
 local VALID_SPEC_TYPES = { symlink = true, json_merge = true }
 
----@param def table  AgentDef with a tools field
+--- Validate the tools manifest on an agent definition. Supports both the
+--- flat-array format ({type, src, dst}) and the legacy sub-key format
+--- (symlinks, merges, builds, files). Raises on any violation.
+---@param def neph.AgentDef|table  Agent definition whose tools field will be validated
+---@return nil
 function M.validate_tools(def)
   local name = type(def.name) == "string" and def.name or "?"
   local tools = def.tools
@@ -196,8 +205,12 @@ function M.validate_tools(def)
   end
 end
 
----@param mod table
----@param name string
+--- Validate that a backend module implements all required methods.
+--- Raises an error on the first missing method found.
+--- Required methods (8): setup, open, focus, hide, is_visible, kill, cleanup_all, send.
+---@param mod  table   Backend module table to inspect
+---@param name string  Human-readable backend name for error messages
+---@return nil
 function M.validate_backend(mod, name)
   for _, method in ipairs(BACKEND_REQUIRED_METHODS) do
     if type(mod[method]) ~= "function" then

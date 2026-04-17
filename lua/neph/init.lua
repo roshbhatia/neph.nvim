@@ -25,21 +25,105 @@ local M = {}
 local config = require("neph.config")
 local contracts = require("neph.internal.contracts")
 
+-- ---------------------------------------------------------------------------
+-- Private validators (run before any state is committed)
+-- ---------------------------------------------------------------------------
+
+--- Validate the review_layout config value; fall back to "vertical" when invalid.
+---@param cfg neph.Config
+local function validate_review_layout(cfg)
+  local layout = cfg.review_layout
+  if layout ~= nil and layout ~= "vertical" and layout ~= "horizontal" then
+    vim.notify(
+      string.format(
+        'neph: review_layout = %q is not valid — expected "vertical" or "horizontal"; falling back to "vertical"',
+        tostring(layout)
+      ),
+      vim.log.levels.WARN
+    )
+    cfg.review_layout = "vertical"
+  end
+end
+
+--- Validate the file_refresh sub-config; correct obviously wrong values with a warning.
+---@param cfg neph.Config
+local function validate_file_refresh(cfg)
+  local fr = cfg.file_refresh
+  if type(fr) ~= "table" then
+    return
+  end
+  local interval = fr.interval
+  if interval ~= nil then
+    if type(interval) ~= "number" or interval ~= math.floor(interval) or interval <= 0 then
+      vim.notify(
+        string.format(
+          "neph: file_refresh.interval = %s is not valid — must be a positive integer; falling back to 1000 ms",
+          tostring(interval)
+        ),
+        vim.log.levels.WARN
+      )
+      fr.interval = 1000
+    end
+  end
+end
+
+--- Warn when integration_default_group names a group that does not exist in integration_groups.
+---@param cfg neph.Config
+local function validate_integration_default_group(cfg)
+  local group = cfg.integration_default_group
+  local groups = cfg.integration_groups
+  if group ~= nil and type(groups) == "table" and groups[group] == nil then
+    vim.notify(
+      string.format(
+        "neph: integration_default_group = %q does not match any key in integration_groups; "
+          .. "integration resolution may fall back to noop unexpectedly",
+        tostring(group)
+      ),
+      vim.log.levels.WARN
+    )
+  end
+end
+
+-- ---------------------------------------------------------------------------
+-- Public API
+-- ---------------------------------------------------------------------------
+
 --- Setup neph.nvim.
+---
+--- Validation is all-or-nothing: if the backend or any agent definition is
+--- invalid, setup() emits vim.notify(ERROR) and returns without touching any
+--- existing state.  Calling setup() a second time (e.g. lazy reload) is safe;
+--- user commands are registered with force=true so duplicate registrations do
+--- not error.
 ---@param opts? neph.Config
 function M.setup(opts)
   opts = opts or {}
-  config.current = vim.tbl_deep_extend("force", config.defaults, opts)
+  local merged = vim.tbl_deep_extend("force", config.defaults, opts)
 
-  -- Validate and wire backend
-  local backend = config.current.backend
+  -- Validate backend before touching any state (fail fast, no partial mutation).
+  local backend = merged.backend
   if not backend then
-    error("neph: no backend registered — pass backend = require('neph.backends.snacks') in setup()")
+    vim.notify(
+      "neph: no backend registered — pass backend = require('neph.backends.snacks') in setup()",
+      vim.log.levels.ERROR
+    )
+    return
   end
-  contracts.validate_backend(backend, "backend")
+  local ok_be, err_be = pcall(contracts.validate_backend, backend, "backend")
+  if not ok_be then
+    vim.notify(tostring(err_be), vim.log.levels.ERROR)
+    return
+  end
 
-  -- Validate and wire agents
-  local agents = config.current.agents or {}
+  -- Validate all agents before touching any state (all-or-nothing).
+  local agents = merged.agents
+  if type(agents) ~= "table" then
+    vim.notify(
+      "neph: agents must be a table — pass agents = { require('neph.agents.claude'), ... } in setup()",
+      vim.log.levels.ERROR
+    )
+    return
+  end
   if #agents == 0 then
     vim.notify(
       "neph: no agents registered — pass agents = { require('neph.agents.claude'), ... } in setup()",
@@ -47,8 +131,15 @@ function M.setup(opts)
     )
   end
   for _, agent in ipairs(agents) do
-    contracts.validate_agent(agent)
+    local ok_ag, err_ag = pcall(contracts.validate_agent, agent)
+    if not ok_ag then
+      vim.notify(tostring(err_ag), vim.log.levels.ERROR)
+      return
+    end
   end
+
+  -- All validation passed — commit the merged config.
+  config.current = merged
 
   -- Ensure an RPC socket is listening and store the path for backends.
   -- vim.v.servername is the primary server (set by --listen); serverstart()
@@ -96,18 +187,9 @@ function M.setup(opts)
     end
   end
 
-  -- Validate review_layout value
-  local layout = config.current.review_layout
-  if layout ~= nil and layout ~= "vertical" and layout ~= "horizontal" then
-    vim.notify(
-      string.format(
-        'neph: review_layout = %q is not valid — expected "vertical" or "horizontal"; falling back to "vertical"',
-        tostring(layout)
-      ),
-      vim.log.levels.WARN
-    )
-    config.current.review_layout = "vertical"
-  end
+  validate_review_layout(config.current)
+  validate_file_refresh(config.current)
+  validate_integration_default_group(config.current)
 
   require("neph.internal.agents").init(agents)
   require("neph.internal.session").setup(config.current, backend)
@@ -129,11 +211,12 @@ function M.setup(opts)
     end
   end)
 
-  -- Register :NephBuild command
+  -- Register :NephBuild command (force=true makes repeated setup() calls safe)
   vim.api.nvim_create_user_command("NephBuild", function()
     require("neph.build").run()
   end, {
     desc = "Build neph TypeScript tools and reinstall CLI symlink",
+    force = true,
   })
 
   -- Register :NephDebug command
@@ -162,6 +245,7 @@ function M.setup(opts)
     end
   end, {
     nargs = "?",
+    force = true,
     complete = function()
       return { "on", "off", "tail" }
     end,
@@ -172,6 +256,7 @@ function M.setup(opts)
     require("neph.api").queue()
   end, {
     desc = "Open review queue inspector",
+    force = true,
   })
 
   -- :NephReview — always register; open_manual checks per-agent provider at call time
@@ -182,6 +267,7 @@ function M.setup(opts)
     nargs = "?",
     complete = "file",
     desc = "Open interactive review of buffer vs disk changes",
+    force = true,
   })
 
   -- Register :NephInstall command
@@ -246,6 +332,7 @@ function M.setup(opts)
   end, {
     nargs = "*",
     desc = "Install neph agent tools (symlinks, json merges)",
+    force = true,
     complete = function(arg_lead)
       local all_agents = require("neph.internal.agents").get_all()
       local names = vim.tbl_map(function(a)

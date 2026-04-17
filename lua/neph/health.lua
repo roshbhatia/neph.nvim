@@ -286,8 +286,51 @@ local function check_deps()
   end
 end
 
+local function check_runtime_deps()
+  vim.health.start("neph: runtime dependencies")
+
+  -- Node.js is required to run the built CLI bundles (neph-cli, amp plugin, pi harness).
+  if vim.fn.executable("node") == 1 then
+    local out, _ = run_cli("node --version")
+    local ver = (out[1] or ""):match("v(%S+)")
+    if ver then
+      vim.health.ok("Node.js: " .. ver)
+    else
+      vim.health.ok("Node.js: available")
+    end
+  else
+    vim.health.error(
+      "Node.js not found on $PATH — required to run neph CLI bundles.\n"
+        .. "  Install Node.js >= 18 from https://nodejs.org or via your system package manager."
+    )
+  end
+
+  -- plenary.nvim is used in tests; warn if absent so contributors know tests will fail.
+  local ok_plenary = pcall(require, "plenary")
+  if ok_plenary then
+    vim.health.ok("plenary.nvim: available")
+  else
+    vim.health.warn(
+      "plenary.nvim not found — required to run neph.nvim tests.\n"
+        .. "  Add 'nvim-lua/plenary.nvim' to your plugin dependencies."
+    )
+  end
+
+  -- snacks.nvim provides the default terminal backend.
+  local ok_snacks = pcall(require, "snacks")
+  if ok_snacks then
+    vim.health.ok("snacks.nvim: available")
+  else
+    vim.health.warn(
+      "snacks.nvim not found — required for the default terminal backend.\n"
+        .. "  Add 'folke/snacks.nvim' to your plugin dependencies."
+    )
+  end
+end
+
 function M.check()
   check_neovim_version()
+  check_runtime_deps()
   check_build()
   check_cli()
   check_socket()
