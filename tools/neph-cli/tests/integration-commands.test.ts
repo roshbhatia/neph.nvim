@@ -9,7 +9,7 @@ vi.mock("node:fs", async () => {
   const actual = await vi.importActual<typeof fs>("node:fs");
   return {
     ...actual,
-    existsSync: vi.fn((path: string) => path.includes("settings.json") || path.includes("hooks.json")),
+    existsSync: vi.fn((path: string) => path.includes("settings.json") || path.includes("hooks.json") || path.includes(".neph/")),
     readFileSync: vi.fn((filePath: string, encoding?: unknown) => {
       // Return real template file contents for toggle to work with,
       // but only for files that actually exist on disk (the tool templates).

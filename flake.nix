@@ -47,11 +47,5 @@
           '';
         };
       }
-    ))
-    // {
-      # home-manager module — use with:
-      #   imports = [ inputs.neph-nvim.homeManagerModules.default ];
-      #   programs.neph.enable = true;
-      homeManagerModules.default = import ./nix/hm-module.nix;
-    };
+    ));
 }

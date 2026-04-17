@@ -1,34 +1,24 @@
 {
   "hooks": [
     {
-      "_kind": "review",
       "event": "preToolUse",
       "filter": {
-        "toolNames": [
-          "edit",
-          "create"
-        ]
+        "toolNames": ["edit", "create"]
       },
       "command": "PATH=$HOME/.local/bin:$PATH neph integration hook copilot"
     },
     {
-      "_kind": "review",
       "event": "postToolUse",
       "filter": {
-        "toolNames": [
-          "edit",
-          "create"
-        ]
+        "toolNames": ["edit", "create"]
       },
       "command": "PATH=$HOME/.local/bin:$PATH neph integration hook copilot"
     },
     {
-      "_kind": "lifecycle",
       "event": "sessionStart",
       "command": "PATH=$HOME/.local/bin:$PATH neph integration hook copilot"
     },
     {
-      "_kind": "lifecycle",
       "event": "sessionEnd",
       "command": "PATH=$HOME/.local/bin:$PATH neph integration hook copilot"
     }

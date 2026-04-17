@@ -2,7 +2,6 @@
   "hooks": {
     "PreToolUse": [
       {
-        "_kind": "review",
         "matcher": "Edit|Write|MultiEdit",
         "hooks": [
           {
@@ -14,7 +13,6 @@
     ],
     "PostToolUse": [
       {
-        "_kind": "review",
         "matcher": "Edit|Write|MultiEdit",
         "hooks": [
           {
@@ -26,7 +24,6 @@
     ],
     "SessionStart": [
       {
-        "_kind": "lifecycle",
         "hooks": [
           {
             "type": "command",
@@ -37,7 +34,6 @@
     ],
     "SessionEnd": [
       {
-        "_kind": "lifecycle",
         "hooks": [
           {
             "type": "command",
@@ -48,7 +44,6 @@
     ],
     "UserPromptSubmit": [
       {
-        "_kind": "lifecycle",
         "hooks": [
           {
             "type": "command",
@@ -59,7 +54,6 @@
     ],
     "Stop": [
       {
-        "_kind": "lifecycle",
         "hooks": [
           {
             "type": "command",

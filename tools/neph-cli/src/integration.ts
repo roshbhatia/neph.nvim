@@ -111,10 +111,6 @@ function writeJson(filePath: string, data: JsonValue): void {
   }
 }
 
-function stripKind(entry: Record<string, unknown>): Record<string, unknown> {
-  const { _kind, ...rest } = entry;
-  return rest;
-}
 
 function installCupcakeAssets(projectRoot: string): void {
   const srcRoot = path.join(REPO_ROOT, ".cupcake");
@@ -213,7 +209,7 @@ function mergeHooks(dst: any, src: any): any {
     out.hooks[event] = out.hooks[event] ?? [];
     for (const entry of entries as any[]) {
       if (!out.hooks[event].some((e: any) => hookEntryMatches(e, entry))) {
-        out.hooks[event].push(stripKind(entry));
+        out.hooks[event].push(entry);
       }
     }
   }
@@ -252,7 +248,7 @@ function mergeCopilot(dst: any, src: any): any {
     const exists = out.hooks.some(
       (e: any) => normalizeCommand(e.command) === normalizeCommand(entry.command) && e.event === entry.event,
     );
-    if (!exists) out.hooks.push(stripKind(entry));
+    if (!exists) out.hooks.push(entry);
   }
   return out;
 }
