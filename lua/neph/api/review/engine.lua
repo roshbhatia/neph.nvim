@@ -1,3 +1,7 @@
+-- lua/neph/api/review/engine.lua
+-- Pure diff-review engine: compute_hunks, apply_decisions, and build_envelope
+-- are all side-effect-free functions (inputs → outputs, no global state).
+-- create_session wraps them in a stateful closure for interactive review.
 local M = {}
 
 ---@class HunkRange
@@ -7,19 +11,41 @@ local M = {}
 ---@field end_b   integer  End line in new file (inclusive)
 
 ---@class HunkDecision
----@field index integer
----@field decision "accept" | "reject"
----@field reason string?
+---@field index    integer               Hunk index (1-based, matches position in HunkRange[])
+---@field decision "accept" | "reject"   Whether this hunk's change should be applied
+---@field reason   string?               Optional human-readable rejection reason
 
 ---@class ReviewEnvelope
----@field schema "review/v1"
+---@field schema   "review/v1"
 ---@field decision "accept" | "reject" | "partial"
----@field content string
----@field hunks HunkDecision[]
----@field reason string?
+---@field content  string       Final file content after applying accepted hunks; "" when fully rejected
+---@field hunks    HunkDecision[]
+---@field reason   string?      Semicolon-joined reasons from rejected hunks; nil when none
 
----@param old_lines string[]
----@param new_lines string[]
+---@class ReviewSession
+---@field get_hunk_ranges      fun(): HunkRange[]
+---@field get_current_hunk     fun(): HunkRange?, integer
+---@field get_total_hunks      fun(): integer
+---@field accept_at            fun(idx: integer): boolean
+---@field reject_at            fun(idx: integer, reason?: string): boolean
+---@field get_decision         fun(idx: integer): HunkDecision?
+---@field is_complete          fun(): boolean
+---@field next_undecided       fun(from?: integer): integer?
+---@field clear_at             fun(idx: integer): boolean
+---@field get_tally            fun(): {accepted: integer, rejected: integer, undecided: integer}
+---@field accept_all_remaining fun(): nil
+---@field reject_all_remaining fun(reason?: string): nil
+---@field accept               fun(): boolean
+---@field reject               fun(reason?: string): boolean
+---@field accept_all           fun(): nil
+---@field reject_all           fun(reason?: string): nil
+---@field is_done              fun(): boolean
+---@field finalize             fun(): ReviewEnvelope
+
+--- Compute diff hunks between old_lines and new_lines using vim.diff.
+--- Returns an array of HunkRange describing each changed region (pure function).
+---@param old_lines string[]  Lines of the original file
+---@param new_lines string[]  Lines of the proposed file
 ---@return HunkRange[]
 function M.compute_hunks(old_lines, new_lines)
   local old_str = table.concat(old_lines, "\n")
@@ -47,17 +73,19 @@ function M.compute_hunks(old_lines, new_lines)
     local start_a, count_a, start_b, count_b = unpack(hunk)
 
     -- For pure insertions (count_a == 0), start_a is the line AFTER which
-    -- the insertion happens. Clamp to valid range for UI display.
+    -- the insertion happens. vim.diff can return start_a = 0 for insertions
+    -- at the beginning of an empty file. Clamp to [1, max(1,#old_lines)] for
+    -- UI display so callers always receive 1-indexed coordinates.
     local display_a = start_a
-    if count_a == 0 and display_a > #old_lines then
-      display_a = math.max(1, #old_lines)
+    if count_a == 0 then
+      display_a = math.max(1, math.min(start_a, #old_lines))
     end
 
     -- For pure deletions (count_b == 0), start_b is the line AFTER which
     -- the deletion point sits. Clamp similarly.
     local display_b = start_b
-    if count_b == 0 and display_b > #new_lines then
-      display_b = math.max(1, #new_lines)
+    if count_b == 0 then
+      display_b = math.max(1, math.min(start_b, #new_lines))
     end
 
     table.insert(ranges, {
@@ -71,10 +99,14 @@ function M.compute_hunks(old_lines, new_lines)
   return ranges
 end
 
----@param old_lines string[]
----@param new_lines string[]
----@param decisions HunkDecision[]
----@return string
+--- Apply a list of hunk decisions to produce the resulting file content.
+--- Accepted hunks take the new lines; rejected hunks keep the old lines.
+--- Deterministic: same inputs always produce the same output. Does not
+--- mutate old_lines or new_lines.
+---@param old_lines string[]      Lines of the original file
+---@param new_lines string[]      Lines of the proposed file
+---@param decisions HunkDecision[] Ordered list of per-hunk decisions
+---@return string                 Resulting file content joined by newlines
 function M.apply_decisions(old_lines, new_lines, decisions)
   local old_str = table.concat(old_lines, "\n")
   local new_str = table.concat(new_lines, "\n")
@@ -110,7 +142,12 @@ function M.apply_decisions(old_lines, new_lines, decisions)
     end
   end
 
-  local result_lines = vim.deepcopy(old_lines)
+  -- Shallow copy is sufficient: old_lines contains only strings (immutable values).
+  -- Avoids mutating the caller's table and removes the vim.deepcopy API dependency.
+  local result_lines = {}
+  for i = 1, #old_lines do
+    result_lines[i] = old_lines[i]
+  end
   for i = #patches, 1, -1 do
     local p = patches[i]
     local pos = p.start_a
@@ -130,8 +167,13 @@ function M.apply_decisions(old_lines, new_lines, decisions)
   return table.concat(result_lines, "\n")
 end
 
----@param decisions HunkDecision[]
----@param content string
+--- Build a ReviewEnvelope from a list of hunk decisions and the proposed
+--- content string produced by apply_decisions. When all hunks are rejected
+--- the envelope content is forced to empty string (caller should not rely on
+--- the input `content` value in that case).
+--- The returned envelope.hunks is a snapshot copy independent of the input table.
+---@param decisions HunkDecision[] Ordered list of per-hunk decisions (accept/reject)
+---@param content string           Proposed file content after accepted hunks are applied
 ---@return ReviewEnvelope
 function M.build_envelope(decisions, content)
   local accepted = vim.tbl_filter(function(h)
@@ -142,13 +184,15 @@ function M.build_envelope(decisions, content)
   end, decisions)
 
   local decision
+  -- Guard: content must always be a string for valid JSON-serializable output.
+  local out_content = type(content) == "string" and content or ""
   if #rejected == 0 and #decisions > 0 then
     decision = "accept"
   elseif #accepted == 0 and #decisions > 0 then
     decision = "reject"
-    content = ""
+    out_content = ""
   elseif #decisions == 0 then
-    decision = "accept" -- No changes
+    decision = "accept" -- No changes; treat as clean accept
   else
     decision = "partial"
   end
@@ -160,22 +204,39 @@ function M.build_envelope(decisions, content)
     end
   end
 
+  -- Deep-copy each HunkDecision so post-call mutations to the input decisions
+  -- table (including mutations to individual decision tables) cannot corrupt
+  -- the envelope's hunks field. HunkDecision has only string/number/nil fields
+  -- so a field-by-field copy is sufficient and avoids vim.deepcopy overhead.
+  local hunks_snapshot = {}
+  for i, h in ipairs(decisions) do
+    hunks_snapshot[i] = { index = h.index, decision = h.decision, reason = h.reason }
+  end
+
   return {
     schema = "review/v1",
     decision = decision,
-    content = content,
-    hunks = decisions,
+    content = out_content,
+    hunks = hunks_snapshot,
     reason = #reasons > 0 and table.concat(reasons, "; ") or nil,
   }
 end
 
--- State machine session
+--- Create a stateful review session for interactively accepting or rejecting
+--- individual diff hunks between old_lines and new_lines.
+--- Provides both random-access (accept_at/reject_at) and sequential (accept/reject)
+--- decision methods. Call finalize() to produce the final ReviewEnvelope.
+---@param old_lines string[]  Lines of the original file
+---@param new_lines string[]  Lines of the proposed file
+---@return ReviewSession
 function M.create_session(old_lines, new_lines)
   local hunk_ranges = M.compute_hunks(old_lines, new_lines)
   -- Random-access decisions array: nil = undecided, table = decided
   local decisions_by_idx = {}
   local current_idx = 1
-  local _finalized = false
+  -- Cache for finalize(): non-nil after first call; ensures true idempotency
+  -- (same table reference returned on every subsequent call).
+  local _cached_envelope = nil
 
   local self = {}
 
@@ -321,18 +382,13 @@ function M.create_session(old_lines, new_lines)
   end
 
   function self.finalize()
-    -- Idempotent guard: subsequent calls return the same envelope without
-    -- re-mutating decisions_by_idx or re-running apply_decisions.
-    if _finalized then
-      local decisions = {}
-      for i = 1, #hunk_ranges do
-        decisions[i] = decisions_by_idx[i]
-      end
-      local content = M.apply_decisions(old_lines, new_lines, decisions)
-      return M.build_envelope(decisions, content)
+    -- Idempotent: return the exact same envelope table on repeated calls.
+    -- This prevents decisions_by_idx from being re-mutated after the first
+    -- finalize() and ensures callers can safely compare envelope references.
+    if _cached_envelope then
+      return _cached_envelope
     end
-    _finalized = true
-    -- Treat undecided hunks as rejected (safety)
+    -- Treat undecided hunks as rejected (safety default)
     for i = 1, #hunk_ranges do
       if not decisions_by_idx[i] then
         decisions_by_idx[i] = { index = i, decision = "reject", reason = "Undecided" }
@@ -344,7 +400,8 @@ function M.create_session(old_lines, new_lines)
       decisions[i] = decisions_by_idx[i]
     end
     local content = M.apply_decisions(old_lines, new_lines, decisions)
-    return M.build_envelope(decisions, content)
+    _cached_envelope = M.build_envelope(decisions, content)
+    return _cached_envelope
   end
 
   return self
