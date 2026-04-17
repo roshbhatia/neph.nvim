@@ -3,19 +3,19 @@
     "afterFileEdit": [
       {
         "_kind": "lifecycle",
-        "command": "neph integration hook cursor"
+        "command": "PATH=$HOME/.local/bin:$PATH neph integration hook cursor"
       }
     ],
     "beforeShellExecution": [
       {
         "_kind": "review",
-        "command": "neph integration hook cursor"
+        "command": "PATH=$HOME/.local/bin:$PATH neph integration hook cursor"
       }
     ],
     "beforeMCPExecution": [
       {
         "_kind": "review",
-        "command": "neph integration hook cursor"
+        "command": "PATH=$HOME/.local/bin:$PATH neph integration hook cursor"
       }
     ]
   }

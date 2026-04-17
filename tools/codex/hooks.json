@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "neph integration hook codex"
+            "command": "PATH=$HOME/.local/bin:$PATH neph integration hook codex"
           }
         ]
       }
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "neph integration hook codex"
+            "command": "PATH=$HOME/.local/bin:$PATH neph integration hook codex"
           }
         ]
       }
@@ -29,7 +29,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "neph integration hook codex"
+            "command": "PATH=$HOME/.local/bin:$PATH neph integration hook codex"
           }
         ]
       }
@@ -41,7 +41,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "neph integration hook codex"
+            "command": "PATH=$HOME/.local/bin:$PATH neph integration hook codex"
           }
         ]
       }
@@ -52,7 +52,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "neph integration hook codex"
+            "command": "PATH=$HOME/.local/bin:$PATH neph integration hook codex"
           }
         ]
       }
@@ -63,7 +63,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "neph integration hook codex"
+            "command": "PATH=$HOME/.local/bin:$PATH neph integration hook codex"
           }
         ]
       }

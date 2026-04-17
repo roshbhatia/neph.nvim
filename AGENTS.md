@@ -310,6 +310,8 @@ Neph forwards `$NVIM_SOCKET_PATH` to every agent terminal. The `neph` CLI uses t
 
 ### 8. Dry-Run Mode
 
+
+
 Set `NEPH_DRY_RUN=1` to auto-accept all review hunks (for non-interactive CI/testing).
 
 **Check:** `tools/neph-cli/src/index.ts`

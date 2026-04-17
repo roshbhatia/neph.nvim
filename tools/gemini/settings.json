@@ -7,7 +7,7 @@
           {
             "type": "command",
             "name": "neph-lifecycle",
-            "command": "neph integration hook gemini",
+            "command": "PATH=$HOME/.local/bin:$PATH neph integration hook gemini",
             "timeout": 10000
           }
         ]
@@ -20,7 +20,7 @@
           {
             "type": "command",
             "name": "neph-lifecycle",
-            "command": "neph integration hook gemini",
+            "command": "PATH=$HOME/.local/bin:$PATH neph integration hook gemini",
             "timeout": 10000
           }
         ]
@@ -33,7 +33,7 @@
           {
             "type": "command",
             "name": "neph-lifecycle",
-            "command": "neph integration hook gemini",
+            "command": "PATH=$HOME/.local/bin:$PATH neph integration hook gemini",
             "timeout": 10000
           }
         ]
@@ -46,7 +46,7 @@
           {
             "type": "command",
             "name": "neph-lifecycle",
-            "command": "neph integration hook gemini",
+            "command": "PATH=$HOME/.local/bin:$PATH neph integration hook gemini",
             "timeout": 10000
           }
         ]
@@ -60,7 +60,7 @@
           {
             "type": "command",
             "name": "neph-review",
-            "command": "neph integration hook gemini",
+            "command": "PATH=$HOME/.local/bin:$PATH neph integration hook gemini",
             "timeout": 600000
           }
         ]
@@ -74,7 +74,7 @@
           {
             "type": "command",
             "name": "neph-checktime",
-            "command": "neph integration hook gemini",
+            "command": "PATH=$HOME/.local/bin:$PATH neph integration hook gemini",
             "timeout": 10000
           }
         ]

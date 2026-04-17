@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "neph integration hook claude"
+            "command": "PATH=$HOME/.local/bin:$PATH neph integration hook claude"
           }
         ]
       }
@@ -19,7 +19,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "neph integration hook claude"
+            "command": "PATH=$HOME/.local/bin:$PATH neph integration hook claude"
           }
         ]
       }
@@ -30,7 +30,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "neph integration hook claude"
+            "command": "PATH=$HOME/.local/bin:$PATH neph integration hook claude"
           }
         ]
       }
@@ -41,7 +41,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "neph integration hook claude"
+            "command": "PATH=$HOME/.local/bin:$PATH neph integration hook claude"
           }
         ]
       }
@@ -52,7 +52,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "neph integration hook claude"
+            "command": "PATH=$HOME/.local/bin:$PATH neph integration hook claude"
           }
         ]
       }
@@ -63,7 +63,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "neph integration hook claude"
+            "command": "PATH=$HOME/.local/bin:$PATH neph integration hook claude"
           }
         ]
       }
