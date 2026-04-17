@@ -31,7 +31,7 @@
 ---@field on_ready   fun()|nil          Callback set by open(); drains ready_queue
 ---@field ready_timer userdata|nil      Active vim.uv timer waiting for ready_pattern match
 ---@field stale_since integer|nil       os.time() when pane was detected dead; nil if healthy
----@field _killed    boolean|nil        Set true by kill_session() before backend.kill; guards deferred async callbacks from acting on dead sessions
+---@field _killed    boolean|nil        True after kill(); guards deferred async callbacks
 
 local M = {}
 
@@ -58,8 +58,9 @@ local ready_queue = {}
 -- Private helpers
 -- ---------------------------------------------------------------------------
 
---- Stop and close a uv timer, swallowing errors.
+--- Stop and close a uv timer, swallowing errors. Returns nil for easy chaining.
 ---@param t userdata|nil  Timer handle
+---@return nil
 local function cancel_timer(t)
   if not t then
     return
@@ -79,6 +80,53 @@ local function mark_stale(name, td)
   end
 end
 
+--- Drain the ready_queue for *termname*, sending each queued entry via M.send.
+--- Called from the on_ready callback set on each terminal after open().
+---@param termname string
+local function drain_ready_queue(termname)
+  local queue = ready_queue[termname]
+  if not queue then
+    return
+  end
+  ready_queue[termname] = nil
+  for _, entry in ipairs(queue) do
+    local ok, err = pcall(M.send, termname, entry.text, entry.opts)
+    if not ok then
+      log.warn("session", "on_ready send failed for %s: %s", termname, tostring(err))
+    end
+  end
+end
+
+--- Build the agent_config table expected by backends, resolving dynamic launch args.
+---@param agent table  Registered agent definition
+---@return table  { cmd, args, full_cmd, env, ready_pattern }
+local function build_agent_config(agent)
+  local full_cmd = agent.full_cmd or agent.cmd
+  local resolved_args = agent.args or {}
+  if agent.launch_args_fn then
+    local root = require("neph.tools").get_root()
+    local ok, extra = pcall(agent.launch_args_fn, root)
+    if ok and type(extra) == "table" then
+      resolved_args = vim.list_extend(vim.deepcopy(resolved_args), extra)
+      local escaped = {}
+      for i, arg in ipairs(resolved_args) do
+        escaped[i] = vim.fn.shellescape(arg)
+      end
+      full_cmd = agent.cmd .. " " .. table.concat(escaped, " ")
+    elseif not ok then
+      log.debug("session", "launch_args_fn error for %s: %s", agent.name, tostring(extra))
+      vim.notify("Neph: launch_args_fn failed for " .. agent.name .. ": " .. tostring(extra), vim.log.levels.WARN)
+    end
+  end
+  return {
+    cmd = agent.full_cmd or agent.cmd,
+    args = resolved_args,
+    full_cmd = full_cmd,
+    env = agent.env or {},
+    ready_pattern = agent.ready_pattern,
+  }
+end
+
 --- Run an async liveness check on every tracked terminal.
 --- For each terminal that responds "alive=false", call mark_stale().
 --- For terminals that recover (stale_since set but now alive), clear stale_since.
@@ -93,7 +141,8 @@ local function check_all_alive()
     local td = terminals[name]
     if td then
       backend.check_alive_async(td, function(alive)
-        -- Drop callbacks for sessions killed while the async request was in flight.
+        -- Drop callbacks for sessions that were killed while the async request
+        -- was in flight — td._killed is set before the terminals entry is removed.
         if td._killed then
           return
         end
@@ -143,7 +192,7 @@ function M.setup(opts, backend_mod)
         for name, td in pairs(terminals) do
           if td and td.buf == closed_buf then
             log.debug("session", "TermClose: agent process exited for %s (buf=%d)", name, closed_buf)
-            -- Cancel the ready-timer so it cannot fire on_ready into a dead buffer.
+            -- Cancel the ready-timer if it is still running.
             cancel_timer(td.ready_timer)
             td.ready_timer = nil
             -- Drop any queued sends that would target the dead channel.
@@ -253,35 +302,7 @@ function M.open(termname)
   end
 
   local cwd = vim.fn.getcwd()
-
-  -- Resolve dynamic launch args if present
-  local full_cmd = agent.full_cmd or agent.cmd
-  local resolved_args = agent.args or {}
-  if agent.launch_args_fn then
-    local root = require("neph.tools").get_root()
-    local ok, extra = pcall(agent.launch_args_fn, root)
-    if ok and type(extra) == "table" then
-      resolved_args = vim.list_extend(vim.deepcopy(resolved_args), extra)
-      -- Rebuild full_cmd with dynamic args included
-      local escaped = {}
-      for i, arg in ipairs(resolved_args) do
-        escaped[i] = vim.fn.shellescape(arg)
-      end
-      full_cmd = agent.cmd .. " " .. table.concat(escaped, " ")
-    elseif not ok then
-      log.debug("session", "launch_args_fn error for %s: %s", agent.name, tostring(extra))
-      vim.notify("Neph: launch_args_fn failed for " .. agent.name .. ": " .. tostring(extra), vim.log.levels.WARN)
-    end
-  end
-
-  -- Build agent_config expected by backends: { cmd, args, full_cmd, env, ready_pattern }
-  local agent_config = {
-    cmd = agent.full_cmd or agent.cmd,
-    args = resolved_args,
-    full_cmd = full_cmd,
-    env = agent.env or {},
-    ready_pattern = agent.ready_pattern,
-  }
+  local agent_config = build_agent_config(agent)
 
   -- If a stale/invisible entry exists for this terminal, cancel its ready-timer
   -- before we start a fresh backend.open so the timer cannot fire on_ready for
@@ -328,7 +349,7 @@ function M.open(termname)
     -- Set on_ready callback to drain queued text.
     -- The queue may already contain entries added before open() was called
     -- (e.g. via ensure_active_and_send racing with a slow open).
-    -- Chain any existing on_ready set by the backend so both fire in order.
+    -- Chain any existing on_ready set by the backend so both fire.
     local backend_on_ready = td.on_ready
     td.on_ready = function()
       -- Guard: do not fire for sessions already killed while this callback was pending.
@@ -339,16 +360,7 @@ function M.open(termname)
       if backend_on_ready then
         pcall(backend_on_ready)
       end
-      local queue = ready_queue[termname]
-      if queue then
-        ready_queue[termname] = nil
-        for _, entry in ipairs(queue) do
-          local ok, err = pcall(M.send, termname, entry.text, entry.opts)
-          if not ok then
-            log.warn("session", "on_ready send failed for %s: %s", termname, tostring(err))
-          end
-        end
-      end
+      drain_ready_queue(termname)
     end
 
     -- If already ready (no pattern or immediate match), fire now
@@ -403,8 +415,10 @@ function M.hide(termname)
   end
   -- Cancel ready-timer before hiding so it cannot drain the queue into a dead
   -- pane after terminals[termname] is cleared.
-  cancel_timer(td.ready_timer)
-  td.ready_timer = nil
+  if td.ready_timer then
+    cancel_timer(td.ready_timer)
+    td.ready_timer = nil
+  end
   ready_queue[termname] = nil
   backend.hide(td)
   terminals[termname] = nil
@@ -506,9 +520,9 @@ function M.kill_session(termname)
 end
 
 --- Send text to a named agent terminal. No-op when:
----   * termname is nil or not tracked
----   * the terminal is marked stale
----   * the terminal window is no longer visible
+---   • termname is nil or not tracked
+---   • the terminal is marked stale
+---   • the terminal window is no longer visible
 ---@param termname string|nil
 ---@param text     string  Text to send to the terminal process
 ---@param opts?    {submit?: boolean}  When submit=true the backend appends a newline
@@ -623,7 +637,7 @@ function M.exists(termname)
 end
 
 ---@param termname string
----@return {name:string, visible:boolean, cmd:string|nil, cwd:string|nil}|nil
+---@return {name:string, visible:boolean, cmd:string, cwd:string}|nil
 function M.get_info(termname)
   local td = terminals[termname]
   if not td or not backend then
@@ -637,7 +651,7 @@ function M.get_info(termname)
   }
 end
 
----@return table<string, {name:string, visible:boolean, cmd:string|nil, cwd:string|nil}|nil>
+---@return table<string, {name:string, visible:boolean, cmd:string, cwd:string}|nil>
 function M.get_all()
   local result = {}
   for name in pairs(terminals) do

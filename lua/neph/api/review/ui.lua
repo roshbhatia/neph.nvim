@@ -1,5 +1,29 @@
 local M = {}
 
+---@class neph.DiffTabState
+---@field tab               integer    Tabpage handle
+---@field left_buf          integer    Buffer handle for old (left/top) side
+---@field right_buf         integer    Buffer handle for new (right/bottom) side
+---@field left_win          integer    Window handle for old side
+---@field right_win         integer    Window handle for new side
+---@field sign_ids          table<integer, integer>  Maps line → sign placement id
+---@field guard_augroup     integer    Augroup id for WinEnter guard autocmd
+---@field mode              string?    Review mode ("post_write" | "manual" | nil)
+---@field request_id        string?    Unique id for this review request
+---@field original_diffopt  string     Saved diffopt value to restore on cleanup
+---@field layout            neph.ReviewLayout  Current split layout
+---@field originating       {win: integer, cursor: integer[]}  Win/cursor before tab was opened
+---@field file_path         string     Absolute path of the file under review
+---@field cursor_autocmd_id integer?   Autocmd id for CursorMoved cleanup
+---@field help_win          integer?   Floating help window handle (when open)
+---@field help_buf          integer?   Buffer for floating help window
+---@field summary_win       integer?   Floating submit-summary window handle
+---@field refresh           fun()      Update signs and winbar for current state
+---@field finalize          fun()      Finalize and close review session
+---@field jump_to_hunk      fun(idx: integer): nil  Jump cursor to a specific hunk
+
+--- Define Neovim signs used by the diff review UI. Must be called once at setup.
+---@return nil
 function M.setup_signs()
   local config = require("neph.config").current
   local signs = vim.tbl_extend("force", {
@@ -16,6 +40,34 @@ end
 --- Valid layout values for open_diff_tab.
 ---@alias neph.ReviewLayout "vertical" | "horizontal"
 
+--- Configure a scratch buffer for one side of the diff display.
+--- Sets lines, buffer name, nofile options, and (optionally) filetype.
+---@param buf       integer    Buffer handle to configure
+---@param lines     string[]   Content lines
+---@param name      string     Buffer name (e.g. "neph://current/foo.lua")
+---@param modifiable boolean   Whether the buffer is user-editable
+---@param ft        string     Filetype string (empty string = skip)
+---@return nil
+local function configure_diff_buf(buf, lines, name, modifiable, ft)
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  vim.api.nvim_buf_set_name(buf, name)
+  vim.bo[buf].buftype = "nofile"
+  vim.bo[buf].bufhidden = "wipe"
+  vim.bo[buf].swapfile = false
+  vim.bo[buf].modified = false
+  vim.bo[buf].modifiable = modifiable
+  vim.b[buf].dropbar_disabled = true
+  if ft ~= "" then
+    vim.bo[buf].filetype = ft
+  end
+end
+
+--- Open a new tab containing a vimdiff split for reviewing file changes.
+---@param path      string       Absolute path of the file being reviewed
+---@param old_lines string[]     Lines of the original (left/top) side
+---@param new_lines string[]     Lines of the proposed (right/bottom) side
+---@param opts?     {mode?: string, layout?: neph.ReviewLayout, request_id?: string}
+---@return neph.DiffTabState
 function M.open_diff_tab(path, old_lines, new_lines, opts)
   opts = opts or {}
   local ft = vim.filetype.match({ filename = path }) or ""
@@ -52,17 +104,8 @@ function M.open_diff_tab(path, old_lines, new_lines, opts)
   -- since nvim_get_current_buf() may be stale when called from an RPC context.
   local left_win_pre = vim.api.nvim_tabpage_get_win(tab)
   local left_buf = vim.api.nvim_win_get_buf(left_win_pre)
-  vim.api.nvim_buf_set_lines(left_buf, 0, -1, false, old_lines)
   local left_label = is_post_write and "neph://buffer-before/" or "neph://current/"
-  vim.api.nvim_buf_set_name(left_buf, left_label .. basename)
-  vim.bo[left_buf].buftype = "nofile"
-  vim.bo[left_buf].bufhidden = "wipe"
-  vim.bo[left_buf].swapfile = false
-  vim.bo[left_buf].modified = false
-  vim.b[left_buf].dropbar_disabled = true
-  if ft ~= "" then
-    vim.bo[left_buf].filetype = ft
-  end
+  configure_diff_buf(left_buf, old_lines, left_label .. basename, true, ft)
 
   local left_win = vim.api.nvim_get_current_win()
   vim.cmd("diffthis")
@@ -79,17 +122,8 @@ function M.open_diff_tab(path, old_lines, new_lines, opts)
   end
   local right_buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_win_set_buf(0, right_buf)
-  vim.api.nvim_buf_set_lines(right_buf, 0, -1, false, new_lines)
   local right_label = is_post_write and "neph://disk-after/" or "neph://proposed/"
-  vim.api.nvim_buf_set_name(right_buf, right_label .. basename)
-  vim.bo[right_buf].buftype = "nofile"
-  vim.bo[right_buf].bufhidden = "wipe"
-  vim.bo[right_buf].swapfile = false
-  vim.bo[right_buf].modifiable = false
-  vim.b[right_buf].dropbar_disabled = true
-  if ft ~= "" then
-    vim.bo[right_buf].filetype = ft
-  end
+  configure_diff_buf(right_buf, new_lines, right_label .. basename, false, ft)
 
   vim.cmd("diffthis")
 
@@ -166,6 +200,12 @@ function M.rotate_layout(ui_state)
   vim.api.nvim_set_current_win(ui_state.left_win)
 end
 
+--- Place (or replace) a named sign on a buffer line.
+---@param buf       integer                      Buffer handle
+---@param sign_name string                       Defined sign name (e.g. "neph_accept")
+---@param line      integer                      1-indexed line number
+---@param sign_ids  table<integer, integer>      Mutable map of line → sign placement id
+---@return nil
 function M.place_sign(buf, sign_name, line, sign_ids)
   if sign_ids[line] then
     vim.fn.sign_unplace("neph_review", { buffer = buf, id = sign_ids[line] })
@@ -174,6 +214,11 @@ function M.place_sign(buf, sign_name, line, sign_ids)
   sign_ids[line] = id
 end
 
+--- Remove a sign from a buffer line.
+---@param buf      integer                      Buffer handle
+---@param line     integer                      1-indexed line number
+---@param sign_ids table<integer, integer>      Mutable map of line → sign placement id
+---@return nil
 function M.unplace_sign(buf, line, sign_ids)
   if sign_ids[line] then
     vim.fn.sign_unplace("neph_review", { buffer = buf, id = sign_ids[line] })
@@ -183,6 +228,12 @@ end
 
 local hints_ns = vim.api.nvim_create_namespace("neph_review_hints")
 
+--- Show or clear the "hunk N/total" virtual-text hint on the right buffer.
+---@param buf        integer      Buffer handle (right/proposed side)
+---@param hunk_range HunkRange?   Current hunk range (nil clears all hints)
+---@param idx        integer      Current hunk index (1-based)
+---@param total      integer      Total number of hunks
+---@return nil
 function M.show_hints(buf, hunk_range, idx, total)
   vim.api.nvim_buf_clear_namespace(buf, hints_ns, 0, -1)
   if not hunk_range then
@@ -231,6 +282,22 @@ local function display_key(lhs)
   return result
 end
 
+--- Return the display status string and highlight group for a hunk decision.
+---@param decision HunkDecision?
+---@return string status, string hl
+local function decision_status(decision)
+  if not decision then
+    return "undecided", "DiagnosticInfo"
+  end
+  if decision.decision == "accept" then
+    return "accepted", "DiagnosticOk"
+  elseif decision.decision == "reject" then
+    local label = decision.reason and decision.reason ~= "" and ("rejected: " .. decision.reason) or "rejected"
+    return label, "DiagnosticError"
+  end
+  return "undecided", "DiagnosticInfo"
+end
+
 --- Build winbar string showing hunk status, tally, and keymaps.
 ---@param idx integer  current hunk index
 ---@param total integer  total hunks
@@ -242,17 +309,7 @@ end
 ---@return string
 function M.build_winbar(idx, total, decision, keymaps, tally, opts, file_path)
   opts = opts or {}
-  local status = "undecided"
-  local hl = "DiagnosticInfo"
-  if decision then
-    if decision.decision == "accept" then
-      status = "accepted"
-      hl = "DiagnosticOk"
-    elseif decision.decision == "reject" then
-      status = decision.reason and decision.reason ~= "" and ("rejected: " .. decision.reason) or "rejected"
-      hl = "DiagnosticError"
-    end
-  end
+  local status, hl = decision_status(decision)
 
   local tally_str = ""
   if tally then
@@ -424,6 +481,12 @@ local function jump_to_hunk(ui_state, hunks, idx)
   end
 end
 
+--- Bind keymaps and wire up the interactive review loop for a diff tab.
+--- Calls on_done(envelope) exactly once when the user submits or quits.
+---@param session  ReviewSession           Active review session from engine.create_session
+---@param ui_state neph.DiffTabState       Tab state returned by open_diff_tab
+---@param on_done  fun(envelope: ReviewEnvelope): nil  Called with the final review result
+---@return nil
 function M.start_review(session, ui_state, on_done)
   local config = require("neph.config").current
   local keymaps = vim.tbl_extend("force", {
@@ -443,6 +506,18 @@ function M.start_review(session, ui_state, on_done)
 
   -- Collect all mapped lhs values for cleanup (per-buffer)
   local mapped_keys = {}
+
+  --- Returns true when the review is still active and ui_state windows are valid.
+  local function is_active()
+    return not finalized and vim.api.nvim_buf_is_valid(buf) and vim.api.nvim_win_is_valid(ui_state.left_win)
+  end
+
+  --- Return the hunk index the cursor is currently on (left-side coordinates).
+  local function get_current_idx()
+    local hunks = session.get_hunk_ranges()
+    local cursor_line = vim.api.nvim_win_get_cursor(ui_state.left_win)[1]
+    return M.find_hunk_at_cursor(hunks, cursor_line), hunks
+  end
 
   -- Bind a keymap to both the left and right buffers so keys work regardless
   -- of which pane the cursor is in. Callbacks always read cursor from left_win
@@ -486,14 +561,12 @@ function M.start_review(session, ui_state, on_done)
   end
 
   local function after_action()
-    if finalized or not vim.api.nvim_buf_is_valid(buf) or not vim.api.nvim_win_is_valid(ui_state.left_win) then
+    if not is_active() then
       return
     end
     -- Jump to next undecided hunk if any exist
-    local hunks = session.get_hunk_ranges()
-    local cursor_line = vim.api.nvim_win_get_cursor(ui_state.left_win)[1]
-    local current_idx = M.find_hunk_at_cursor(hunks, cursor_line)
-    local next_idx = session.next_undecided(current_idx)
+    local idx, hunks = get_current_idx()
+    local next_idx = session.next_undecided(idx)
     if next_idx then
       jump_to_hunk(ui_state, hunks, next_idx)
     end
@@ -502,12 +575,10 @@ function M.start_review(session, ui_state, on_done)
 
   -- <CR>: decision menu for current hunk
   map("<CR>", function()
-    if finalized or not vim.api.nvim_buf_is_valid(buf) or not vim.api.nvim_win_is_valid(ui_state.left_win) then
+    if not is_active() then
       return
     end
-    local hunks = session.get_hunk_ranges()
-    local cursor_line = vim.api.nvim_win_get_cursor(ui_state.left_win)[1]
-    local idx = M.find_hunk_at_cursor(hunks, cursor_line)
+    local idx, hunks = get_current_idx()
     local d = session.get_decision(idx)
     local choices = { "Accept", "Reject", "Reject with reason" }
     if d then
@@ -541,28 +612,24 @@ function M.start_review(session, ui_state, on_done)
 
   -- ga: accept current hunk
   map(keymaps.accept, function()
-    if finalized or not vim.api.nvim_buf_is_valid(buf) or not vim.api.nvim_win_is_valid(ui_state.left_win) then
+    if not is_active() then
       return
     end
-    local hunks = session.get_hunk_ranges()
-    local cursor_line = vim.api.nvim_win_get_cursor(ui_state.left_win)[1]
-    local idx = M.find_hunk_at_cursor(hunks, cursor_line)
+    local idx = get_current_idx()
     session.accept_at(idx)
     after_action()
   end, "Neph: accept hunk")
 
   -- gr: reject current hunk
   map(keymaps.reject, function()
-    if finalized or not vim.api.nvim_buf_is_valid(buf) or not vim.api.nvim_win_is_valid(ui_state.left_win) then
+    if not is_active() then
       return
     end
     vim.ui.input({ prompt = "Reject reason (optional): " }, function(reason)
-      if finalized or not vim.api.nvim_buf_is_valid(buf) or not vim.api.nvim_win_is_valid(ui_state.left_win) then
+      if not is_active() then
         return
       end
-      local hunks = session.get_hunk_ranges()
-      local cursor_line = vim.api.nvim_win_get_cursor(ui_state.left_win)[1]
-      local idx = M.find_hunk_at_cursor(hunks, cursor_line)
+      local idx = get_current_idx()
       session.reject_at(idx, reason and reason ~= "" and reason or nil)
       after_action()
     end)
@@ -593,12 +660,10 @@ function M.start_review(session, ui_state, on_done)
 
   -- gu: clear decision back to undecided
   map(keymaps.undo, function()
-    if finalized or not vim.api.nvim_buf_is_valid(buf) or not vim.api.nvim_win_is_valid(ui_state.left_win) then
+    if not is_active() then
       return
     end
-    local hunks = session.get_hunk_ranges()
-    local cursor_line = vim.api.nvim_win_get_cursor(ui_state.left_win)[1]
-    local idx = M.find_hunk_at_cursor(hunks, cursor_line)
+    local idx = get_current_idx()
     session.clear_at(idx)
     refresh_ui(session, ui_state, keymaps)
   end, "Neph: undo decision")
@@ -672,7 +737,7 @@ function M.start_review(session, ui_state, on_done)
   end
 
   -- gs: submit/finalize review
-  map(keymaps.submit, function()
+  local function do_submit()
     if finalized then
       return
     end
@@ -710,7 +775,8 @@ function M.start_review(session, ui_state, on_done)
         end
       end
     )
-  end, "Neph: submit review")
+  end
+  map(keymaps.submit, do_submit, "Neph: submit review")
 
   -- q: quit (reject undecided, finalize)
   map(keymaps.quit, function()
@@ -787,6 +853,10 @@ function M.start_review(session, ui_state, on_done)
   ui_state.cursor_autocmd_id = cursor_autocmd_id
 end
 
+--- Tear down all review UI state: signs, autocmds, floating windows, and the
+--- review tab itself. Restores diffopt to the value saved in ui_state.
+---@param ui_state neph.DiffTabState
+---@return nil
 function M.cleanup(ui_state)
   pcall(vim.fn.sign_unplace, "neph_review", { buffer = ui_state.left_buf })
   pcall(vim.api.nvim_buf_clear_namespace, ui_state.right_buf, hints_ns, 0, -1)

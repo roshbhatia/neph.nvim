@@ -36,6 +36,10 @@ local open_fn = nil
 ---@type table<string, number>  path → hrtime of last completed review
 local recently_reviewed = {}
 
+-- ---------------------------------------------------------------------------
+-- Private helpers
+-- ---------------------------------------------------------------------------
+
 --- Batch a queued review into the pending notification and schedule the 400ms
 --- debounce timer if not already scheduled.
 ---@param params neph.ReviewRequest
@@ -72,6 +76,102 @@ local function batch_notify(params)
   end
 end
 
+--- Validate that a review request has a non-empty request_id.
+--- Returns false and emits a warning when validation fails.
+---@param params neph.ReviewRequest
+---@param caller string  Name of the calling function for log messages
+---@return boolean
+local function validate_request_id(params, caller)
+  if not params or type(params.request_id) ~= "string" or params.request_id == "" then
+    log.debug(
+      "review_queue",
+      "%s: dropping request with nil/empty request_id (path=%s)",
+      caller,
+      tostring(params and params.path)
+    )
+    vim.notify("Neph: review dropped — request_id is required", vim.log.levels.WARN)
+    return false
+  end
+  return true
+end
+
+--- Handle a review request under a non-normal gate state.
+--- Returns true when the gate consumed the request (caller should return early).
+---@param params neph.ReviewRequest
+---@param gate_state neph.GateState
+---@param front boolean  Whether to insert at front of queue for "hold" state
+---@return boolean  true when the gate consumed the request
+local function handle_gate_state(params, gate_state, front)
+  if gate_state == "hold" then
+    if front then
+      table.insert(queue, 1, params)
+    else
+      table.insert(queue, params)
+    end
+    vim.notify(string.format("Neph: review held — %d pending", #queue), vim.log.levels.INFO)
+    return true
+  elseif gate_state == "bypass" then
+    local ok, review = pcall(require, "neph.api.review")
+    if ok and review._bypass_accept then
+      review._bypass_accept(params)
+    elseif not ok then
+      log.warn("review_queue", "bypass: failed to load neph.api.review: %s", tostring(review))
+    end
+    return true
+  end
+  return false
+end
+
+--- Open the next queued review (if any) after the active slot is cleared.
+local function open_next()
+  if #queue == 0 or not open_fn then
+    return
+  end
+  active = table.remove(queue, 1)
+  local snapshot = active
+  vim.schedule(function()
+    if active == snapshot then
+      open_fn(active)
+    end
+  end)
+end
+
+--- Schedule open_fn for a newly-active review, with a re-check of gate state.
+---@param snapshot neph.ReviewRequest  The review that was made active
+---@param front boolean  Whether this was an enqueue_front call (for log messages)
+local function schedule_open(snapshot, front)
+  vim.schedule(function()
+    if active ~= snapshot or not open_fn then
+      return
+    end
+    -- Re-check gate state inside the callback: the gate may have transitioned
+    -- from normal to hold/bypass between the enqueue() call and this tick.
+    local gate_now = require("neph.internal.gate").get()
+    if gate_now == "hold" then
+      active = nil
+      table.insert(queue, 1, snapshot)
+      local suffix = front and " (front)" or ""
+      log.debug("review_queue", "gate flipped to hold before open%s, re-queuing: %s", suffix, snapshot.path)
+      vim.notify(string.format("Neph: review held — %d pending", #queue), vim.log.levels.INFO)
+    elseif gate_now == "bypass" then
+      active = nil
+      log.debug("review_queue", "gate flipped to bypass before open, auto-accepting: %s", snapshot.path)
+      local ok, review = pcall(require, "neph.api.review")
+      if ok and review._bypass_accept then
+        review._bypass_accept(snapshot)
+      elseif not ok then
+        log.warn("review_queue", "bypass (scheduled): failed to load neph.api.review: %s", tostring(review))
+      end
+    else
+      open_fn(active)
+    end
+  end)
+end
+
+-- ---------------------------------------------------------------------------
+-- Public API
+-- ---------------------------------------------------------------------------
+
 ---@param fn fun(params: neph.ReviewRequest)
 function M.set_open_fn(fn)
   open_fn = fn
@@ -83,31 +183,12 @@ function M.enqueue(params)
     vim.notify("Neph: review UI not initialised (set_open_fn not called)", vim.log.levels.WARN)
     return
   end
-
-  if not params or type(params.request_id) ~= "string" or params.request_id == "" then
-    log.debug(
-      "review_queue",
-      "enqueue: dropping request with nil/empty request_id (path=%s)",
-      tostring(params and params.path)
-    )
-    vim.notify("Neph: review dropped — request_id is required", vim.log.levels.WARN)
+  if not validate_request_id(params, "enqueue") then
     return
   end
 
-  local gate = require("neph.internal.gate")
-  local gate_state = gate.get()
-
-  if gate_state == "hold" then
-    table.insert(queue, params)
-    vim.notify(string.format("Neph: review held — %d pending", #queue), vim.log.levels.INFO)
-    return
-  elseif gate_state == "bypass" then
-    local ok, review = pcall(require, "neph.api.review")
-    if ok and review._bypass_accept then
-      review._bypass_accept(params)
-    elseif not ok then
-      log.warn("review_queue", "bypass: failed to load neph.api.review: %s", tostring(review))
-    end
+  local gate_state = require("neph.internal.gate").get()
+  if handle_gate_state(params, gate_state, false) then
     return
   end
 
@@ -118,36 +199,7 @@ function M.enqueue(params)
     -- libuv fast-event context (e.g. fs_watcher callbacks).  The snapshot
     -- guard prevents a double-open if cancel_path / on_complete fires before
     -- the scheduled callback runs.
-    local snapshot = active
-    vim.schedule(function()
-      if active ~= snapshot or not open_fn then
-        return
-      end
-      -- Re-check gate state inside the callback: the gate may have transitioned
-      -- from normal to hold/bypass between the enqueue() call and this scheduled
-      -- tick. If it has, move the review to the appropriate bucket instead of
-      -- opening it.
-      local gate_now = require("neph.internal.gate").get()
-      if gate_now == "hold" then
-        -- Gate flipped to hold between enqueue and open: move to queue.
-        active = nil
-        table.insert(queue, 1, snapshot)
-        log.debug("review_queue", "gate flipped to hold before open, re-queuing: %s", snapshot.path)
-        vim.notify(string.format("Neph: review held — %d pending", #queue), vim.log.levels.INFO)
-      elseif gate_now == "bypass" then
-        -- Gate flipped to bypass: auto-accept without opening UI.
-        active = nil
-        log.debug("review_queue", "gate flipped to bypass before open, auto-accepting: %s", snapshot.path)
-        local ok, review = pcall(require, "neph.api.review")
-        if ok and review._bypass_accept then
-          review._bypass_accept(snapshot)
-        elseif not ok then
-          log.warn("review_queue", "bypass (scheduled): failed to load neph.api.review: %s", tostring(review))
-        end
-      else
-        open_fn(active)
-      end
-    end)
+    schedule_open(active, false)
   else
     if #queue >= MAX_QUEUE_SIZE then
       local dropped = table.remove(queue, 1)
@@ -159,7 +211,6 @@ function M.enqueue(params)
     end
     table.insert(queue, params)
     log.debug("review_queue", "queued: %s (pending=%d)", params.path, #queue)
-
     batch_notify(params)
   end
 end
@@ -184,25 +235,7 @@ function M.on_complete(request_id)
 
   log.debug("review_queue", "completed: %s", active.path)
   active = nil
-
-  -- Pop next from queue
-  if #queue > 0 then
-    local next_review = table.remove(queue, 1)
-    if next_review then
-      active = next_review
-      log.debug("review_queue", "opening next: %s (remaining=%d)", active.path, #queue)
-      if open_fn then
-        local snapshot = active
-        vim.schedule(function()
-          -- Guard: only open if active hasn't been replaced by cancel_path
-          -- or another on_complete in the meantime.
-          if active == snapshot then
-            open_fn(active)
-          end
-        end)
-      end
-    end
-  end
+  open_next()
 end
 
 ---@return integer
@@ -280,16 +313,8 @@ function M.clear_agent(agent_name)
   end
 
   -- If we cancelled the active review, open next
-  if cancelled_active and #queue > 0 then
-    active = table.remove(queue, 1)
-    if open_fn then
-      local snapshot = active
-      vim.schedule(function()
-        if active == snapshot then
-          open_fn(active)
-        end
-      end)
-    end
+  if cancelled_active then
+    open_next()
   end
 end
 
@@ -341,18 +366,7 @@ function M.cancel_path(path)
       log.warn("review_queue", "cancel_path: failed to load neph.api.review: %s", tostring(review_api))
     end
 
-    -- Open next queued review
-    if #queue > 0 then
-      active = table.remove(queue, 1)
-      if open_fn then
-        local snapshot = active
-        vim.schedule(function()
-          if active == snapshot then
-            open_fn(active)
-          end
-        end)
-      end
-    end
+    open_next()
   end
 end
 
@@ -365,62 +379,19 @@ function M.enqueue_front(params)
     vim.notify("Neph: review UI not initialised (set_open_fn not called)", vim.log.levels.WARN)
     return
   end
-
-  if not params or type(params.request_id) ~= "string" or params.request_id == "" then
-    log.debug(
-      "review_queue",
-      "enqueue_front: dropping request with nil/empty request_id (path=%s)",
-      tostring(params and params.path)
-    )
-    vim.notify("Neph: review dropped — request_id is required", vim.log.levels.WARN)
+  if not validate_request_id(params, "enqueue_front") then
     return
   end
 
-  local gate = require("neph.internal.gate")
-  local gate_state = gate.get()
-
-  if gate_state == "hold" then
-    table.insert(queue, 1, params)
-    vim.notify(string.format("Neph: review held — %d pending", #queue), vim.log.levels.INFO)
-    return
-  elseif gate_state == "bypass" then
-    local ok, review = pcall(require, "neph.api.review")
-    if ok and review._bypass_accept then
-      review._bypass_accept(params)
-    elseif not ok then
-      log.warn("review_queue", "enqueue_front bypass: failed to load neph.api.review: %s", tostring(review))
-    end
+  local gate_state = require("neph.internal.gate").get()
+  if handle_gate_state(params, gate_state, true) then
     return
   end
 
   if not active then
     active = params
     log.debug("review_queue", "opening immediately (front): %s", params.path)
-    -- Same race guard as enqueue(): re-check gate state before opening.
-    local snapshot = active
-    vim.schedule(function()
-      if active ~= snapshot or not open_fn then
-        return
-      end
-      local gate_now = require("neph.internal.gate").get()
-      if gate_now == "hold" then
-        active = nil
-        table.insert(queue, 1, snapshot)
-        log.debug("review_queue", "gate flipped to hold before open (front), re-queuing: %s", snapshot.path)
-        vim.notify(string.format("Neph: review held — %d pending", #queue), vim.log.levels.INFO)
-      elseif gate_now == "bypass" then
-        active = nil
-        log.debug("review_queue", "gate flipped to bypass before open (front), auto-accepting: %s", snapshot.path)
-        local ok, review = pcall(require, "neph.api.review")
-        if ok and review._bypass_accept then
-          review._bypass_accept(snapshot)
-        elseif not ok then
-          log.warn("review_queue", "bypass (front scheduled): failed to load neph.api.review: %s", tostring(review))
-        end
-      else
-        open_fn(active)
-      end
-    end)
+    schedule_open(active, true)
   else
     table.insert(queue, 1, params)
     log.debug("review_queue", "queued at front: %s (pending=%d)", params.path, #queue)
@@ -434,18 +405,7 @@ function M.drain()
   if active or not open_fn then
     return
   end
-  local next_review = table.remove(queue, 1)
-  if next_review then
-    active = next_review
-    if open_fn then
-      local snapshot = active
-      vim.schedule(function()
-        if active == snapshot then
-          open_fn(active)
-        end
-      end)
-    end
-  end
+  open_next()
 end
 
 --- Reset all state (for testing)
