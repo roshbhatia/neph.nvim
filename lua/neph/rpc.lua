@@ -3,11 +3,44 @@
 --- Single entry point for all external RPC calls into neph.nvim.
 --- External code calls `require("neph.rpc").request(method, params)`.
 --- Routes to the appropriate `lua/neph/api/` module.
+---
+--- Error envelope contract (Pass 6):
+---   Every call returns a table with exactly one of two shapes:
+---     { ok = true,  result = <handler-return> }
+---     { ok = false, error  = { code = string, message = string } }
+---
+--- Outer error codes produced by the dispatcher itself:
+---   "METHOD_NOT_FOUND"  -- no handler registered for the requested method
+---   "INVALID_PARAMS"    -- params argument is not a table (and was not nil)
+---   "INTERNAL"          -- the handler threw a Lua error (pcall caught it)
+---                          or returned a non-serializable value
+---
+--- Inner error codes are handler-defined (e.g. "INVALID_PARAMS",
+--- "CHECKTIME_FAILED", "NOT_FOUND") and appear inside result.error when
+--- the handler returns { ok = false, error = ... } cleanly.
+---
+--- Debug logging (Pass 7):
+---   Set vim.g.neph_debug = 1 (or export NEPH_DEBUG=1 before Neovim starts)
+---   to enable per-dispatch log lines in /tmp/neph-debug-<pid>.log.
+---
+--- Lazy require contract (Pass 8):
+---   Every handler MUST use require() inside its closure body so that api/
+---   modules are loaded on first use, not at plugin startup.  Do NOT hoist
+---   requires to the top of this file -- hoisting causes load-order failures
+---   when api/ modules depend on setup() having run.
 ---@brief ]]
 
 local M = {}
 
 local log = require("neph.internal.log")
+
+-- Pass 7: Bridge NEPH_DEBUG environment variable to vim.g.neph_debug.
+-- This allows callers to set NEPH_DEBUG=1 before launching Neovim without
+-- needing to modify init.lua.  Only set it when the var is not already set
+-- so that user's init.lua always takes precedence.
+if vim.g.neph_debug == nil and os.getenv("NEPH_DEBUG") == "1" then
+  vim.g.neph_debug = 1
+end
 
 local dispatch = {
   ["review.open"] = function(p)
@@ -212,13 +245,72 @@ local dispatch = {
   end,
 }
 
+-- Pass 5: Walk a value and verify it contains no non-serializable Lua types
+-- (functions, userdata, threads).  Returns true when safe to JSON-encode,
+-- false + offending type string otherwise.
+---@param value any
+---@param depth? number  Internal recursion depth guard (max 32)
+---@return boolean ok
+---@return string? bad_type
+local function is_serializable(value, depth)
+  depth = depth or 0
+  if depth > 32 then
+    return false, "recursion_limit"
+  end
+  local t = type(value)
+  if t == "function" or t == "userdata" or t == "thread" then
+    return false, t
+  end
+  if t == "table" then
+    for k, v in pairs(value) do
+      local ok, bad = is_serializable(k, depth + 1)
+      if not ok then
+        return false, bad
+      end
+      ok, bad = is_serializable(v, depth + 1)
+      if not ok then
+        return false, bad
+      end
+    end
+  end
+  return true
+end
+
+-- Pass 1: Maximum bytes echoed back from an unknown method name in the error
+-- message.  Prevents a pathologically long name from inflating the response.
+local MAX_METHOD_ECHO = 200
+
+---Dispatch an RPC call to the registered handler.
+---@param method string  The dot-separated method name (e.g. "status.set").
+---@param params table?  Key/value parameters for the handler.  nil is treated
+---                      as an empty table.  Non-table values are rejected with
+---                      an INVALID_PARAMS error before reaching any handler.
+---@return table  Always a table.  Success: `{ ok=true, result=any }`.
+---               Failure: `{ ok=false, error={code=string, message=string} }`.
 function M.request(method, params)
   log.debug("rpc", "dispatch: %s params=%s", method, vim.inspect(params, { newline = " ", indent = "" }))
+
+  -- Pass 1: unknown method -> structured error with truncated echo.
   local handler = dispatch[method]
   if not handler then
+    local echo = type(method) == "string" and method:sub(1, MAX_METHOD_ECHO) or tostring(method):sub(1, MAX_METHOD_ECHO)
     log.debug("rpc", "dispatch: METHOD_NOT_FOUND %s", method)
-    return { ok = false, error = { code = "METHOD_NOT_FOUND", message = method } }
+    return { ok = false, error = { code = "METHOD_NOT_FOUND", message = echo } }
   end
+
+  -- Pass 3: reject non-table params before they reach any handler.
+  -- nil -> {} is safe (many handlers treat missing params as "no arguments").
+  -- A non-table scalar here is a caller bug and gets a clean INVALID_PARAMS
+  -- instead of an opaque INTERNAL traceback.
+  if params ~= nil and type(params) ~= "table" then
+    log.debug("rpc", "dispatch: INVALID_PARAMS %s params type=%s", method, type(params))
+    return {
+      ok = false,
+      error = { code = "INVALID_PARAMS", message = "params must be a table, got " .. type(params) },
+    }
+  end
+
+  -- Pass 2: wrap every handler in pcall so no handler can crash Neovim.
   local ok, result = pcall(handler, params or {})
   if not ok then
     local trace = debug.traceback(tostring(result), 2)
@@ -228,6 +320,17 @@ function M.request(method, params)
     log.debug("rpc", "dispatch: INTERNAL error %s: %s", method, trace)
     return { ok = false, error = { code = "INTERNAL", message = trace } }
   end
+
+  -- Pass 5: verify the result is JSON-serializable before returning it.
+  -- Catches handlers that accidentally return a function or userdata value,
+  -- which would produce garbage on the msgpack wire.
+  local serial_ok, bad_type = is_serializable(result)
+  if not serial_ok then
+    local msg = string.format("handler '%s' returned non-serializable value (%s)", method, tostring(bad_type))
+    log.warn("rpc", msg)
+    return { ok = false, error = { code = "INTERNAL", message = msg } }
+  end
+
   log.debug("rpc", "dispatch: %s result=%s", method, vim.inspect(result, { newline = " ", indent = "" }))
   return { ok = true, result = result }
 end

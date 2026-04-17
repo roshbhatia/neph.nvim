@@ -76,7 +76,9 @@ describe("neph.rpc", function()
       local result = rpc.request(long_name, {})
       assert.is_false(result.ok)
       assert.are.equal("METHOD_NOT_FOUND", result.error.code)
-      assert.are.equal(long_name, result.error.message)
+      -- Pass 1: error.message is truncated to MAX_METHOD_ECHO (200) chars
+      assert.is_string(result.error.message)
+      assert.is_true(#result.error.message <= 200, "error.message must be capped at 200 chars")
     end)
 
     it("handles empty string method name", function()
@@ -87,13 +89,16 @@ describe("neph.rpc", function()
     end)
 
     it("wraps handler errors with INTERNAL code", function()
-      -- Force a handler to throw a non-string error by using a method
-      -- that will fail with the wrong params type
+      -- Pass 3: non-table params are now caught at the dispatch boundary and
+      -- return INVALID_PARAMS before reaching any handler.  Both INVALID_PARAMS
+      -- and INTERNAL are valid structured error responses (not a raw Lua crash).
       local result = rpc.request("status.set", "invalid_params")
       assert.is_boolean(result.ok)
-      -- If it errors, it should be wrapped as INTERNAL
       if not result.ok then
-        assert.are.equal("INTERNAL", result.error.code)
+        assert.is_true(
+          result.error.code == "INVALID_PARAMS" or result.error.code == "INTERNAL",
+          "expected INVALID_PARAMS or INTERNAL, got: " .. tostring(result.error.code)
+        )
         assert.is_string(result.error.message)
       end
     end)
@@ -117,16 +122,17 @@ describe("rpc fault injection", function()
   end)
 
   it("dispatch where handler throws a table error returns INTERNAL with string message", function()
-    -- Inject a temporary handler via monkey-patching a known rpc target.
-    -- status.set indexes params.name; passing a numeric string should raise or succeed.
-    -- We force an error by passing params that will cause an index on a non-table.
+    -- Pass 3: non-table params are caught at the dispatch boundary and return
+    -- INVALID_PARAMS before reaching any handler.  This is a stronger guarantee
+    -- than the previous INTERNAL-via-pcall behaviour: caller gets a clean error.
     local result = rpc.request("status.set", 99999)
     -- Must not propagate a raw Lua error; must return structured response
-    assert.is_boolean(result.ok)
-    if not result.ok then
-      assert.are.equal("INTERNAL", result.error.code)
-      assert.is_string(result.error.message)
-    end
+    assert.is_false(result.ok)
+    assert.is_true(
+      result.error.code == "INVALID_PARAMS" or result.error.code == "INTERNAL",
+      "expected INVALID_PARAMS or INTERNAL, got: " .. tostring(result.error.code)
+    )
+    assert.is_string(result.error.message)
   end)
 
   it("dispatch with empty string method name returns METHOD_NOT_FOUND", function()

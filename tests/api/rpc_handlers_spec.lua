@@ -66,13 +66,14 @@ describe("rpc_handlers status.*", function()
       assert.are.equal("INVALID_PARAMS", inner.error.code)
     end)
 
-    it("inner result is ok=false when params is a non-table scalar", function()
-      -- handler receives non-table; indexing it errors -> outer INTERNAL
+    it("non-table scalar params are rejected at dispatch boundary with INVALID_PARAMS", function()
+      -- Pass 3: the dispatcher rejects non-table params before reaching any handler.
+      -- Previously this would reach the handler and produce an INTERNAL traceback;
+      -- now it returns a clean INVALID_PARAMS at the outer RPC layer.
       local result = rpc.request("status.set", 42)
-      assert.is_boolean(result.ok)
-      if not result.ok then
-        assert.are.equal("INTERNAL", result.error.code)
-      end
+      assert.is_false(result.ok)
+      assert.are.equal("INVALID_PARAMS", result.error.code)
+      assert.is_string(result.error.message)
     end)
 
     it("sets boolean value and inner ok=true", function()
