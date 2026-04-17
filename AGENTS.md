@@ -239,7 +239,60 @@ alias claude='claude --settings .neph/claude.json'
 
 `.neph/` is gitignored — the generated config is machine-local.
 
-### 5. Agent Submodules
+### 5. Global Hook Installation (`neph install`)
+
+For zero-friction setup across all supported agents, neph ships a one-shot installer that writes globally-scoped hook configs. No per-project commits required.
+
+```bash
+# Install hooks for all agents (gemini, cursor, codex)
+neph install
+
+# Install for a single agent
+neph install gemini
+
+# Remove hooks from global configs
+neph uninstall
+neph uninstall cursor
+```
+
+**What `neph install` does per agent:**
+
+| Agent  | Global config written                | Notes                                   |
+|--------|--------------------------------------|-----------------------------------------|
+| gemini | `~/.gemini/settings.json`            | Merges; safe to re-run after updates    |
+| cursor | `~/.cursor/hooks.json`               | Merges; safe to re-run                  |
+| codex  | `~/.codex/hooks.json`                | Merges; safe to re-run                  |
+| claude | (none)                               | Uses shell alias instead — see below    |
+
+Install embeds the **absolute path** to the current `neph` binary in every hook command, so hooks fire without needing `$PATH` to be configured at hook execution time. Re-running `neph install` after a neph update rewrites configs with the new binary path.
+
+Install is **idempotent**: running it multiple times produces the same result. The merge logic deduplicates entries by command string.
+
+**Shell alias setup (printed after install):**
+
+```bash
+# Add to ~/.zshrc or ~/.bashrc:
+alias claude='claude --settings "$(neph print-settings claude)"'
+alias codex='codex --enable codex_hooks'
+```
+
+The `claude` alias injects neph hooks inline via `--settings` — no config file needs to be committed or written to disk. The `codex` alias enables hook processing (off by default in Codex).
+
+**Gemini warning:** Gemini bug #23138 may overwrite `~/.gemini/settings.json` when themes change. Re-run `neph install gemini` after any theme change.
+
+**`neph print-settings <agent>`:** Prints the hook config template for an agent as minified JSON. Used by the `claude` shell alias:
+
+```bash
+# Print claude hook settings (useful in shell aliases or CI)
+neph print-settings claude
+
+# Print gemini settings (same content that neph install writes for gemini)
+neph print-settings gemini
+```
+
+**Per-project override:** `neph integration toggle <agent>` still works for enabling hooks in a specific project directory. This writes to `.neph/`, `.gemini/`, `.cursor/`, or `.codex/` under `process.cwd()`. Useful when you need project-scoped config separate from the global install.
+
+### 6. Agent Submodules
 
 Each agent is a pure data table at `lua/neph/agents/<name>.lua` returning an `AgentDef`:
 

@@ -5,7 +5,7 @@ import * as os from 'node:os';
 import * as crypto from 'node:crypto';
 import { discoverNvimSocket, SocketTransport, NvimTransport } from './transport';
 import { runReview } from './review';
-import { runIntegrationCommand } from './integration';
+import { runIntegrationCommand, runPrintSettingsCommand, runInstallCommand, runUninstallCommand } from './integration';
 import { runDepsCommand } from './deps';
 import { runGateCommand } from './gate';
 import { runToolsCommand } from './tools';
@@ -95,6 +95,21 @@ async function readStdin(): Promise<string> {
 export async function runCommand(transport: NvimTransport | null, command: string, args: string[], stdin: string = ''): Promise<void> {
   if (command === 'integration') {
     await runIntegrationCommand(args, stdin, transport);
+    return;
+  }
+
+  if (command === 'print-settings') {
+    runPrintSettingsCommand(args);
+    return;
+  }
+
+  if (command === 'install') {
+    runInstallCommand(args);
+    return;
+  }
+
+  if (command === 'uninstall') {
+    runUninstallCommand(args);
     return;
   }
 
@@ -383,7 +398,7 @@ if (require.main === module) {
   if (!command) {
     process.stderr.write(
       'Usage: neph <command> [args...]\n' +
-        'Commands: review, connect, set, unset, get, checktime, close-tab, status, spec, ui-select, ui-input, ui-notify, integration, deps, gate, tools\n'
+        'Commands: review, connect, set, unset, get, checktime, close-tab, status, spec, ui-select, ui-input, ui-notify, integration, install, uninstall, print-settings, deps, gate, tools\n'
     );
     process.exit(1);
   }

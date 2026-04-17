@@ -8,6 +8,7 @@ interface Integration {
   name: string;
   label: string;
   configPath: () => string;
+  globalConfigPath?: () => string;
   templatePath: string;
   kind: "hooks" | "copilot" | "cupcake";
   requiresCupcake?: boolean;
@@ -29,6 +30,7 @@ const INTEGRATIONS: Integration[] = [
     name: "gemini",
     label: "Gemini",
     configPath: () => path.join(process.cwd(), ".gemini", "settings.json"),
+    globalConfigPath: () => path.join(process.env.HOME ?? "~", ".gemini", "settings.json"),
     templatePath: path.join(TOOLS_ROOT, "gemini", "settings.json"),
     kind: "hooks",
   },
@@ -36,6 +38,7 @@ const INTEGRATIONS: Integration[] = [
     name: "cursor",
     label: "Cursor",
     configPath: () => path.join(process.cwd(), ".cursor", "hooks.json"),
+    globalConfigPath: () => path.join(process.env.HOME ?? "~", ".cursor", "hooks.json"),
     templatePath: path.join(TOOLS_ROOT, "cursor", "hooks.json"),
     kind: "hooks",
     requiresCupcake: true,
@@ -52,6 +55,7 @@ const INTEGRATIONS: Integration[] = [
     name: "codex",
     label: "Codex",
     configPath: () => path.join(process.cwd(), ".codex", "hooks.json"),
+    globalConfigPath: () => path.join(process.env.HOME ?? "~", ".codex", "hooks.json"),
     templatePath: path.join(TOOLS_ROOT, "codex", "hooks.json"),
     kind: "hooks",
     requiresCupcake: true,
@@ -189,8 +193,9 @@ function installCupcakeAssets(projectRoot: string): void {
 }
 
 function normalizeCommand(cmd: string): string {
-  // Strip any leading PATH=... prefix so old hooks match new PATH-prefixed template entries.
-  return cmd.replace(/^PATH=[^\s]+ /, "");
+  // Extract just "neph integration hook <agent>" so any prefix (PATH=... or absolute path) is ignored.
+  const match = cmd.match(/(neph integration hook \w+)/);
+  return match ? match[1] : cmd.replace(/^PATH=[^\s]+ /, "");
 }
 
 function hookEntryMatches(existing: any, entry: any): boolean {
@@ -224,6 +229,9 @@ function unmergeHooks(dst: any, src: any): any {
     dst.hooks[event] = dst.hooks[event].filter(
       (e: any) => !entries.some((entry: any) => hookEntryMatches(e, entry)),
     );
+    if (dst.hooks[event].length === 0) {
+      delete dst.hooks[event];
+    }
   }
   return dst;
 }
@@ -306,6 +314,35 @@ function highlightConfig(content: string, commands: string[]): string {
 
 function getIntegration(name: string): Integration | undefined {
   return INTEGRATIONS.find((integration) => integration.name === name);
+}
+
+// ---------------------------------------------------------------------------
+// Install helpers
+// ---------------------------------------------------------------------------
+
+export function detectNephBin(): string {
+  if (process.env.NEPH_BIN) return process.env.NEPH_BIN;
+  return process.argv[1];
+}
+
+const NEPH_HOOK_PATTERN = /neph integration hook \w+$/;
+
+export function substituteNephBin(template: JsonValue, binPath: string): JsonValue {
+  function rewrite(value: unknown): unknown {
+    if (typeof value === "string") {
+      return NEPH_HOOK_PATTERN.test(value)
+        ? value.replace(/^.*?(neph integration hook)/, `${binPath} integration hook`)
+        : value;
+    }
+    if (Array.isArray(value)) return value.map(rewrite);
+    if (value !== null && typeof value === "object") {
+      const out: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(value)) out[k] = rewrite(v);
+      return out;
+    }
+    return value;
+  }
+  return rewrite(template) as JsonValue;
 }
 
 async function promptForIntegration(): Promise<Integration> {
@@ -763,6 +800,157 @@ async function runCursorHook(stdin: string, transport: NvimTransport | null): Pr
   }
 
   process.stdout.write("{}\n");
+}
+
+// ---------------------------------------------------------------------------
+// neph print-settings <agent>
+// ---------------------------------------------------------------------------
+
+export function runPrintSettingsCommand(args: string[]): void {
+  const name = args[1];
+  if (!name) {
+    process.stderr.write("Usage: neph print-settings <agent>\n");
+    process.exit(1);
+    return;
+  }
+  const integration = getIntegration(name);
+  if (!integration) {
+    process.stderr.write(`Unknown integration: ${name}\n`);
+    process.exit(1);
+    return;
+  }
+  if (integration.kind === "cupcake" || !integration.templatePath) {
+    process.stderr.write(`${name}: no template (cupcake integration)\n`);
+    process.exit(1);
+    return;
+  }
+  const template = templateFor(integration);
+  process.stdout.write(JSON.stringify(template) + "\n");
+}
+
+// ---------------------------------------------------------------------------
+// neph install [<agent>]  /  neph uninstall [<agent>]
+// ---------------------------------------------------------------------------
+
+const SHELL_ALIASES = `
+Add to your shell config (~/.zshrc, ~/.bashrc, etc.):
+
+  alias claude='claude --settings "$(neph print-settings claude)"'
+  alias codex='codex --enable codex_hooks'
+`;
+
+const GEMINI_WARNING =
+  "gemini: warning — Gemini bug #23138: theme changes may overwrite\n" +
+  "~/.gemini/settings.json. Re-run 'neph install gemini' after any theme change.\n";
+
+export function runInstallCommand(args: string[]): void {
+  const home = process.env.HOME;
+  if (!home) {
+    process.stderr.write("neph install: $HOME is not set\n");
+    process.exit(1);
+    return;
+  }
+  const targetName = args[1];
+  let targets: Integration[];
+  if (targetName) {
+    const t = getIntegration(targetName);
+    if (!t) {
+      process.stderr.write(`Unknown integration: ${targetName}\n`);
+      process.exit(1);
+      return;
+    }
+    targets = [t];
+  } else {
+    targets = INTEGRATIONS;
+  }
+
+  const binPath = detectNephBin();
+  let installedGemini = false;
+  let printAliases = false;
+
+  for (const integration of targets) {
+    if (integration.kind === "cupcake") continue;
+    if (!integration.globalConfigPath) {
+      process.stdout.write(`${integration.name}: skip (use alias — see below)\n`);
+      printAliases = true;
+      continue;
+    }
+    const configPath = integration.globalConfigPath();
+    const template = substituteNephBin(templateFor(integration), binPath);
+    const existing = readJson(configPath);
+    const updated =
+      integration.kind === "copilot"
+        ? mergeCopilot(existing, template)
+        : mergeHooks(existing, template);
+    try {
+      writeJson(configPath, updated);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`neph install: failed to write ${configPath} — ${msg}\n`);
+      process.exit(1);
+    }
+    process.stdout.write(`${integration.name}: installed → ${configPath}\n`);
+    if (integration.name === "gemini") installedGemini = true;
+  }
+
+  if (installedGemini) process.stderr.write(GEMINI_WARNING);
+  if (printAliases || !targetName) process.stdout.write(SHELL_ALIASES);
+}
+
+export function runUninstallCommand(args: string[]): void {
+  const home = process.env.HOME;
+  if (!home) {
+    process.stderr.write("neph uninstall: $HOME is not set\n");
+    process.exit(1);
+    return;
+  }
+  const targetName = args[1];
+  let targets: Integration[];
+  if (targetName) {
+    const t = getIntegration(targetName);
+    if (!t) {
+      process.stderr.write(`Unknown integration: ${targetName}\n`);
+      process.exit(1);
+      return;
+    }
+    targets = [t];
+  } else {
+    targets = INTEGRATIONS;
+  }
+
+  for (const integration of targets) {
+    if (integration.kind === "cupcake") continue;
+    if (!integration.globalConfigPath) {
+      process.stdout.write(`${integration.name}: nothing to remove (no files written)\n`);
+      continue;
+    }
+    const configPath = integration.globalConfigPath();
+    if (!fs.existsSync(configPath)) {
+      process.stdout.write(`${integration.name}: nothing to remove\n`);
+      continue;
+    }
+    const template = templateFor(integration);
+    const existing = readJson(configPath);
+    const updated =
+      integration.kind === "copilot"
+        ? unmergeCopilot(existing, template)
+        : unmergeHooks(existing, template);
+    const isEmpty = !updated || Object.keys(updated).length === 0 ||
+      (updated.hooks && Array.isArray(updated.hooks) && updated.hooks.length === 0) ||
+      (updated.hooks && !Array.isArray(updated.hooks) && Object.keys(updated.hooks).length === 0);
+    try {
+      if (isEmpty) {
+        fs.unlinkSync(configPath);
+      } else {
+        writeJson(configPath, updated);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`neph uninstall: failed to update ${configPath} — ${msg}\n`);
+      process.exit(1);
+    }
+    process.stdout.write(`${integration.name}: removed → ${configPath}\n`);
+  }
 }
 
 export async function runIntegrationCommand(
