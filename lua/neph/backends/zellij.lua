@@ -93,6 +93,7 @@ end
 
 -- ---------------------------------------------------------------------------
 
+---@param opts table  neph config passed from setup()
 function M.setup(opts)
   config = opts or {}
   config.zellij_ready_delay_ms = config.zellij_ready_delay_ms or READY_DELAY_MS
@@ -101,6 +102,10 @@ function M.setup(opts)
   end
 end
 
+---@param termname    string
+---@param agent_config {cmd:string, args:string[], full_cmd:string, env:table<string,string>, ready_pattern?:string}
+---@param cwd         string
+---@return table|nil
 function M.open(termname, agent_config, cwd)
   if not vim.env.ZELLIJ and not vim.env.ZELLIJ_SESSION_NAME then
     vim.notify("Neph/zellij: cannot spawn – not in a Zellij session", vim.log.levels.ERROR)
@@ -148,8 +153,12 @@ function M.open(termname, agent_config, cwd)
     cmd = agent_config.cmd,
     cwd = cwd,
     name = termname,
+    created_at = os.time(),
     ready = false,
     fifo_path = fifo_path,
+    -- Set to true by kill() so deferred callbacks can detect teardown and
+    -- skip on_ready invocation on an already-killed terminal.
+    _killed = false,
   }
 
   -- Timeout: if we don't get pane ID, fail
@@ -166,9 +175,11 @@ function M.open(termname, agent_config, cwd)
       -- The pane was already spawned via jobstart; without a pane ID we have no
       -- handle to close it, so it will remain as an orphaned Zellij pane.
       vim.notify("Neph/zellij: timeout waiting for pane ID – the spawned pane may be orphaned", vim.log.levels.WARN)
-      td.ready = true
-      if td.on_ready then
-        td.on_ready()
+      if not td._killed then
+        td.ready = true
+        if td.on_ready then
+          td.on_ready()
+        end
       end
     end)
   )
@@ -190,9 +201,11 @@ function M.open(termname, agent_config, cwd)
           -- Ready after delay (no pattern support)
           local delay = config.zellij_ready_delay_ms or READY_DELAY_MS
           vim.defer_fn(function()
-            td.ready = true
-            if td.on_ready then
-              td.on_ready()
+            if not td._killed then
+              td.ready = true
+              if td.on_ready then
+                td.on_ready()
+              end
             end
           end, delay)
         end
@@ -224,6 +237,8 @@ function M.open(termname, agent_config, cwd)
   return td
 end
 
+---@param term_data table|nil
+---@return boolean  true if focus move was issued, false if terminal is not visible
 function M.focus(term_data)
   if not term_data or not M.is_visible(term_data) then
     return false
@@ -232,11 +247,15 @@ function M.focus(term_data)
   return true
 end
 
+---@param term_data table|nil
 function M.hide(term_data)
-  if not term_data then
+  if not term_data or not term_data.pane_id then
     return
   end
-  -- Ensure we're on agent: move-focus left (from agent->Neovim), then right (->agent), then close
+  -- Zellij has no native pane-hide API.  Close the pane so state stays
+  -- consistent: callers expect hide() to remove the pane handle, and
+  -- session.lua clears the terminals entry immediately after hide().
+  term_data._killed = true
   zellij_actions_chain({
     { "move-focus", "left" },
     { "move-focus", "right" },
@@ -249,6 +268,8 @@ function M.show(_term_data)
   return nil
 end
 
+---@param term_data table|nil
+---@return boolean
 function M.is_visible(term_data)
   if not term_data or not term_data.pane_id then
     return false
@@ -262,10 +283,14 @@ function M.is_visible(term_data)
   return seen[term_data.pane_id] == true or seen[normalized] == true
 end
 
+---@param term_data table|nil
 function M.kill(term_data)
   if not term_data then
     return
   end
+  -- Mark killed before clearing pane_id so deferred callbacks can detect
+  -- teardown and skip on_ready invocation.
+  term_data._killed = true
   zellij_actions_chain({
     { "move-focus", "left" },
     { "move-focus", "right" },
@@ -274,7 +299,11 @@ function M.kill(term_data)
   term_data.pane_id = nil
 end
 
+---@param terminals table<string, table>  map of name -> term_data
 function M.cleanup_all(terminals)
+  if not terminals then
+    return
+  end
   for _, td in pairs(terminals) do
     if td and td.pane_id then
       M.kill(td)
