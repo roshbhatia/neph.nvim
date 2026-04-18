@@ -9,7 +9,7 @@ The system enforces a strict boundary where agents interact with the Cupcake pol
 
 ```mermaid
 graph TD
-    A[Agents: Claude, Gemini, Pi, OpenCode] -->|Hook/Plugin| B(Cupcake: Policy + Routing)
+    A[Agents: Amp, Claude, Codex, Copilot, Cursor, Gemini, OpenCode, Pi] -->|Hook/Plugin| B(Cupcake: Policy + Routing)
     B -->|neph_review signal| C(neph-cli: Editor Abstraction)
     C -->|Msgpack RPC| D[Neovim: neph.nvim vimdiff]
     D -->|RPC Response| C
@@ -48,11 +48,26 @@ The project uses a custom RPC protocol (`neph-rpc/v1`) between the `neph-cli` an
 |--------|-------------|
 | `review.open` | Opens an interactive vimdiff review. Returns `{ decision, content, hunks, reason }`. |
 | `status.set` | Sets a `vim.g` global variable. |
-| `status.get` | Gets a `vim.g` global variable. |
 | `status.unset` | Unsets a `vim.g` global variable. |
+| `status.get` | Gets a `vim.g` global variable. |
 | `buffers.check` | Calls `:checktime` to sync files. |
 | `tab.close` | Closes the current tab. |
-| `bus.register` | Registers an extension agent's RPC channel (Internal). |
+| `ui.select` | Opens a selection UI. |
+| `ui.input` | Opens an input UI. |
+| `ui.notify` | Shows a notification message. |
+| `tools.status` | Returns the install status of integrations. |
+| `tools.install` | Installs tools for a specified integration. |
+| `tools.install_all` | Installs tools for all integrations. |
+| `tools.uninstall` | Uninstalls tools for a specified integration. |
+| `tools.preview` | Dry-runs tool installation and returns a preview. |
+| `review.status` | Returns the status of the current review queue. |
+| `review.accept` | Accepts a review item. |
+| `review.reject` | Rejects a review item. |
+| `review.accept_all` | Accepts all items in the review queue. |
+| `review.reject_all` | Rejects all items in the review queue. |
+| `review.submit` | Submits the current active review. |
+| `review.next` | Moves to the next review item. |
 
 ## Changelog
+* [2026-04-18 16:10:25]: Updated Architecture diagram with new agents and synced API Endpoints with protocol.json.
 * [2026-04-07 16:07:50]: Initial documentation created aggregating Architecture, Flows, and RPC API.
