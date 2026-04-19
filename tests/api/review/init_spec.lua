@@ -471,6 +471,84 @@ describe("neph.api.review._open_immediate large file handling", function()
   end)
 end)
 
+describe("neph.api.review._apply_post_write reject buffer reload", function()
+  local review
+
+  before_each(function()
+    reset_modules()
+    package.loaded["neph.internal.review_queue"] = make_stub_queue()
+    package.loaded["neph.internal.review_provider"] = make_stub_provider(false)
+    package.loaded["neph.api.review.engine"] = make_stub_engine()
+    package.loaded["neph.api.review.ui"] = make_stub_ui()
+    review = require("neph.api.review")
+  end)
+
+  it("reject path calls nvim_buf_call when a buffer is open for the file", function()
+    local tmp = os.tmpname()
+    local f = io.open(tmp, "w")
+    f:write("agent wrote this\n")
+    f:close()
+
+    -- Simulate an open buffer for the file by making vim.fn.bufnr() return a
+    -- known fake handle and vim.api.nvim_buf_is_valid() confirm it is valid.
+    local fake_bufnr = 9001
+    local orig_bufnr = vim.fn.bufnr
+    local orig_is_valid = vim.api.nvim_buf_is_valid
+    local orig_buf_call = vim.api.nvim_buf_call
+    local buf_call_received = nil
+
+    vim.fn.bufnr = function(name)
+      if name == tmp then return fake_bufnr end
+      return orig_bufnr(name)
+    end
+    vim.api.nvim_buf_is_valid = function(buf)
+      if buf == fake_bufnr then return true end
+      return orig_is_valid(buf)
+    end
+    vim.api.nvim_buf_call = function(buf, fn) -- luacheck: ignore 431
+      if buf == fake_bufnr then
+        buf_call_received = buf
+        -- Do not call fn: fake buffer has no real window backing it
+        return
+      end
+      return orig_buf_call(buf, fn)
+    end
+
+    local envelope = { decision = "reject" }
+    review._apply_post_write(tmp, envelope, { "original" })
+
+    vim.fn.bufnr = orig_bufnr
+    vim.api.nvim_buf_is_valid = orig_is_valid
+    vim.api.nvim_buf_call = orig_buf_call
+
+    assert.are.equal(fake_bufnr, buf_call_received,
+      "Expected nvim_buf_call to be called for the open buffer so it reloads after revert")
+
+    os.remove(tmp)
+  end)
+
+  it("reject path does not crash when no buffer is open for the file", function()
+    local tmp = os.tmpname()
+    local f = io.open(tmp, "w")
+    f:write("agent content\n")
+    f:close()
+
+    -- vim.fn.bufnr returns -1 when no buffer is loaded for the path (default)
+    assert.are.equal(-1, vim.fn.bufnr(tmp))
+
+    local envelope = { decision = "reject" }
+    assert.has_no.errors(function()
+      review._apply_post_write(tmp, envelope, { "original" })
+    end)
+
+    local rf = io.open(tmp, "r")
+    local contents = rf:read("*all")
+    rf:close()
+    os.remove(tmp)
+    assert.are.equal("original\n", contents)
+  end)
+end)
+
 describe("neph.api.review._open_immediate path edge cases", function()
   local review
 
