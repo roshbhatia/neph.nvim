@@ -28,6 +28,7 @@ const INTEGRATIONS: Integration[] = [
     name: "claude",
     label: "Claude",
     configPath: () => path.join(process.cwd(), ".neph", "claude.json"),
+    globalConfigPath: () => path.join(process.env.HOME ?? "~", ".local", "state", "nvim", "neph", "claude-settings.json"),
     templatePath: path.join(TOOLS_ROOT, "claude", "settings.json"),
     kind: "hooks",
   },
@@ -198,9 +199,9 @@ function installCupcakeAssets(projectRoot: string): void {
 }
 
 function normalizeCommand(cmd: string): string {
-  // Extract just "neph integration hook <agent>" so any prefix (PATH=... or absolute path) is ignored.
-  const match = cmd.match(/(neph integration hook \w+)/);
-  return match ? match[1] : cmd.replace(/^PATH=[^\s]+ /, "");
+  // Match "integration hook <agent>" regardless of binary name (neph, neph-cli, etc.) or PATH prefix.
+  const match = cmd.match(/integration hook (\w+)/);
+  return match ? `integration hook ${match[1]}` : cmd.replace(/^PATH=[^\s]+ /, "");
 }
 
 function hookEntryMatches(existing: any, entry: any): boolean {
@@ -218,8 +219,11 @@ function mergeHooks(dst: any, src: any): any {
   for (const [event, entries] of Object.entries(hooks)) {
     out.hooks[event] = out.hooks[event] ?? [];
     for (const entry of entries as any[]) {
-      if (!out.hooks[event].some((e: any) => hookEntryMatches(e, entry))) {
+      const idx = out.hooks[event].findIndex((e: any) => hookEntryMatches(e, entry));
+      if (idx === -1) {
         out.hooks[event].push(entry);
+      } else {
+        out.hooks[event][idx] = entry;
       }
     }
   }
@@ -258,10 +262,14 @@ function mergeCopilot(dst: any, src: any): any {
   const out = dst ?? {};
   out.hooks = out.hooks ?? [];
   for (const entry of src.hooks ?? []) {
-    const exists = out.hooks.some(
+    const idx = out.hooks.findIndex(
       (e: any) => normalizeCommand(e.command) === normalizeCommand(entry.command) && e.event === entry.event,
     );
-    if (!exists) out.hooks.push(entry);
+    if (idx === -1) {
+      out.hooks.push(entry);
+    } else {
+      out.hooks[idx] = entry;
+    }
   }
   return out;
 }

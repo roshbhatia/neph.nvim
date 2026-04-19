@@ -91,7 +91,7 @@ fi
 
 # Global hook agents: install into ~/.agent/ config if CLI is detected
 if [[ -x "$NEPH_BIN" ]]; then
-  for agent in gemini cursor codex; do
+  for agent in gemini cursor codex claude; do
     if command -v "$agent" &>/dev/null; then
       output="$("$NEPH_BIN" install "$agent" 2>&1)"
       if [[ -n "$output" ]]; then
@@ -104,7 +104,7 @@ fi
 
 # Per-project-only agents: print hint if detected but not auto-installable globally
 HINT_AGENTS=()
-for agent in claude opencode pi; do
+for agent in opencode pi; do
   if command -v "$agent" &>/dev/null; then
     HINT_AGENTS+=("$agent")
   fi
