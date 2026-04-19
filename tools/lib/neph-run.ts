@@ -85,7 +85,6 @@ export function createPersistentQueue(): {
   let closed = false;
 
   function startProc(): void {
-    if (closed) return;
     outBuf = ''; // reset partial-line buffer so stale bytes don't corrupt new proc
     proc = spawn('neph', ['connect'], {
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -130,7 +129,8 @@ export function createPersistentQueue(): {
 
   function sendCommand(method: string, params: Record<string, unknown>): Promise<void> {
     return new Promise((resolve, reject) => {
-      if (closed) { reject(new Error('queue closed')); return; }
+      // Don't reject on closed here — commands enqueued before close() was called
+      // must still be sent (close() waits for queue to drain before ending stdin).
       if (!proc || !proc.stdin?.writable) startProc();
       if (!proc?.stdin?.writable) { resolve(); return; } // failed to start — fail-open
       const id = nextId++;
@@ -145,6 +145,7 @@ export function createPersistentQueue(): {
   }
 
   const call = (...args: string[]): void => {
+    if (closed) return; // queue is draining — drop new commands
     let method = '';
     let params: Record<string, unknown> = {};
     switch (args[0]) {
@@ -162,11 +163,21 @@ export function createPersistentQueue(): {
 
   const close = (): void => {
     closed = true;
-    if (proc?.stdin?.writable) proc.stdin.end();
-    proc = null;
-    // reject all in-flight requests so callers don't hang forever
-    for (const [, p] of pending) p.reject(new Error('queue closed'));
-    pending.clear();
+    if (proc?.stdin?.writable) {
+      // Subprocess is already running — command was written; end stdin immediately
+      // so it reads EOF and exits, then reject any in-flight requests.
+      proc.stdin.end();
+      proc = null;
+      for (const [, p] of pending) p.reject(new Error('queue closed'));
+      pending.clear();
+    } else {
+      // Subprocess not yet started — command may be in a microtask-scheduled
+      // .then() chain that hasn't run yet. Drain the queue first so the command
+      // is sent before we close stdin.
+      queue.finally(() => {
+        if (proc?.stdin?.writable) proc.stdin.end();
+      });
+    }
   };
 
   return { call, close };

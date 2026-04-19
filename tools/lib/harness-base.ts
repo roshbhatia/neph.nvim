@@ -111,16 +111,17 @@ export const CupcakeHelper = {
       return result;
     } catch (err: unknown) {
       const e = err as { status?: number; stderr?: Buffer | string; message?: string };
-      // Exit code 2 = explicit deny from Cupcake
+      // Exit code 2 = explicit deny from Cupcake policy
       if (e.status === 2) {
         const reason = e.stderr?.toString().trim() || "Cupcake denied";
         debug("harness-base", `cupcakeEval: explicit deny (exit 2): ${reason}`);
         return { decision: "deny", reason };
       }
-      // Cupcake not on PATH or eval error — fail-closed
+      // Any other error (cupcake not installed, project not configured, etc.) — fail-open.
+      // The caller (handlePreToolUse) will proceed to open the vimdiff review UI.
       const msg = e.message ?? String(err);
-      debug("harness-base", `cupcakeEval: error (fail-closed): ${msg}`);
-      return { decision: "deny", reason: `Cupcake eval failed: ${msg}` };
+      debug("harness-base", `cupcakeEval: error (fail-open, proceeding to review): ${msg}`);
+      return { decision: "allow", reason: `Cupcake eval failed: ${msg}` };
     }
   },
 

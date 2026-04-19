@@ -84,7 +84,13 @@ function neph_plugin_default(amp: any) {
     try {
       const decision = CupcakeHelper.cupcakeEval("amp", cupcakeEvent);
 
-      if (decision.decision === "deny" || decision.decision === "block") {
+      // Only block when cupcake explicitly denies — not when cupcake is
+      // unconfigured/errored ("Cupcake eval failed:"). In the error case
+      // the fs_watcher will open a post-write review instead.
+      if (
+        (decision.decision === "deny" || decision.decision === "block") &&
+        !decision.reason?.startsWith("Cupcake eval failed:")
+      ) {
         const reason = decision.reason ?? "Cupcake policy denied";
         return {
           action: "reject-and-continue",

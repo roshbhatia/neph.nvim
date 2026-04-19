@@ -4,7 +4,7 @@
 # 1. Reads Cupcake event JSON from stdin
 # 2. Pipes through neph_reconstruct to get { path, content }
 # 3. If reconstruction says skip (non-mutation tool), outputs { skip: true }
-# 4. Otherwise pipes { path, content } to neph-cli review
+# 4. Otherwise pipes { path, content } to neph review
 #
 # stdout: { decision, content, reason? } for Rego policy consumption
 
@@ -21,5 +21,5 @@ if echo "$RECONSTRUCTED" | grep -q '"skip"'; then
   exit 0
 fi
 
-# Step 3: pipe to neph-cli review
-echo "$RECONSTRUCTED" | neph-cli review
+# Step 3: pipe to neph review
+echo "$RECONSTRUCTED" | PATH="$HOME/.local/bin:$PATH" neph review

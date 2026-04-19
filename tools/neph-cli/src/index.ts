@@ -273,6 +273,8 @@ export async function runCommand(transport: NvimTransport | null, command: strin
     let buf = '';
 
     let connectionBroken = false;
+    // Track in-flight processLine promises so on('end') can drain before closing.
+    const inflight: Promise<void>[] = [];
 
     const processLine = async (line: string) => {
       line = line.trim();
@@ -304,10 +306,11 @@ export async function runCommand(transport: NvimTransport | null, command: strin
         const lines = buf.split('\n');
         buf = lines.pop() ?? '';
         for (const line of lines) {
-          processLine(line).catch((err: unknown) => {
+          const p = processLine(line).catch((err: unknown) => {
             const msg = err instanceof Error ? err.message : String(err);
             process.stderr.write(`neph connect: unhandled error: ${msg}\n`);
           });
+          inflight.push(p);
         }
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -319,6 +322,9 @@ export async function runCommand(transport: NvimTransport | null, command: strin
       if (buf.trim()) {
         await processLine(buf).catch(() => {});
       }
+      // Drain all in-flight requests before closing: on('data') fires processLine
+      // as a fire-and-forget Promise, so on('end') can fire before they complete.
+      await Promise.allSettled(inflight);
       try { await transport.close(); } catch {}
       process.exit(0);
     });
@@ -443,7 +449,7 @@ if (require.main === module) {
         `neph: socket at ${socketPath} no longer exists (Neovim may have exited). ` +
         'Re-run your agent from within a Neovim terminal.\n'
       );
-      if (command !== 'spec' && command !== 'integration' && command !== 'deps' && command !== 'gate' && command !== 'tools' && command !== 'review' && command !== 'connect') {
+      if (command !== 'spec' && command !== 'integration' && command !== 'deps' && command !== 'gate' && command !== 'tools' && command !== 'review' && command !== 'connect' && command !== 'install' && command !== 'uninstall' && command !== 'print-settings') {
         process.exit(1);
       }
     }
@@ -460,7 +466,7 @@ if (require.main === module) {
         'Is the neph plugin loaded? Check :NephHealth.\n'
       );
     }
-  } else if (command !== 'spec' && command !== 'integration' && command !== 'deps' && command !== 'gate' && command !== 'tools') {
+  } else if (command !== 'spec' && command !== 'integration' && command !== 'deps' && command !== 'gate' && command !== 'tools' && command !== 'install' && command !== 'uninstall' && command !== 'print-settings') {
     // review and connect handle missing transport themselves; other commands need it
     if (command !== 'review' && command !== 'connect') {
       if (discoveryError === 'ambiguous') {

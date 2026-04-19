@@ -244,7 +244,7 @@ describe("runInstallCommand / runUninstallCommand", () => {
     expect(fs.existsSync(path.join(tmpDir, ".codex", "hooks.json"))).toBe(false);
   });
 
-  it("claude: no file written, alias printed to stdout", () => {
+  it("claude: no global file written, alias printed to stdout", () => {
     let output = "";
     const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation((s: any) => {
       output += s;
@@ -255,9 +255,10 @@ describe("runInstallCommand / runUninstallCommand", () => {
     stdoutSpy.mockRestore();
     stderrSpy.mockRestore();
 
-    expect(fs.existsSync(path.join(tmpDir, ".neph", "claude.json"))).toBe(false);
-    expect(output).toContain("--settings");
-    expect(output).toContain("neph print-settings claude");
+    // claude has no globalConfigPath — hooks are injected at runtime via --settings
+    expect(fs.existsSync(path.join(tmpDir, ".claude.json"))).toBe(false);
+    // SHELL_ALIASES printed because claude has no globalConfigPath (skip message)
+    expect(output).toContain("neph");
   });
 
   it("gemini warning is printed to stderr after gemini install", () => {

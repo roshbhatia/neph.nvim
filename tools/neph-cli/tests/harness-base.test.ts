@@ -116,12 +116,12 @@ describe("CupcakeHelper.cupcakeEval", () => {
     expect(result.updated_input?.content).toBe("modified");
   });
 
-  it("returns deny (fail-closed) when cupcake is not on PATH", () => {
+  it("returns allow (fail-open) when cupcake is not on PATH", () => {
     mockExecFileSync.mockImplementation(() => {
       throw Object.assign(new Error("ENOENT"), { message: "ENOENT" });
     });
     const result = CupcakeHelper.cupcakeEval("claude", { tool_input: {} });
-    expect(result.decision).toBe("deny");
+    expect(result.decision).toBe("allow");
     expect(result.reason).toContain("ENOENT");
   });
 

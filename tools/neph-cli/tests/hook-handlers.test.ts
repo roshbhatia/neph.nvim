@@ -59,6 +59,29 @@ function fakeTransport() {
   } as any;
 }
 
+// Transport that simulates review.open returning "No changes" (zero hunks → auto-accept).
+// Use this for PreToolUse tests that go through the review flow.
+function fakeReviewTransport() {
+  return {
+    executeLua: vi.fn().mockResolvedValue({ ok: true, msg: "No changes" }),
+    onNotification: vi.fn(),
+    getChannelId: vi.fn().mockResolvedValue(1),
+    close: vi.fn().mockResolvedValue(undefined),
+  } as any;
+}
+
+async function captureHook(agentName: string, event: Record<string, unknown>, transport: ReturnType<typeof fakeTransport>) {
+  const chunks: string[] = [];
+  const orig = process.stdout.write.bind(process.stdout);
+  process.stdout.write = ((c: any) => { chunks.push(c.toString()); return true; }) as any;
+  try {
+    await runIntegrationCommand(["integration", "hook", agentName], JSON.stringify(event), transport);
+  } finally {
+    process.stdout.write = orig;
+  }
+  return chunks.join("");
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   // Default: createSessionSignals returns a fresh fake signals object
@@ -139,12 +162,12 @@ describe("runClaudeHook", () => {
 
   it("PreToolUse with allow → hookSpecificOutput permissionDecision allow", async () => {
     mockCupcakeEval.mockReturnValue({ decision: "allow" });
-
-    const out = await invoke({
+    // review.open returns "No changes" → auto-accept without opening vimdiff
+    const out = await captureHook("claude", {
       hook_event_name: "PreToolUse",
       tool_name: "Edit",
       tool_input: { file_path: "/tmp/test.lua", content: "hello" },
-    });
+    }, fakeReviewTransport());
 
     const parsed = JSON.parse(out);
     expect(parsed.hookSpecificOutput.permissionDecision).toBe("allow");
@@ -170,11 +193,12 @@ describe("runClaudeHook", () => {
       updated_input: { content: "modified content" },
     });
 
-    const out = await invoke({
+    // review.open returns "No changes" → auto-accept with cupcake-modified content
+    const out = await captureHook("claude", {
       hook_event_name: "PreToolUse",
       tool_name: "Edit",
       tool_input: { file_path: "/tmp/test.lua", content: "original" },
-    });
+    }, fakeReviewTransport());
 
     const parsed = JSON.parse(out);
     expect(parsed.hookSpecificOutput.permissionDecision).toBe("allow");
@@ -449,11 +473,12 @@ describe("runCodexHook", () => {
 
   it("PreToolUse with allow → permissionDecision allow", async () => {
     mockCupcakeEval.mockReturnValue({ decision: "allow" });
-    const out = await invoke({
+    // review.open returns "No changes" → auto-accept without opening vimdiff
+    const out = await captureHook("codex", {
       hook_event_name: "PreToolUse",
       tool_name: "Edit",
       tool_input: { file_path: "/tmp/test.lua", content: "hello" },
-    });
+    }, fakeReviewTransport());
     const parsed = JSON.parse(out);
     expect(parsed.hookSpecificOutput.permissionDecision).toBe("allow");
   });

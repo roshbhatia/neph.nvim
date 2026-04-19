@@ -67,4 +67,50 @@ if [[ "$INSTALL_SYMLINK" == "true" ]]; then
   echo "neph build: symlinked ~/.local/bin/neph → $CLI_SRC"
 fi
 
+# ── Auto-install agent tools for detected CLIs ────────────────────────────────
+# For each agent CLI found on PATH, install the corresponding neph integration.
+# Plugin-based agents (amp, pi): install symlinks directly.
+# Hook-based agents with global configs (gemini, cursor, codex): use neph install.
+# Per-project-only agents (claude, opencode, copilot): print a hint.
+
+NEPH_BIN="$HOME/.local/bin/neph"
+INSTALLED_ANY=false
+
+# amp: plugin symlink into ~/.config/amp/plugins/
+if command -v amp &>/dev/null; then
+  AMP_PLUGINS="$HOME/.config/amp/plugins"
+  PLUGIN_SRC="$REPO_ROOT/tools/amp/neph-plugin.ts"
+  PLUGIN_DST="$AMP_PLUGINS/neph-plugin.ts"
+  mkdir -p "$AMP_PLUGINS"
+  if [[ ! -L "$PLUGIN_DST" ]] || [[ "$(readlink "$PLUGIN_DST" 2>/dev/null)" != "$PLUGIN_SRC" ]]; then
+    ln -sf "$PLUGIN_SRC" "$PLUGIN_DST"
+    echo "neph build: installed amp plugin → $PLUGIN_DST"
+    INSTALLED_ANY=true
+  fi
+fi
+
+# Global hook agents: install into ~/.agent/ config if CLI is detected
+if [[ -x "$NEPH_BIN" ]]; then
+  for agent in gemini cursor codex; do
+    if command -v "$agent" &>/dev/null; then
+      output="$("$NEPH_BIN" install "$agent" 2>&1)"
+      if [[ -n "$output" ]]; then
+        echo "neph build: $output"
+      fi
+      INSTALLED_ANY=true
+    fi
+  done
+fi
+
+# Per-project-only agents: print hint if detected but not auto-installable globally
+HINT_AGENTS=()
+for agent in claude opencode pi; do
+  if command -v "$agent" &>/dev/null; then
+    HINT_AGENTS+=("$agent")
+  fi
+done
+if [[ ${#HINT_AGENTS[@]} -gt 0 ]]; then
+  echo "neph build: detected ${HINT_AGENTS[*]} — run 'neph integration toggle <agent>' in each project"
+fi
+
 echo "neph build: done"

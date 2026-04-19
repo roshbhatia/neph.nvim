@@ -1,7 +1,9 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as readline from "node:readline/promises";
-import { NvimTransport } from "./transport";
+import * as crypto from "node:crypto";
+import { execFileSync } from "node:child_process";
+import { NvimTransport, discoverNvimSocket } from "./transport";
 import { CupcakeHelper, ContentHelper, createSessionSignals } from "../../lib/harness-base";
 
 interface Integration {
@@ -17,6 +19,10 @@ interface Integration {
 const TOOLS_ROOT = path.resolve(__dirname, "..", "..");
 const REPO_ROOT = path.resolve(__dirname, "..", "..", "..");
 
+const RPC_CALL = 'return require("neph.rpc").request(...)';
+// Generous timeout: the hook blocks Claude while the user reviews the diff.
+const REVIEW_TIMEOUT_MS = 600_000;
+
 const INTEGRATIONS: Integration[] = [
   {
     name: "claude",
@@ -24,7 +30,6 @@ const INTEGRATIONS: Integration[] = [
     configPath: () => path.join(process.cwd(), ".neph", "claude.json"),
     templatePath: path.join(TOOLS_ROOT, "claude", "settings.json"),
     kind: "hooks",
-    requiresCupcake: true,
   },
   {
     name: "gemini",
@@ -536,12 +541,14 @@ async function runGeminiHook(stdin: string, transport: NvimTransport | null): Pr
 // ---------------------------------------------------------------------------
 
 /**
- * Evaluate the cupcake pre-tool-use policy for the given agent and write the
- * appropriate hookSpecificOutput JSON line to stdout.
+ * Evaluate cupcake policy and open a pre-write vimdiff review in Neovim.
+ * Blocks Claude (via hook protocol) until the user accepts, rejects, or partially
+ * accepts the proposed change. Falls open on any RPC/transport failure.
  */
 async function handlePreToolUse(
   agentName: string,
   event: Record<string, unknown>,
+  transport: NvimTransport,
 ): Promise<void> {
   const toolInput = (event.tool_input ?? {}) as Record<string, unknown>;
   const filePath = (toolInput.file_path ?? toolInput.path) as string | undefined;
@@ -576,29 +583,106 @@ async function handlePreToolUse(
     return;
   }
 
-  if (decision.decision === "modify" && decision.updated_input !== undefined) {
+  // Content to show in the review UI: prefer cupcake's modified version if present.
+  const reviewContent =
+    decision.decision === "modify" && typeof decision.updated_input?.content === "string"
+      ? decision.updated_input.content
+      : content;
+
+  // Get the RPC channel so Neovim can push neph:review_done back to us.
+  let channelId: number;
+  try {
+    channelId = await transport.getChannelId();
+  } catch {
+    // Can't establish channel — fail-open so the write still proceeds.
     process.stdout.write(
       JSON.stringify({
-        hookSpecificOutput: {
-          hookEventName: "PreToolUse",
-          permissionDecision: "allow",
-          updatedInput: {
-            ...toolInput,
-            ...(decision.updated_input.content !== undefined
-              ? { content: decision.updated_input.content }
-              : {}),
-          },
-        },
+        hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "allow" },
       }) + "\n",
     );
     return;
   }
 
-  process.stdout.write(
-    JSON.stringify({
-      hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "allow" },
-    }) + "\n",
-  );
+  const requestId = crypto.randomUUID();
+
+  await new Promise<void>((resolve) => {
+    let done = false;
+
+    const finish = (output: Record<string, unknown>) => {
+      if (done) return;
+      done = true;
+      process.stdout.write(JSON.stringify({ hookSpecificOutput: output }) + "\n");
+      resolve();
+    };
+
+    // Register the notification listener BEFORE calling executeLua so no
+    // notification can slip through between the two (JS single-threaded guarantee).
+    transport.onNotification("neph:review_done", (args: unknown[]) => {
+      if (done) return;
+      const raw = args[0];
+      if (!raw || typeof raw !== "object" || Array.isArray(raw)) return;
+      const payload = raw as Record<string, unknown>;
+      if (payload.request_id !== requestId) return;
+
+      const reviewDecision = typeof payload.decision === "string" ? payload.decision : "accept";
+      const approvedContent =
+        reviewDecision === "partial" && typeof payload.content === "string"
+          ? payload.content
+          : reviewContent;
+
+      if (reviewDecision === "reject") {
+        finish({
+          hookEventName: "PreToolUse",
+          permissionDecision: "deny",
+          reason: typeof payload.reason === "string" ? payload.reason : "Review rejected",
+        });
+      } else {
+        // accept or partial: return the approved content so Claude writes exactly
+        // what the user approved, regardless of whether it also had a cupcake modify.
+        finish({
+          hookEventName: "PreToolUse",
+          permissionDecision: "allow",
+          updatedInput: { ...toolInput, content: approvedContent },
+        });
+      }
+    });
+
+    transport.executeLua(RPC_CALL, [
+      "review.open",
+      {
+        request_id: requestId,
+        channel_id: channelId,
+        path: resolvedPath,
+        content: reviewContent,
+        agent: agentName,
+        mode: "pre_write",
+      },
+    ]).then((result) => {
+      const rpcResult = result as { ok?: boolean; msg?: string } | undefined;
+      if (rpcResult?.ok && rpcResult?.msg === "No changes") {
+        // Neovim found no hunks — auto-accept (nothing changed).
+        finish({ hookEventName: "PreToolUse", permissionDecision: "allow",
+          updatedInput: { ...toolInput, content: reviewContent } });
+      }
+      // Any other result ("Review enqueued", "Review started") means we wait
+      // for the neph:review_done notification registered above.
+    }).catch(() => {
+      // RPC error (e.g. Neovim crashed) — fail-open.
+      finish({ hookEventName: "PreToolUse", permissionDecision: "allow" });
+    });
+
+    setTimeout(() => {
+      if (!done) {
+        process.stderr.write(
+          `[neph] warn: review timed out for ${resolvedPath} — allowing write\n`,
+        );
+        finish({ hookEventName: "PreToolUse", permissionDecision: "allow" });
+      }
+    }, REVIEW_TIMEOUT_MS);
+  });
+
+  // Close the transport so the hook process exits cleanly and Claude can proceed.
+  try { await transport.close(); } catch { /* ignore */ }
 }
 
 // ---------------------------------------------------------------------------
@@ -616,10 +700,6 @@ async function runClaudeStyleHook(
   stdin: string,
   transport: NvimTransport | null,
 ): Promise<void> {
-  if (transport === null) {
-    process.stdout.write("{}\n");
-    return;
-  }
   let event: Record<string, unknown>;
   try {
     event = JSON.parse(stdin);
@@ -629,44 +709,65 @@ async function runClaudeStyleHook(
   }
 
   const hookName = event.hook_event_name as string | undefined;
+
+  if (transport === null) {
+    // Emit a single diagnostic warning on SessionStart so the user knows
+    // Neovim integration is degraded — all other events are silent to avoid
+    // spamming stderr on every tool call.
+    if (hookName === "SessionStart") {
+      process.stderr.write(
+        `[neph] warn: Neovim socket not found — ${agentName} session starting without Neovim integration.\n` +
+          `[neph] hint: Check $NVIM_SOCKET_PATH or run: neph integration health ${agentName}\n`,
+      );
+    }
+    process.stdout.write("{}\n");
+    return;
+  }
+
   const signals = createSessionSignals(agentName);
 
-  if (hookName === "SessionStart") {
-    signals.setActive(); signals.close();
-    process.stdout.write("{}\n");
-    return;
-  }
-  if (hookName === "SessionEnd") {
-    signals.unsetActive(); signals.close();
-    process.stdout.write("{}\n");
-    return;
-  }
-  if (hookName === "UserPromptSubmit") {
-    signals.setRunning(); signals.close();
-    process.stdout.write("{}\n");
-    return;
-  }
-  if (hookName === "Stop") {
-    signals.unsetRunning(); signals.checktime(); signals.close();
-    process.stdout.write("{}\n");
-    return;
-  }
+  try {
+    if (hookName === "SessionStart") {
+      signals.setActive(); signals.close();
+      process.stdout.write("{}\n");
+      return;
+    }
+    if (hookName === "SessionEnd") {
+      signals.unsetActive(); signals.close();
+      process.stdout.write("{}\n");
+      return;
+    }
+    if (hookName === "UserPromptSubmit") {
+      signals.setRunning(); signals.close();
+      process.stdout.write("{}\n");
+      return;
+    }
+    if (hookName === "Stop") {
+      signals.unsetRunning(); signals.checktime(); signals.close();
+      process.stdout.write("{}\n");
+      return;
+    }
 
-  signals.close();
+    signals.close();
 
-  if (hookName === "PostToolUse") {
-    const s2 = createSessionSignals(agentName);
-    s2.checktime(); s2.close();
+    if (hookName === "PostToolUse") {
+      const s2 = createSessionSignals(agentName);
+      s2.checktime(); s2.close();
+      process.stdout.write("{}\n");
+      return;
+    }
+
+    if (hookName === "PreToolUse") {
+      await handlePreToolUse(agentName, event, transport);
+      return;
+    }
+
     process.stdout.write("{}\n");
-    return;
+  } finally {
+    // Close the transport so the hook process can exit. handlePreToolUse closes
+    // it internally, but all other branches leave it open — close() is idempotent.
+    try { await transport.close(); } catch { /* ignore */ }
   }
-
-  if (hookName === "PreToolUse") {
-    await handlePreToolUse(agentName, event);
-    return;
-  }
-
-  process.stdout.write("{}\n");
 }
 
 async function runClaudeHook(stdin: string, transport: NvimTransport | null): Promise<void> {
@@ -953,6 +1054,88 @@ export function runUninstallCommand(args: string[]): void {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Health check
+// ---------------------------------------------------------------------------
+
+function whichSync(bin: string): string | null {
+  try {
+    const result = execFileSync("which", [bin], { encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"] });
+    return result.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+async function runHealthCommand(agentName: string | undefined, transport: NvimTransport | null): Promise<void> {
+  let allOk = true;
+
+  const check = (label: string, ok: boolean, detail?: string) => {
+    const icon = ok ? "✓" : "✗";
+    process.stdout.write(`  ${icon} ${label}${detail ? `  ${detail}` : ""}\n`);
+    if (!ok) allOk = false;
+  };
+
+  process.stdout.write(`neph integration health${agentName ? ` (${agentName})` : ""}\n${"─".repeat(42)}\n`);
+
+  // 1. Neovim socket
+  const envSocket = process.env.NVIM_SOCKET_PATH ?? process.env.NVIM;
+  if (envSocket) {
+    const exists = fs.existsSync(envSocket);
+    check("Neovim socket (env)", exists, exists ? envSocket : `MISSING: ${envSocket}`);
+  } else {
+    const discovered = discoverNvimSocket();
+    if ("path" in discovered) {
+      check("Neovim socket (discovered)", true, discovered.path);
+    } else if (discovered.error === "ambiguous") {
+      check("Neovim socket", false, `ambiguous — set NVIM_SOCKET_PATH. Candidates: ${discovered.candidatePaths.join(", ")}`);
+    } else {
+      check("Neovim socket", false, "not found — is Neovim running with neph? Set NVIM_SOCKET_PATH.");
+    }
+  }
+
+  // 2. RPC connectivity
+  check("Neovim RPC", transport !== null, transport === null ? "cannot connect (check socket above)" : undefined);
+
+  // 3. neph CLI
+  const nephBin = whichSync("neph");
+  check("neph CLI", !!nephBin, nephBin ?? "not on PATH — run: bash scripts/build.sh");
+
+  // 4. Agent-specific checks
+  if (agentName) {
+    const agentBins: Record<string, string> = {
+      claude: "claude", opencode: "opencode", pi: "pi",
+      amp: "amp", gemini: "gemini", cursor: "cursor", codex: "codex",
+    };
+    const bin = agentBins[agentName];
+    if (bin) {
+      check(`${agentName} CLI`, !!whichSync(bin), whichSync(bin) ?? `${bin} not on PATH`);
+    }
+
+    // Per-agent config
+    const integration = INTEGRATIONS.find(i => i.name === agentName);
+    if (integration) {
+      const cfg = integration.configPath();
+      const exists = fs.existsSync(cfg);
+      check(`${agentName} config`, exists, exists ? cfg : `MISSING — run: neph integration toggle ${agentName}`);
+    }
+
+    // Cupcake (harness agents)
+    const cupcakeAgents = ["claude", "pi", "cursor", "codex"];
+    if (cupcakeAgents.includes(agentName)) {
+      const cupcakeBin = whichSync("cupcake") ??
+        (fs.existsSync(path.join(process.env.HOME ?? "", ".cupcake", "bin", "cupcake"))
+          ? path.join(process.env.HOME ?? "", ".cupcake", "bin", "cupcake") : null);
+      check("cupcake binary", !!cupcakeBin, cupcakeBin ?? "not found — see cupcake docs");
+      const cupcakeDir = path.join(process.cwd(), ".cupcake");
+      check("cupcake config", fs.existsSync(cupcakeDir), cupcakeDir);
+    }
+  }
+
+  process.stdout.write(`\n${allOk ? "All checks passed." : "Some checks failed — see above."}\n`);
+  if (!allOk) process.exit(1);
+}
+
 export async function runIntegrationCommand(
   args: string[],
   stdin: string,
@@ -960,7 +1143,12 @@ export async function runIntegrationCommand(
 ): Promise<void> {
   const sub = args[1];
   if (!sub || sub === "--help" || sub === "-h") {
-    process.stdout.write("Usage: neph integration <toggle|status> [name] [--show-config]\n");
+    process.stdout.write("Usage: neph integration <hook|toggle|status|health> [name] [--show-config]\n");
+    return;
+  }
+
+  if (sub === "health") {
+    await runHealthCommand(args[2], transport);
     return;
   }
 
