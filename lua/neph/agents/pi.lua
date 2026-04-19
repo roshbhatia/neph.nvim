@@ -1,5 +1,3 @@
--- Review coverage: Pi Cupcake harness intercepts write/edit tool_call events
--- and routes them through cupcake eval. Cupcake is required.
 ---@type neph.AgentDef
 return {
   name = "pi",
@@ -9,8 +7,14 @@ return {
   args = { "--continue" },
   type = "hook",
   integration_group = "harness",
-  tools = {
-    { type = "symlink", src = "tools/pi/package.json", dst = "~/.pi/agent/extensions/nvim/package.json" },
-    { type = "symlink", src = "tools/pi/dist", dst = "~/.pi/agent/extensions/nvim/dist" },
-  },
+  -- Load the neph RPC extension at launch via -e so it fires only when pi is
+  -- started through neph (not global install).  Falls back gracefully when the
+  -- built artifact is missing (run :NephInstall to rebuild).
+  launch_args_fn = function(root)
+    local ext_path = root .. "/tools/pi/dist/pi.js"
+    if vim.fn.filereadable(ext_path) == 1 then
+      return { "-e", ext_path }
+    end
+    return {}
+  end,
 }

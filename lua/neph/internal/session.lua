@@ -483,6 +483,7 @@ function M.kill_session(termname)
     active_terminal = nil
   end
   vim.g[termname .. "_active"] = nil
+  vim.g[termname .. "_running"] = nil
   -- Clear the stored last-prompt so a subsequent resend() on a new session
   -- does not replay a prompt that belonged to the killed session.
   pcall(function()
@@ -540,9 +541,11 @@ function M.send(termname, text, opts)
 
   if td.stale_since then
     log.debug("session", "send: %s skipped — terminal marked stale", termname)
+    vim.notify("Neph: terminal is stale — reopen with <leader>jj", vim.log.levels.WARN)
     return
   end
   if not backend.is_visible(td) then
+    vim.notify("Neph: terminal window is not visible — open it first", vim.log.levels.WARN)
     return
   end
   backend.send(td, text, opts)

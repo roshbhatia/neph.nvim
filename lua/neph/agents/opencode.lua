@@ -1,16 +1,3 @@
--- opencode agent definition.
---
--- Integration path selection:
---   opencode_sse  — opencode is running with --port; neph subscribes to the
---                   SSE stream and intercepts writes via the permission API.
---                   No Cupcake required.
---   harness       — fallback: Cupcake harness installed via
---                   `cupcake init --harness opencode`
---
--- The integration_group is set to "opencode_sse". When the SSE subscriber
--- cannot find a running opencode server (discover_port returns nil), session
--- open falls back to the harness group implicitly because the SSE path is
--- a no-op without a port.
 ---@type neph.AgentDef
 return {
   name = "opencode",
@@ -20,18 +7,20 @@ return {
   args = {},
   type = "hook",
   integration_group = "opencode_sse",
-  -- Inject --port when an existing opencode server is found, so neph can
-  -- connect to its SSE stream.  Returns empty list when no server is found
-  -- (opencode runs without HTTP server; Cupcake harness is the fallback).
+  -- Inject a free ephemeral port so opencode starts its HTTP server for SSE.
+  -- session.lua discovers the port after launch via pgrep and subscribes.
+  -- If port allocation fails, opencode runs without HTTP server (no integration).
   launch_args_fn = function(_root)
-    local ok, sse = pcall(require, "neph.internal.opencode_sse")
+    local tcp = vim.uv.new_tcp()
+    if not tcp then return {} end
+    local ok = tcp:bind("127.0.0.1", 0)
     if not ok then
+      tcp:close()
       return {}
     end
-    local port = sse.discover_port()
-    if port then
-      return { "--port", tostring(port) }
-    end
-    return {}
+    local addr = tcp:getsockname()
+    tcp:close()
+    if not addr or not addr.port then return {} end
+    return { "--port", tostring(addr.port) }
   end,
 }

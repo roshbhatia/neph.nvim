@@ -13,7 +13,7 @@ describe("neph.agents submodules", function()
     end)
   end
 
-  -- Hook agents: use Cupcake for write/edit interception
+  -- Hook agents: intercept via cupcake harness or runtime-injected hooks
   local hook_agents = { "claude", "copilot", "cursor", "gemini", "opencode", "pi" }
   for _, name in ipairs(hook_agents) do
     it(name .. " has type = hook", function()
@@ -32,7 +32,7 @@ describe("neph.agents submodules", function()
   end
 
   -- Agents with tools manifests
-  local agents_with_tools = { "amp", "pi" }
+  local agents_with_tools = { "amp" }
   for _, name in ipairs(agents_with_tools) do
     it(name .. " has a valid tools manifest", function()
       local def = require("neph.agents." .. name)
@@ -45,7 +45,8 @@ describe("neph.agents submodules", function()
 
   -- Agents without tools (hooks managed via neph CLI or Cupcake native)
   -- cursor removed from tools: its hook config is per-project via `neph integration toggle cursor`
-  local agents_without_tools = { "claude", "codex", "copilot", "crush", "cursor", "gemini", "goose", "opencode" }
+  -- pi removed from tools: uses launch_args_fn (-e) for runtime-only extension loading
+  local agents_without_tools = { "claude", "codex", "copilot", "crush", "cursor", "gemini", "goose", "opencode", "pi" }
   for _, name in ipairs(agents_without_tools) do
     it(name .. " has no tools field", function()
       local def = require("neph.agents." .. name)
@@ -67,7 +68,7 @@ describe("neph.agents submodules", function()
     it("uses the harness integration group", function()
       local def = require("neph.agents.claude")
       assert.are.equal("harness", def.integration_group)
-      assert.is_nil(def.launch_args_fn)
+      assert.is_function(def.launch_args_fn)
     end)
   end)
 

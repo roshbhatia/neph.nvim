@@ -2,9 +2,9 @@
   "name": "pi-nvim-extension",
   "version": "1.0.0",
   "type": "module",
-  "main": "dist/cupcake-harness.js",
+  "main": "dist/pi.js",
   "exports": {
-    ".": "./dist/cupcake-harness.js"
+    ".": "./dist/pi.js"
   },
   "scripts": {
     "build": "esbuild cupcake-harness.ts --bundle --platform=node --format=esm --outfile=dist/cupcake-harness.js --external:@mariozechner/pi-coding-agent",

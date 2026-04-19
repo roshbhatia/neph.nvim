@@ -90,6 +90,11 @@ function M.compute_hunks(old_lines, new_lines)
       display_b = math.max(1, #new_lines)
     end
 
+    -- vim.diff can return start=0 for insertions into/deletions from empty files.
+    -- Clamp both sides to 1-indexed so the UI never receives a zero line number.
+    display_a = math.max(1, display_a)
+    display_b = math.max(1, display_b)
+
     table.insert(ranges, {
       start_a = display_a,
       end_a = math.max(display_a, display_a + count_a - 1),
@@ -201,11 +206,16 @@ function M.build_envelope(decisions, content)
     end
   end
 
+  local hunks = {}
+  for i, h in ipairs(decisions) do
+    hunks[i] = { index = h.index, decision = h.decision, reason = h.reason }
+  end
+
   return {
     schema = "review/v1",
     decision = decision,
     content = content,
-    hunks = decisions,
+    hunks = hunks,
     reason = #reasons > 0 and table.concat(reasons, "; ") or nil,
   }
 end
