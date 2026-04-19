@@ -52,9 +52,18 @@ end
 
 --- Whether reviews are enabled for a specific agent.
 --- Safe to call with nil (returns false); resolve_for() guards against non-string input.
+--- Respects neoconf setting `neph.review.enabled` (default: true) when neoconf is available.
 ---@param agent_name string|nil  Agent name, or nil to get a safe false result
 ---@return boolean
 function M.is_enabled_for(agent_name)
+  -- neoconf opt-out: if neoconf is available and review is explicitly disabled, skip.
+  local ok, neoconf = pcall(require, "neoconf")
+  if ok then
+    local enabled = neoconf.get("neph.review.enabled")
+    if enabled == false then
+      return false
+    end
+  end
   -- nil / non-string input is handled by resolve_for(); no separate guard needed here.
   return M.resolve_for(agent_name).name ~= "noop"
 end

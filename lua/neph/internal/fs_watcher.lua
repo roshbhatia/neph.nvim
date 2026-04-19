@@ -159,7 +159,18 @@ local function on_file_changed(filepath)
 
   -- Enqueue a post-write review, tagged with the active agent so
   -- is_enabled_for() can gate the review provider correctly.
+  -- Use vim.g.*_active (set by lifecycle hooks/plugins) rather than
+  -- session.get_active() so externally-launched agents are also detected.
   local active_agent = require("neph.internal.session").get_active()
+  if not active_agent then
+    local agents = require("neph.internal.agents")
+    for _, a in ipairs(agents.get_all_registered()) do
+      if vim.g[a.name .. "_active"] then
+        active_agent = a.name
+        break
+      end
+    end
+  end
   local crypto = tostring(vim.uv.hrtime())
   review_queue.enqueue({
     request_id = "pw-" .. crypto,

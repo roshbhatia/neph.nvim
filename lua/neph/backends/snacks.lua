@@ -175,10 +175,12 @@ end
 function M.send(td, text, opts)
   opts = opts or {}
   if not td or not td.buf or not vim.api.nvim_buf_is_valid(td.buf) then
+    vim.notify("Neph: terminal buffer is gone — reopen with <leader>jj", vim.log.levels.WARN)
     return
   end
   local chan = vim.b[td.buf].terminal_job_id
   if not chan then
+    vim.notify("Neph: terminal job has died — reopen with <leader>jj", vim.log.levels.WARN)
     return
   end
   local full_text = opts.submit and (text .. "\n") or text
@@ -187,6 +189,7 @@ function M.send(td, text, opts)
   local ok_send, send_err = pcall(vim.fn.chansend, chan, full_text)
   if not ok_send then
     require("neph.internal.log").warn("snacks", "chansend failed for %s: %s", tostring(td.name), tostring(send_err))
+    vim.notify("Neph: failed to send to terminal — reopen with <leader>jj", vim.log.levels.WARN)
   end
 end
 

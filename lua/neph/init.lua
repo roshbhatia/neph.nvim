@@ -262,6 +262,12 @@ function M.setup(opts)
         )
       end
     end
+
+    -- When integrations.auto_refresh is true, detect installed agent CLIs and
+    -- refresh their external config files (the same logic :NephInstall runs manually).
+    if merged.integrations and merged.integrations.auto_refresh then
+      run_install({ preview = false, name = nil })
+    end
   end)
 
   -- Register :NephBuild command (force=true so repeated setup() calls are safe)
@@ -322,6 +328,20 @@ function M.setup(opts)
     desc = "Open interactive review of buffer vs disk changes",
     force = true,
   })
+
+  -- Register neph settings schema with neoconf (soft dependency — no error if absent).
+  pcall(function()
+    require("neoconf.plugins").register({
+      name = "neph",
+      on_schema = function(schema)
+        schema:set("neph.review.enabled", {
+          description = "Enable neph diff review UI (default: true). Set false to auto-accept all agent writes for this project.",
+          type = "boolean",
+          default = true,
+        })
+      end,
+    })
+  end)
 
   -- Register :NephInstall command
   vim.api.nvim_create_user_command("NephInstall", function(cmd_opts)

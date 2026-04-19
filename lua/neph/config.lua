@@ -55,6 +55,9 @@ local M = {}
 ---@field prompts?         neph.DiffPromptsConfig  Prompt text overrides
 ---@field branch_fallback? string                  Fallback ref when merge-base resolution fails (default: "HEAD~1")
 
+---@class neph.IntegrationsConfig
+---@field auto_refresh? boolean  Detect installed agent CLIs at startup and refresh their external configs (default: false)
+
 ---@class neph.Config
 ---@field keymaps?        boolean              Register default keymaps (default: true)
 ---@field env?            table<string,string> Extra environment variables forwarded to every agent
@@ -69,6 +72,7 @@ local M = {}
 ---@field review_provider? neph.ReviewProvider|string  Explicit review provider: a provider table or a name string like "vimdiff" (default: noop)
 ---@field integration_groups? table<string, neph.IntegrationGroup>  Integration group defaults
 ---@field integration_default_group? string    Default integration group name
+---@field integrations?   neph.IntegrationsConfig  External integration management options
 ---@field diff?           neph.DiffConfig      Git diff review configuration
 
 ---@class neph.SocketConfig
@@ -160,6 +164,9 @@ M.defaults = {
     opencode_sse = { policy_engine = "noop", review_provider = "vimdiff", formatter = "noop" },
   },
   integration_default_group = "default",
+  integrations = {
+    auto_refresh = false,
+  },
   diff = {
     prompts = {
       review = "Review this diff carefully. Identify any bugs, logic errors, "

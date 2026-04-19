@@ -63,6 +63,16 @@ tasks:
     cmds:
       - npx vitest run tests/integration/hook-sandbox.test.ts
 
+  test:e2e:tui:
+    desc: PTY-based review UI smoke test via tui-use (requires tui-use daemon)
+    cmds:
+      - bash tests/e2e/review_tui_smoke.sh
+
+  test:e2e:multiprocess:
+    desc: Multi-process headless e2e smoke test (hook → socket → Neovim RPC)
+    cmds:
+      - bash tests/e2e/multiprocess_smoke.sh
+
   build:
     desc: Build all companion tools and install the neph CLI symlink
     cmds:
