@@ -21,150 +21,124 @@ local function cmd_exists(cmd)
   return vim.fn.executable(cmd) == 1
 end
 
-local function list_panes()
-  local r = vim.fn.system("wezterm cli list --format json 2>/dev/null")
-  if vim.v.shell_error ~= 0 then
-    return nil
-  end
-  local ok, panes = pcall(vim.fn.json_decode, r)
-  return ok and panes or nil
+--- Fire-and-forget: tell WezTerm to bring pane_id into focus.
+--- Using jobstart (non-blocking) so focus never stalls the event loop.
+local function activate_pane(pane_id)
+  vim.fn.jobstart({ "wezterm", "cli", "activate-pane", "--pane-id", tostring(pane_id) })
 end
 
-local function get_pane_info(pane_id)
-  if not pane_id then
-    return nil
-  end
-  local panes = list_panes()
-  if not panes then
-    return nil
-  end
-  for _, p in ipairs(panes) do
-    if p.pane_id == pane_id then
-      return p
-    end
-  end
-  return nil
+--- Fire-and-forget: tell WezTerm to close pane_id.
+local function kill_pane(pane_id)
+  vim.fn.jobstart({ "wezterm", "cli", "kill-pane", "--pane-id", tostring(pane_id) })
 end
 
-local function pane_exists(pane_id)
-  local panes = list_panes()
-  if not panes then
-    return false
-  end
-  local info, parent
-  for _, p in ipairs(panes) do
-    if p.pane_id == pane_id then
-      info = p
-    end
-    if p.pane_id == parent_pane_id then
-      parent = p
-    end
-  end
-  if not info then
-    return false
-  end
-  if not parent then
-    return true
-  end
-  return info.window_id == parent.window_id and info.tab_id == parent.tab_id
-end
-
---- Wait for a pane to appear, then call on_ready(true) or on_ready(false).
+--- Wait for a newly-spawned pane to appear in `wezterm cli list`.
+--- Each poll launches a non-blocking job so the event loop is never stalled.
 ---@param pane_id number
 ---@param on_ready fun(ok: boolean)
 ---@param retries? number
 local function wait_for_pane(pane_id, on_ready, retries)
   local max = retries or 5
   local attempts = 0
+  local job_inflight = false
   local timer = vim.uv.new_timer()
-  timer:start(
-    100,
-    100,
-    vim.schedule_wrap(function()
-      attempts = attempts + 1
-      if get_pane_info(pane_id) then
-        timer:stop()
-        timer:close()
-        on_ready(true)
-      elseif attempts >= max then
-        timer:stop()
-        timer:close()
-        on_ready(false)
-      end
-    end)
-  )
-end
-
-local function activate_pane(pane_id)
-  vim.fn.system(string.format("wezterm cli activate-pane --pane-id %d 2>/dev/null", pane_id))
-  return vim.v.shell_error == 0
-end
-
-local function kill_pane(pane_id)
-  vim.fn.system(string.format("wezterm cli kill-pane --pane-id %d 2>/dev/null", pane_id))
-  return vim.v.shell_error == 0
+  timer:start(100, 100, vim.schedule_wrap(function()
+    if job_inflight then return end
+    attempts = attempts + 1
+    if attempts > max then
+      timer:stop()
+      timer:close()
+      on_ready(false)
+      return
+    end
+    job_inflight = true
+    vim.fn.jobstart({ "wezterm", "cli", "list", "--format", "json" }, {
+      stdout_buffered = true,
+      on_stdout = vim.schedule_wrap(function(_, data)
+        local output = table.concat(data or {}, "\n")
+        local ok, panes = pcall(vim.fn.json_decode, output)
+        if not ok or type(panes) ~= "table" then return end
+        for _, p in ipairs(panes) do
+          if p.pane_id == pane_id then
+            timer:stop()
+            timer:close()
+            on_ready(true)
+            return
+          end
+        end
+      end),
+      on_exit = vim.schedule_wrap(function()
+        job_inflight = false
+      end),
+    })
+  end))
 end
 
 local READY_POLL_MS = 200
 local READY_TIMEOUT_MS = 30000
 
 --- Poll `wezterm cli get-text` for a ready pattern in the pane output.
+--- Each poll launches a non-blocking job; job_inflight prevents overlapping
+--- polls when get-text takes longer than READY_POLL_MS.
 --- Stores the timer handle on td.ready_timer so kill() can cancel it.
 ---@param td table  term_data (must have pane_id)
 ---@param pattern string  Lua pattern to match
 local function watch_for_ready(td, pattern)
   local attempts = 0
   local max_attempts = READY_TIMEOUT_MS / READY_POLL_MS
+  local job_inflight = false
   local timer = vim.uv.new_timer()
-  -- Expose for cancellation by kill()
   td.ready_timer = timer
 
-  timer:start(
-    READY_POLL_MS,
-    READY_POLL_MS,
-    vim.schedule_wrap(function()
-      attempts = attempts + 1
+  local function stop_ready()
+    pcall(timer.stop, timer)
+    pcall(timer.close, timer)
+    td.ready_timer = nil
+  end
 
-      -- Guard: kill() sets pane_id to nil and _killed to true before this
-      -- callback can observe either.  Check both so we bail without calling
-      -- on_ready on a terminal that has already been torn down.
-      if td._killed or not td.pane_id then
-        pcall(timer.stop, timer)
-        pcall(timer.close, timer)
-        td.ready_timer = nil
-        return
+  timer:start(READY_POLL_MS, READY_POLL_MS, vim.schedule_wrap(function()
+    -- Guard: kill() sets pane_id to nil and _killed to true before this
+    -- callback can observe either.  Check both so we bail without calling
+    -- on_ready on a terminal that has already been torn down.
+    if td._killed or not td.pane_id then
+      stop_ready()
+      return
+    end
+
+    -- Don't overlap: skip this tick if the previous get-text job is still running.
+    if job_inflight then return end
+
+    attempts = attempts + 1
+    if attempts > max_attempts then
+      stop_ready()
+      if not td._killed then
+        td.ready = true
+        if td.on_ready then td.on_ready() end
       end
+      return
+    end
 
-      local text = vim.fn.system(string.format("wezterm cli get-text --pane-id %d 2>/dev/null", td.pane_id))
-      if vim.v.shell_error == 0 and text then
+    job_inflight = true
+    local pane_id = td.pane_id
+    vim.fn.jobstart({ "wezterm", "cli", "get-text", "--pane-id", tostring(pane_id) }, {
+      stdout_buffered = true,
+      on_stdout = vim.schedule_wrap(function(_, data)
+        if td._killed or not td.ready_timer then return end
+        local text = table.concat(data or {}, "\n")
         for line in text:gmatch("[^\n]+") do
           if line:find(pattern) then
-            pcall(timer.stop, timer)
-            pcall(timer.close, timer)
-            td.ready_timer = nil
+            stop_ready()
             td.ready = true
-            if td.on_ready then
-              td.on_ready()
-            end
+            if td.on_ready then td.on_ready() end
             return
           end
         end
-      end
-
-      if attempts >= max_attempts then
-        pcall(timer.stop, timer)
-        pcall(timer.close, timer)
-        td.ready_timer = nil
-        -- Fail-open only if not killed
-        if not td._killed then
-          td.ready = true
-          if td.on_ready then
-            td.on_ready()
-          end
-        end
-      end
-    end)
-  )
+      end),
+      on_exit = vim.schedule_wrap(function()
+        job_inflight = false
+      end),
+    })
+  end))
 end
 
 -- ---------------------------------------------------------------------------
@@ -415,8 +389,10 @@ function M.send(td, text, opts)
           -- Three consecutive failures → pane is gone; mark stale so session cleans up.
           td.stale_since = os.time()
           pane_errors[pane_id] = nil
+          vim.notify("Neph: WezTerm pane unreachable — reopen with <leader>jj", vim.log.levels.WARN)
         else
           pane_errors[pane_id] = errors
+          vim.notify(string.format("Neph: send to WezTerm failed (attempt %d/3)", errors), vim.log.levels.WARN)
         end
       else
         pane_errors[pane_id] = nil
