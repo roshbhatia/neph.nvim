@@ -349,6 +349,14 @@ function M._apply_post_write(file_path, envelope, buffer_lines)
       return
     end
     f:close()
+    -- Reload buffer: the agent may have already auto-reloaded it (showing agent's
+    -- version), so we must reload again to reflect the reverted disk content.
+    local bufnr = vim.fn.bufnr(file_path)
+    if bufnr ~= -1 and vim.api.nvim_buf_is_valid(bufnr) then
+      vim.api.nvim_buf_call(bufnr, function()
+        vim.cmd("edit!")
+      end)
+    end
   elseif envelope.decision == "partial" and envelope.content and envelope.content ~= "" then
     -- Partial: write merged content to disk and update buffer
     local f = io.open(file_path, "w")

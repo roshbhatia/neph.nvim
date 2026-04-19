@@ -551,11 +551,24 @@ function M.start_review(session, ui_state, on_done)
     if ui_state.original_diffopt then
       vim.o.diffopt = ui_state.original_diffopt
     end
+    -- Capture direct buffer edits (e.g. vimdiff `do`/`dp`) BEFORE session.finalize,
+    -- which only knows about decisions made through the ga/gr keymaps.
+    local buf_modified = vim.api.nvim_buf_is_valid(buf) and vim.bo[buf].modified
+    local buf_lines = buf_modified and vim.api.nvim_buf_get_lines(buf, 0, -1, false) or nil
     local ok, envelope = pcall(session.finalize)
     if not ok then
       vim.notify("Neph: review finalize error: " .. tostring(envelope), vim.log.levels.ERROR)
       -- Synthesize a reject envelope so the CLI caller is never left hanging.
       envelope = { schema = "review/v1", decision = "reject", content = "", hunks = {}, reason = "finalize error" }
+    end
+    -- If the left buffer was directly edited, its state is the source of truth.
+    -- Use "partial" so the hook uses envelope.content rather than falling back
+    -- to the original proposed content (which is what "accept" would cause).
+    if buf_lines then
+      envelope.content = table.concat(buf_lines, "\n")
+      if envelope.decision ~= "partial" then
+        envelope.decision = "partial"
+      end
     end
     on_done(envelope)
   end
