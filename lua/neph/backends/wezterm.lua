@@ -42,36 +42,44 @@ local function wait_for_pane(pane_id, on_ready, retries)
   local attempts = 0
   local job_inflight = false
   local timer = vim.uv.new_timer()
-  timer:start(100, 100, vim.schedule_wrap(function()
-    if job_inflight then return end
-    attempts = attempts + 1
-    if attempts > max then
-      timer:stop()
-      timer:close()
-      on_ready(false)
-      return
-    end
-    job_inflight = true
-    vim.fn.jobstart({ "wezterm", "cli", "list", "--format", "json" }, {
-      stdout_buffered = true,
-      on_stdout = vim.schedule_wrap(function(_, data)
-        local output = table.concat(data or {}, "\n")
-        local ok, panes = pcall(vim.fn.json_decode, output)
-        if not ok or type(panes) ~= "table" then return end
-        for _, p in ipairs(panes) do
-          if p.pane_id == pane_id then
-            timer:stop()
-            timer:close()
-            on_ready(true)
+  timer:start(
+    100,
+    100,
+    vim.schedule_wrap(function()
+      if job_inflight then
+        return
+      end
+      attempts = attempts + 1
+      if attempts > max then
+        timer:stop()
+        timer:close()
+        on_ready(false)
+        return
+      end
+      job_inflight = true
+      vim.fn.jobstart({ "wezterm", "cli", "list", "--format", "json" }, {
+        stdout_buffered = true,
+        on_stdout = vim.schedule_wrap(function(_, data)
+          local output = table.concat(data or {}, "\n")
+          local ok, panes = pcall(vim.fn.json_decode, output)
+          if not ok or type(panes) ~= "table" then
             return
           end
-        end
-      end),
-      on_exit = vim.schedule_wrap(function()
-        job_inflight = false
-      end),
-    })
-  end))
+          for _, p in ipairs(panes) do
+            if p.pane_id == pane_id then
+              timer:stop()
+              timer:close()
+              on_ready(true)
+              return
+            end
+          end
+        end),
+        on_exit = vim.schedule_wrap(function()
+          job_inflight = false
+        end),
+      })
+    end)
+  )
 end
 
 local READY_POLL_MS = 200
@@ -96,49 +104,61 @@ local function watch_for_ready(td, pattern)
     td.ready_timer = nil
   end
 
-  timer:start(READY_POLL_MS, READY_POLL_MS, vim.schedule_wrap(function()
-    -- Guard: kill() sets pane_id to nil and _killed to true before this
-    -- callback can observe either.  Check both so we bail without calling
-    -- on_ready on a terminal that has already been torn down.
-    if td._killed or not td.pane_id then
-      stop_ready()
-      return
-    end
-
-    -- Don't overlap: skip this tick if the previous get-text job is still running.
-    if job_inflight then return end
-
-    attempts = attempts + 1
-    if attempts > max_attempts then
-      stop_ready()
-      if not td._killed then
-        td.ready = true
-        if td.on_ready then td.on_ready() end
+  timer:start(
+    READY_POLL_MS,
+    READY_POLL_MS,
+    vim.schedule_wrap(function()
+      -- Guard: kill() sets pane_id to nil and _killed to true before this
+      -- callback can observe either.  Check both so we bail without calling
+      -- on_ready on a terminal that has already been torn down.
+      if td._killed or not td.pane_id then
+        stop_ready()
+        return
       end
-      return
-    end
 
-    job_inflight = true
-    local pane_id = td.pane_id
-    vim.fn.jobstart({ "wezterm", "cli", "get-text", "--pane-id", tostring(pane_id) }, {
-      stdout_buffered = true,
-      on_stdout = vim.schedule_wrap(function(_, data)
-        if td._killed or not td.ready_timer then return end
-        local text = table.concat(data or {}, "\n")
-        for line in text:gmatch("[^\n]+") do
-          if line:find(pattern) then
-            stop_ready()
-            td.ready = true
-            if td.on_ready then td.on_ready() end
-            return
+      -- Don't overlap: skip this tick if the previous get-text job is still running.
+      if job_inflight then
+        return
+      end
+
+      attempts = attempts + 1
+      if attempts > max_attempts then
+        stop_ready()
+        if not td._killed then
+          td.ready = true
+          if td.on_ready then
+            td.on_ready()
           end
         end
-      end),
-      on_exit = vim.schedule_wrap(function()
-        job_inflight = false
-      end),
-    })
-  end))
+        return
+      end
+
+      job_inflight = true
+      local pane_id = td.pane_id
+      vim.fn.jobstart({ "wezterm", "cli", "get-text", "--pane-id", tostring(pane_id) }, {
+        stdout_buffered = true,
+        on_stdout = vim.schedule_wrap(function(_, data)
+          if td._killed or not td.ready_timer then
+            return
+          end
+          local text = table.concat(data or {}, "\n")
+          for line in text:gmatch("[^\n]+") do
+            if line:find(pattern) then
+              stop_ready()
+              td.ready = true
+              if td.on_ready then
+                td.on_ready()
+              end
+              return
+            end
+          end
+        end),
+        on_exit = vim.schedule_wrap(function()
+          job_inflight = false
+        end),
+      })
+    end)
+  )
 end
 
 -- ---------------------------------------------------------------------------

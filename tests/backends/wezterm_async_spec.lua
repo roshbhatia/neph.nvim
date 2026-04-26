@@ -20,7 +20,11 @@ describe("neph.backends.wezterm non-blocking helpers", function()
       return 1
     end
     -- Stub channel so the module loads cleanly
-    package.loaded["neph.internal.channel"] = { socket_path = function() return "" end }
+    package.loaded["neph.internal.channel"] = {
+      socket_path = function()
+        return ""
+      end,
+    }
     vim.env.WEZTERM_PANE = "100"
   end)
 
@@ -74,10 +78,7 @@ describe("neph.backends.wezterm non-blocking helpers", function()
     local td = { pane_id = 55, _killed = false }
     wezterm.kill(td)
 
-    assert.is_true(
-      any_call_matches({ "kill%-pane", "55" }),
-      "Expected jobstart call with 'kill-pane --pane-id 55'"
-    )
+    assert.is_true(any_call_matches({ "kill%-pane", "55" }), "Expected jobstart call with 'kill-pane --pane-id 55'")
   end)
 
   it("hide() dispatches kill-pane via jobstart (non-blocking)", function()
@@ -87,10 +88,7 @@ describe("neph.backends.wezterm non-blocking helpers", function()
     local td = { pane_id = 77, _killed = false, ready_timer = nil }
     wezterm.hide(td)
 
-    assert.is_true(
-      any_call_matches({ "kill%-pane", "77" }),
-      "Expected jobstart call with 'kill-pane --pane-id 77'"
-    )
+    assert.is_true(any_call_matches({ "kill%-pane", "77" }), "Expected jobstart call with 'kill-pane --pane-id 77'")
   end)
 
   it("focus() never calls vim.fn.system (activate-pane must not block)", function()
