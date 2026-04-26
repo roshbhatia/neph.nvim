@@ -9,7 +9,7 @@ The system enforces a strict boundary where agents interact with the Cupcake pol
 
 ```mermaid
 graph TD
-    A[Agents: Claude, Gemini, Pi, OpenCode] -->|Hook/Plugin| B(Cupcake: Policy + Routing)
+    A[Agents: Claude, Gemini, Pi, OpenCode, Amp, Codex, Copilot, Cursor] -->|Hook/Plugin| B(Cupcake: Policy + Routing)
     B -->|neph_review signal| C(neph-cli: Editor Abstraction)
     C -->|Msgpack RPC| D[Neovim: neph.nvim vimdiff]
     D -->|RPC Response| C
@@ -47,12 +47,28 @@ The project uses a custom RPC protocol (`neph-rpc/v1`) between the `neph-cli` an
 | Method | Description |
 |--------|-------------|
 | `review.open` | Opens an interactive vimdiff review. Returns `{ decision, content, hunks, reason }`. |
+| `review.status` | Returns the current review session status and hunk tally. |
+| `review.accept` | Accepts a specific hunk or the next undecided hunk. |
+| `review.reject` | Rejects a specific hunk or the next undecided hunk. |
+| `review.accept_all` | Accepts all remaining undecided hunks. |
+| `review.reject_all` | Rejects all remaining undecided hunks. |
+| `review.submit` | Finalizes the review session and closes the tab. |
+| `review.next` | Jumps to the next undecided hunk. |
 | `status.set` | Sets a `vim.g` global variable. |
 | `status.get` | Gets a `vim.g` global variable. |
 | `status.unset` | Unsets a `vim.g` global variable. |
 | `buffers.check` | Calls `:checktime` to sync files. |
 | `tab.close` | Closes the current tab. |
+| `ui.select` | Opens a selection UI dialog. |
+| `ui.input` | Opens an input UI dialog. |
+| `ui.notify` | Displays a notification message. |
+| `tools.status` | Gets the installation status of all agent tools. |
+| `tools.install` | Installs a specific agent tool. |
+| `tools.install_all` | Installs all available agent tools. |
+| `tools.uninstall` | Uninstalls a specific agent tool. |
+| `tools.preview` | Previews the required tools and their status. |
 | `bus.register` | Registers an extension agent's RPC channel (Internal). |
 
 ## Changelog
+* [2026-04-26 16:09:58]: Updated agents in architecture diagram and added missing RPC API endpoints.
 * [2026-04-07 16:07:50]: Initial documentation created aggregating Architecture, Flows, and RPC API.

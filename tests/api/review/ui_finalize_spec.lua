@@ -128,7 +128,9 @@ describe("neph.api.review.ui do_finalize buffer-modification capture", function(
     }
 
     local captured
-    ui.start_review(s2, us2, function(env) captured = env end)
+    ui.start_review(s2, us2, function(env)
+      captured = env
+    end)
 
     -- Simulate vimdiff `do` / `dp` direct edit (non-scratch → modified=true)
     vim.api.nvim_buf_set_lines(fbuf, 0, -1, false, { "manually", "edited" })
@@ -173,7 +175,9 @@ describe("neph.api.review.ui do_finalize buffer-modification capture", function(
     }
 
     local captured
-    ui.start_review(s3, us3, function(env) captured = env end)
+    ui.start_review(s3, us3, function(env)
+      captured = env
+    end)
 
     -- Pre-accept every hunk (would normally yield decision="accept")
     s3.accept_all_remaining()
