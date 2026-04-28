@@ -9,7 +9,7 @@ The system enforces a strict boundary where agents interact with the Cupcake pol
 
 ```mermaid
 graph TD
-    A[Agents: Claude, Gemini, Pi, OpenCode] -->|Hook/Plugin| B(Cupcake: Policy + Routing)
+    A[Agents: Claude, Gemini, Pi, OpenCode, Amp, Goose, Codex, Copilot, Crush, Cursor] -->|Hook/Plugin| B(Cupcake: Policy + Routing)
     B -->|neph_review signal| C(neph-cli: Editor Abstraction)
     C -->|Msgpack RPC| D[Neovim: neph.nvim vimdiff]
     D -->|RPC Response| C
@@ -48,11 +48,26 @@ The project uses a custom RPC protocol (`neph-rpc/v1`) between the `neph-cli` an
 |--------|-------------|
 | `review.open` | Opens an interactive vimdiff review. Returns `{ decision, content, hunks, reason }`. |
 | `status.set` | Sets a `vim.g` global variable. |
-| `status.get` | Gets a `vim.g` global variable. |
 | `status.unset` | Unsets a `vim.g` global variable. |
+| `status.get` | Gets a `vim.g` global variable. |
 | `buffers.check` | Calls `:checktime` to sync files. |
 | `tab.close` | Closes the current tab. |
-| `bus.register` | Registers an extension agent's RPC channel (Internal). |
+| `ui.select` | Opens a selection UI for the user. |
+| `ui.input` | Opens an input UI for the user. |
+| `ui.notify` | Sends a notification to the UI. |
+| `tools.status` | Gets the status of tools. |
+| `tools.install` | Installs a specified tool. |
+| `tools.install_all` | Installs all configured tools. |
+| `tools.uninstall` | Uninstalls a specified tool. |
+| `tools.preview` | Previews tool modifications. |
+| `review.status` | Gets the current status of the review queue. |
+| `review.accept` | Accepts the current review (or specific hunk). |
+| `review.reject` | Rejects the current review (or specific hunk). |
+| `review.accept_all` | Accepts all pending reviews. |
+| `review.reject_all` | Rejects all pending reviews. |
+| `review.submit` | Submits the completed review. |
+| `review.next` | Moves to the next item in the review queue. |
 
 ## Changelog
+* [2026-04-28 16:59:46]: Updated architecture diagram to reflect new agent integrations and expanded the API Endpoints list to include ui, tools, and review methods.
 * [2026-04-07 16:07:50]: Initial documentation created aggregating Architecture, Flows, and RPC API.
