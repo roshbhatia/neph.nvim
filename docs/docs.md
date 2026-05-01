@@ -53,6 +53,22 @@ The project uses a custom RPC protocol (`neph-rpc/v1`) between the `neph-cli` an
 | `buffers.check` | Calls `:checktime` to sync files. |
 | `tab.close` | Closes the current tab. |
 | `bus.register` | Registers an extension agent's RPC channel (Internal). |
+| `ui.select` | Async method using `request_id`, `channel_id`, `title`, and `options`. |
+| `ui.input` | Async method using `request_id`, `channel_id`, `title`, and `default`. |
+| `ui.notify` | Method using `message` and `level`. |
+| `tools.status` | Method with no params. |
+| `tools.install` | Method using `name`. |
+| `tools.install_all` | Method with no params. |
+| `tools.uninstall` | Method using `name`. |
+| `tools.preview` | Method with no params. |
+| `review.status` | Method with no params. |
+| `review.accept` | Method with optional `idx`. |
+| `review.reject` | Method with optional `idx` and `reason`. |
+| `review.accept_all` | Method with no params. |
+| `review.reject_all` | Method with optional `reason`. |
+| `review.submit` | Method with no params. |
+| `review.next` | Method with no params. |
 
 ## Changelog
+* [2026-05-01 16:20:54]: Updated API Endpoints section to include ui, tools, and additional review methods.
 * [2026-04-07 16:07:50]: Initial documentation created aggregating Architecture, Flows, and RPC API.
