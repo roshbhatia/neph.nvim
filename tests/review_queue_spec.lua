@@ -36,6 +36,11 @@ describe("neph.internal.review_queue", function()
     review_queue = require("neph.internal.review_queue")
     opened_params = {}
 
+    -- Default gate is now "bypass" (open-by-default). These specs were
+    -- written when the default was "normal" — they expect enqueue() to
+    -- queue rather than auto-accept. Force normal here.
+    require("neph.internal.gate").set("normal")
+
     review_queue.set_open_fn(function(params)
       table.insert(opened_params, params)
     end)
@@ -360,6 +365,9 @@ describe("review_queue gate integration", function()
     package.loaded["neph.internal.review_queue"] = nil
     package.loaded["neph.internal.gate"] = nil
     gate = require("neph.internal.gate")
+    -- Shipped default is "bypass" (open-by-default); these gate-integration
+    -- tests assume "normal" as the starting point so set it explicitly.
+    gate.set("normal")
     rq = require("neph.internal.review_queue")
   end)
 

@@ -74,6 +74,7 @@ local M = {}
 ---@field integration_default_group? string    Default integration group name
 ---@field integrations?   neph.IntegrationsConfig  External integration management options
 ---@field diff?           neph.DiffConfig      Git diff review configuration
+---@field context_broadcast? neph.ContextBroadcastConfig  Continuous editor-state snapshot to disk
 
 ---@class neph.SocketConfig
 ---@field enable?  boolean  Auto-create a Neovim RPC socket if none exists (default: true)
@@ -113,6 +114,11 @@ local M = {}
 ---@class neph.ReviewQueueConfig
 ---@field enable? boolean    Enable sequential review queue (default: true)
 
+---@class neph.ContextBroadcastConfig
+---@field enable?           boolean  Continuously snapshot editor state to disk (default: true)
+---@field debounce_ms?      integer  Min ms between writes (default: 50; min 10)
+---@field include_clipboard? boolean Include + and * register snapshots (default: false)
+
 ---@type neph.Config
 M.defaults = {
   keymaps = true,
@@ -124,6 +130,11 @@ M.defaults = {
   file_refresh = {
     enable = true,
     interval = 1000,
+  },
+  context_broadcast = {
+    enable = true,
+    debounce_ms = 50,
+    include_clipboard = false,
   },
   agents = nil,
   backend = nil,

@@ -247,6 +247,7 @@ function M.setup(opts)
   require("neph.internal.agents").init(agents)
   require("neph.internal.session").setup(config.current, backend)
   require("neph.internal.file_refresh").setup(config.current)
+  require("neph.internal.context_broadcast").setup(config.current.context_broadcast or {})
 
   -- Auto-repair neph CLI symlink if missing (silent fallback; build step is the canonical path)
   vim.schedule(function()

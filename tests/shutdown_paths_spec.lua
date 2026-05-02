@@ -30,6 +30,9 @@ describe("review_queue.reject_all_pending", function()
       review_queue._reset()
     end
     package.loaded["neph.internal.review_queue"] = nil
+    -- Default gate is "bypass" (open-by-default); these specs assume the
+    -- enqueue path actually queues rather than auto-accepts.
+    require("neph.internal.gate").set("normal")
     review_queue = require("neph.internal.review_queue")
     review_queue.set_open_fn(function() end)
   end)

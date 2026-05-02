@@ -103,11 +103,11 @@ end
 function M.with_gate(state, fn)
   package.loaded["neph.internal.gate"] = nil
   local gate = require("neph.internal.gate")
-  if state ~= "normal" then
-    gate.set(state)
-  end
+  -- Always set the requested state explicitly. The shipped default is now
+  -- "bypass" (open-by-default), so a `with_gate("normal", ...)` caller would
+  -- otherwise inherit "bypass" if we skipped the assignment.
+  gate.set(state)
   local ok, err = pcall(fn, gate)
-  -- Always restore to normal so subsequent tests start clean
   package.loaded["neph.internal.gate"] = nil
   if not ok then
     error(err, 2)

@@ -165,6 +165,9 @@ describe("neph.api coverage", function()
       package.loaded["neph.internal.gate_ui"].set = function(s, _w)
         captured_state = s
       end
+      -- Default gate is "bypass" (open-by-default); gate_bypass() short-circuits
+      -- if already bypass, so move to normal first to exercise the transition.
+      require("neph.internal.gate").set("normal")
       api.gate_bypass()
       assert.are.equal("bypass", captured_state)
     end)
@@ -226,6 +229,9 @@ describe("neph.api coverage", function()
       package.loaded["neph.internal.gate_ui"].set = function(_s, w)
         captured_win = w
       end
+      -- gate_bypass() short-circuits when already bypass (the new default);
+      -- start from normal to exercise the transition.
+      require("neph.internal.gate").set("normal")
       api.gate_bypass()
       assert.is_truthy(captured_win)
       assert.is_false(is_floating(captured_win))
@@ -236,6 +242,10 @@ describe("neph.api coverage", function()
       package.loaded["neph.internal.gate_ui"].set = function(_s, w)
         captured_win = w
       end
+      -- Default is bypass; api.gate() from bypass goes to normal (release),
+      -- which clears the indicator rather than setting it. Force normal so the
+      -- next cycle reaches hold and triggers gate_ui.set.
+      require("neph.internal.gate").set("normal")
       api.gate() -- normal → hold
       assert.is_truthy(captured_win)
       assert.is_false(is_floating(captured_win))

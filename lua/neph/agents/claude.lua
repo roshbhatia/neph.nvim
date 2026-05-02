@@ -4,7 +4,11 @@ return {
   label = "Claude",
   icon = "",
   cmd = "claude",
-  args = { "--permission-mode", "plan" },
+  -- "Open by default" posture: claude runs with --dangerously-skip-permissions
+  -- so the agent never blocks on permission prompts. neph's review gate
+  -- (default = bypass) auto-accepts writes; users who want a stricter posture
+  -- cycle the gate via <leader>jg or override args in their own setup().
+  args = { "--dangerously-skip-permissions" },
   type = "hook",
   ready_pattern = "^%s*>",
   integration_group = "harness",

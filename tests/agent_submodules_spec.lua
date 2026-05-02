@@ -101,9 +101,9 @@ describe("neph.agents submodules", function()
     end)
   end
 
-  it("all.lua returns all 10 agents", function()
+  it("all.lua returns all 12 agents (10 base + claude-peer + opencode-peer)", function()
     local all = require("neph.agents.all")
-    assert.are.equal(10, #all)
+    assert.are.equal(12, #all)
   end)
 
   it("all.lua entries all pass validation", function()

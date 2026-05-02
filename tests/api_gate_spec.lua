@@ -35,7 +35,7 @@ describe("api gate functions", function()
     end)
 
     it("cycles normal → hold", function()
-      assert.are.equal("normal", gate.get())
+      gate.set("normal")
       api.gate()
       assert.are.equal("hold", gate.get())
     end)
@@ -53,6 +53,7 @@ describe("api gate functions", function()
     end)
 
     it("toggling three times from normal returns to normal", function()
+      gate.set("normal")
       api.gate() -- → hold
       api.gate() -- → bypass
       api.gate() -- → normal
@@ -60,6 +61,7 @@ describe("api gate functions", function()
     end)
 
     it("changes are reflected via gate module directly", function()
+      gate.set("normal")
       api.gate()
       assert.is_true(gate.is_hold())
       api.gate()
@@ -78,8 +80,8 @@ describe("api gate functions", function()
       assert.is_function(api.gate_status)
     end)
 
-    it("returns 'normal' initially", function()
-      assert.are.equal("normal", api.gate_status())
+    it("returns 'bypass' initially (open-by-default)", function()
+      assert.are.equal("bypass", api.gate_status())
     end)
 
     it("returns 'hold' after gate.set('hold')", function()
@@ -93,6 +95,7 @@ describe("api gate functions", function()
     end)
 
     it("reflects state changed via api.gate()", function()
+      gate.set("normal")
       api.gate() -- → hold
       assert.are.equal("hold", api.gate_status())
     end)

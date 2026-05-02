@@ -29,6 +29,12 @@ local function reset_modules()
   package.loaded["neph.config"] = nil
   package.loaded["neph.internal.session"] = nil
   package.loaded["neph.internal.log"] = nil
+  -- The shipped default is "bypass" (open-by-default). These tests were
+  -- written when the default was "normal" and rely on enqueue() actually
+  -- queueing rather than auto-accepting. Force normal here so callers can
+  -- opt into hold/bypass explicitly per test.
+  package.loaded["neph.internal.gate"] = nil
+  require("neph.internal.gate").set("normal")
 end
 
 -- Flush vim.schedule callbacks (needed because enqueue defers open_fn).

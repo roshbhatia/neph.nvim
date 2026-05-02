@@ -58,6 +58,26 @@ local ready_queue = {}
 -- Private helpers
 -- ---------------------------------------------------------------------------
 
+--- Resolve the dispatch target for a session: either the configured backend
+--- or a peer adapter (when td.peer is set, e.g. "claudecode" or "opencode").
+--- Falls back to the configured backend when peer resolution fails so the
+--- caller never has to nil-check.
+---@param td? neph.TermData|table
+---@return table
+local function backend_for(td)
+  if td and td.peer then
+    local ok, peers = pcall(require, "neph.peers")
+    if ok then
+      local adapter = peers.resolve(td.peer)
+      if adapter then
+        return adapter
+      end
+    end
+    log.debug("session", "backend_for: peer %q unavailable, falling back to global backend", tostring(td.peer))
+  end
+  return backend
+end
+
 --- Stop and close a uv timer, swallowing errors. Returns nil for easy chaining.
 ---@param t userdata|nil  Timer handle
 ---@return nil
@@ -124,6 +144,8 @@ local function build_agent_config(agent)
     full_cmd = full_cmd,
     env = agent.env or {},
     ready_pattern = agent.ready_pattern,
+    -- Forwarded so peer adapters can read e.g. peer.override_diff
+    peer = agent.peer,
   }
 end
 
@@ -272,7 +294,7 @@ function M.open(termname)
     return
   end
 
-  if terminals[termname] and backend.is_visible(terminals[termname]) then
+  if terminals[termname] and backend_for(terminals[termname]).is_visible(terminals[termname]) then
     M.focus(termname)
     return
   end
@@ -283,11 +305,11 @@ function M.open(termname)
   -- so a throw cannot leave terminals[] in a partially-mutated state.
   if backend.single_pane_only then
     for name, td in pairs(terminals) do
-      if name ~= termname and backend.is_visible(td) then
+      if name ~= termname and backend_for(td).is_visible(td) then
         td._killed = true
         cancel_timer(td.ready_timer)
         td.ready_timer = nil
-        local ok, err = pcall(backend.kill, td)
+        local ok, err = pcall(backend_for(td).kill, td)
         if not ok then
           log.debug("session", "single_pane_only kill error for %s: %s", name, tostring(err))
         end
@@ -314,7 +336,40 @@ function M.open(termname)
   end
 
   log.debug("session", "open: %s (cmd=%s)", termname, agent_config.cmd)
-  local td = backend.open(termname, agent_config, cwd)
+
+  -- Peer agents bypass the configured backend and dispatch through a peer
+  -- adapter (claudecode.nvim, opencode.nvim, ...). The adapter still returns
+  -- a backend-shaped term_data, so the rest of session.open() proceeds
+  -- unchanged. When the peer plugin is missing, is_available() returns
+  -- false; we surface a one-time notification rather than crashing so other
+  -- agents keep working.
+  local td
+  if agent.type == "peer" and agent.peer and agent.peer.kind then
+    local peers = require("neph.peers")
+    local adapter = peers.resolve(agent.peer.kind)
+    if not adapter then
+      vim.notify(
+        string.format("Neph: peer adapter %q not found for agent %q", agent.peer.kind, termname),
+        vim.log.levels.WARN
+      )
+      terminals[termname] = nil
+      return
+    end
+    if type(adapter.is_available) == "function" then
+      local ok, reason = adapter.is_available()
+      if not ok then
+        vim.notify(
+          string.format("Neph: cannot open %q — %s", termname, reason or "peer adapter unavailable"),
+          vim.log.levels.WARN
+        )
+        terminals[termname] = nil
+        return
+      end
+    end
+    td = adapter.open(termname, agent_config, cwd)
+  else
+    td = backend.open(termname, agent_config, cwd)
+  end
   if td then
     terminals[termname] = td
     active_terminal = termname
@@ -377,7 +432,7 @@ end
 ---@param termname string
 function M.toggle(termname)
   local td = terminals[termname]
-  if td and backend and backend.is_visible(td) then
+  if td and backend and backend_for(td).is_visible(td) then
     M.focus(termname)
   else
     M.open(termname)
@@ -391,11 +446,11 @@ function M.focus(termname)
   if not td or not backend then
     return
   end
-  if not backend.is_visible(td) then
+  if not backend_for(td).is_visible(td) then
     M.open(termname)
     return
   end
-  if not backend.focus(td) then
+  if not backend_for(td).focus(td) then
     M.open(termname)
     return
   end
@@ -420,7 +475,7 @@ function M.hide(termname)
     td.ready_timer = nil
   end
   ready_queue[termname] = nil
-  backend.hide(td)
+  backend_for(td).hide(td)
   terminals[termname] = nil
   vim.g[termname .. "_active"] = nil
   if active_terminal == termname then
@@ -434,7 +489,7 @@ end
 ---@param termname string
 function M.activate(termname)
   local td = terminals[termname]
-  if not td or not backend or not backend.is_visible(td) then
+  if not td or not backend or not backend_for(td).is_visible(td) then
     M.open(termname)
   else
     M.focus(termname)
@@ -471,7 +526,7 @@ function M.kill_session(termname)
     td.ready_timer = nil
     if backend then
       -- Wrap in pcall: a backend failure must not prevent cleanup below.
-      local ok, err = pcall(backend.kill, td)
+      local ok, err = pcall(backend_for(td).kill, td)
       if not ok then
         log.debug("session", "kill_session: backend.kill error for %s: %s", termname, tostring(err))
       end
@@ -544,11 +599,11 @@ function M.send(termname, text, opts)
     vim.notify("Neph: terminal is stale — reopen with <leader>jj", vim.log.levels.WARN)
     return
   end
-  if not backend.is_visible(td) then
+  if not backend_for(td).is_visible(td) then
     vim.notify("Neph: terminal window is not visible — open it first", vim.log.levels.WARN)
     return
   end
-  backend.send(td, text, opts)
+  backend_for(td).send(td, text, opts)
 end
 
 --- Ensure the active agent terminal is open and send text to it.
@@ -620,7 +675,7 @@ end
 ---@return boolean
 function M.is_visible(termname)
   local td = terminals[termname]
-  return td and backend and backend.is_visible(td) or false
+  return td and backend and backend_for(td).is_visible(td) or false
 end
 
 ---@param termname string
@@ -630,7 +685,7 @@ function M.is_tracked(termname)
   if not td then
     return false
   end
-  return backend and backend.is_visible(td) or false
+  return backend and backend_for(td).is_visible(td) or false
 end
 
 ---@param termname string
@@ -648,7 +703,7 @@ function M.get_info(termname)
   end
   return {
     name = termname,
-    visible = backend.is_visible(td),
+    visible = backend_for(td).is_visible(td),
     cmd = td.cmd,
     cwd = td.cwd,
   }

@@ -23,9 +23,10 @@ local AGENT_OPTIONAL_FIELDS = {
   ready_pattern = "string",
   integration_group = "string",
   integration_overrides = "table",
+  peer = "table",
 }
 
-local VALID_AGENT_TYPES = { hook = true, terminal = true, extension = true }
+local VALID_AGENT_TYPES = { hook = true, terminal = true, extension = true, peer = true }
 
 ---@type table<string, string>
 local REMOVED_FIELDS = {
@@ -76,11 +77,21 @@ function M.validate_agent(def)
   if def.type ~= nil and not VALID_AGENT_TYPES[def.type] then
     error(
       string.format(
-        "neph: agent '%s' field 'type' must be one of: hook, terminal, extension (got '%s')",
+        "neph: agent '%s' field 'type' must be one of: hook, terminal, extension, peer (got '%s')",
         name,
         def.type
       )
     )
+  end
+
+  -- Peer agents must declare peer.kind so the registry can resolve an adapter.
+  if def.type == "peer" then
+    if type(def.peer) ~= "table" then
+      error(string.format("neph: agent '%s' has type='peer' but peer table is missing", name))
+    end
+    if type(def.peer.kind) ~= "string" or def.peer.kind == "" then
+      error(string.format("neph: agent '%s' has type='peer' but peer.kind is required", name))
+    end
   end
 
   if def.tools ~= nil then

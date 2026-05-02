@@ -155,9 +155,10 @@ describe("test_helpers.with_gate", function()
 
   it("clears gate module from package.loaded after fn returns", function()
     h.with_gate("hold", function(_) end)
-    -- After with_gate the module is ejected so a fresh require starts at normal
+    -- After with_gate the module is ejected so a fresh require starts at the
+    -- shipped default (bypass — open-by-default).
     local fresh = require("neph.internal.gate")
-    assert.are.equal("normal", fresh.get())
+    assert.are.equal("bypass", fresh.get())
     package.loaded["neph.internal.gate"] = nil
   end)
 
@@ -175,8 +176,10 @@ describe("test_helpers.with_gate", function()
         error("boom")
       end)
     end)
+    -- After with_gate is torn down, fresh require starts at the shipped
+    -- default (bypass — open-by-default).
     local fresh = require("neph.internal.gate")
-    assert.are.equal("normal", fresh.get())
+    assert.are.equal("bypass", fresh.get())
     package.loaded["neph.internal.gate"] = nil
   end)
 end)

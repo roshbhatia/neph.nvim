@@ -251,6 +251,8 @@ describe("neph.session boundary", function()
 
       -- Reset and wire review_queue with a stub open_fn
       package.loaded["neph.internal.review_queue"] = nil
+      -- Default gate is bypass (open-by-default); force normal so enqueue queues.
+      require("neph.internal.gate").set("normal")
       local rq = require("neph.internal.review_queue")
       rq.set_open_fn(function(_) end)
 

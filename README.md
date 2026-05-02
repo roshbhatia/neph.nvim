@@ -24,6 +24,9 @@ return {
     build = "bash scripts/build.sh",
     dependencies = {
       "folke/snacks.nvim",
+      -- Optional peer plugins. Install whichever agents you actually use:
+      -- { "coder/claudecode.nvim",   lazy = true }, -- enables `claude-peer` agent
+      -- { "nickjvandyke/opencode.nvim", lazy = true }, -- enables `opencode-peer` agent
     },
     opts = function()
       return {
@@ -70,9 +73,16 @@ Control the review pipeline at runtime without changing config:
 | `<leader>jg` | Cycle gate: normal → hold → bypass → normal |
 
 **States:**
-- **normal** — reviews open immediately on agent file writes (default)
-- **hold** — reviews accumulate silently; release with `<leader>jg` to review all at once
-- **bypass** — all agent writes are auto-accepted without UI (a warning fires on activation)
+- **bypass** — all agent writes are auto-accepted without UI (**default**: open-by-default)
+- **normal** — reviews open immediately on agent file writes (cycle once with `<leader>jg`)
+- **hold** — reviews accumulate silently; release with `<leader>jg` to drain them all at once
+
+> **Note on the default**: neph ships with `gate = "bypass"` and `claude --dangerously-skip-permissions` so agent loops run without prompts. The full review pipeline is still installed — cycle `<leader>jg` once to land on `normal` whenever you want strict per-write approval, or pin the project to `normal` with neoconf:
+>
+> ```jsonc
+> // .neoconf.json
+> { "neph": { "review": { "enabled": true } } }
+> ```
 
 From the CLI (in any agent pane, `NVIM_SOCKET_PATH` is set automatically):
 ```bash
@@ -81,6 +91,39 @@ neph gate release   # drain queue, resume
 neph gate bypass    # auto-accept all
 neph gate status    # print current state
 ```
+
+### Peer adapters (claudecode.nvim / opencode.nvim)
+
+Some agents have excellent companion plugins that already speak their native protocol (WebSocket/MCP for Claude Code, HTTP/SSE for OpenCode). neph can delegate session lifecycle to those plugins while keeping its review queue, gate, history, and multi-agent UX layered on top.
+
+| Agent           | Type       | Backing plugin                              | What you get                                                                        |
+|-----------------|------------|---------------------------------------------|-------------------------------------------------------------------------------------|
+| `claude`        | hook       | (none — neph terminal + cupcake hooks)      | Existing behavior. Stable.                                                          |
+| `claude-peer`   | peer       | `coder/claudecode.nvim`                     | Real-time selection broadcast, lockfile discovery, MCP `openDiff` routed to neph review queue. |
+| `opencode`      | hook       | (none — neph terminal + opencode SSE)       | Existing behavior. Stable.                                                          |
+| `opencode-peer` | peer       | `nickjvandyke/opencode.nvim`                | Native HTTP/SSE handling, opencode's prompt/context system as the input layer.       |
+
+Install the peer plugin you want and `claude-peer` / `opencode-peer` light up automatically. If the peer plugin is missing you'll see a one-shot notification when you pick the agent — the rest of neph keeps working.
+
+### Auto-context broadcast
+
+While Neovim is running, neph continuously snapshots the active editor state to a single file:
+
+```
+${XDG_STATE_HOME:-~/.local/state}/nvim/neph/context.json
+```
+
+The snapshot includes the current buffer URI + cursor + selection, all visible source files, diagnostics, and cwd. Updates are debounced (default 50 ms) and writes are atomic (temp + rename), so any external tool can poll the file without seeing partial JSON.
+
+From any agent pane:
+
+```bash
+neph context current                    # print the latest snapshot
+neph context current --field buffer.uri # extract a single key
+neph context current --max-age-ms 60000 # accept up to 60s-old snapshots
+```
+
+Disable it (e.g. for paranoid setups) via `setup({ context_broadcast = { enable = false } })`. To include the system clipboard in the snapshot (off by default, since the clipboard often holds secrets): `context_broadcast = { include_clipboard = true }`.
 
 ### Tools & Integration Status
 

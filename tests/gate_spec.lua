@@ -13,8 +13,8 @@ describe("neph.internal.gate", function()
   -- Initial state
   -- ---------------------------------------------------------------------------
 
-  it("initial state is normal", function()
-    assert.are.equal("normal", gate.get())
+  it("initial state is bypass (open-by-default)", function()
+    assert.are.equal("bypass", gate.get())
   end)
 
   -- ---------------------------------------------------------------------------
@@ -107,6 +107,7 @@ describe("neph.internal.gate", function()
     end)
 
     it("returns false when state is normal", function()
+      gate.set("normal")
       assert.is_false(gate.is_bypass())
     end)
 
@@ -118,6 +119,7 @@ describe("neph.internal.gate", function()
 
   describe("is_normal()", function()
     it("returns true when state is normal", function()
+      gate.set("normal")
       assert.is_true(gate.is_normal())
     end)
 
@@ -138,6 +140,7 @@ describe("neph.internal.gate", function()
 
   describe("cycle()", function()
     it("advances normal → hold", function()
+      gate.set("normal")
       gate.cycle()
       assert.are.equal("hold", gate.get())
     end)
@@ -155,6 +158,7 @@ describe("neph.internal.gate", function()
     end)
 
     it("full cycle returns to normal", function()
+      gate.set("normal")
       gate.cycle() -- → hold
       gate.cycle() -- → bypass
       gate.cycle() -- → normal

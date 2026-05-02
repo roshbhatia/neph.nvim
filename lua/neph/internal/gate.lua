@@ -15,8 +15,12 @@ local M = {}
 
 local VALID_STATES = { normal = true, hold = true, bypass = true }
 
+--- Default gate state: "bypass" — agent writes auto-accept without opening
+--- the review UI. Users opt back in to review by cycling `<leader>jg`,
+--- running `:NephGate normal`, or setting `neph.gate = "normal"` per-project
+--- via neoconf. The pipeline is still installed; only the surface is silent.
 ---@type neph.GateState
-local state = "normal"
+local state = "bypass"
 
 --- Return the current gate state.
 ---@return neph.GateState

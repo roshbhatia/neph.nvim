@@ -10,6 +10,9 @@ describe("queue_ui", function()
   before_each(function()
     rq = require("neph.internal.review_queue")
     rq._reset()
+    -- Default gate is "bypass" (open-by-default); these specs rely on
+    -- enqueue actually queueing rather than auto-accepting.
+    require("neph.internal.gate").set("normal")
     -- set a no-op open_fn so enqueue works
     rq.set_open_fn(function() end)
     queue_ui = require("neph.api.review.queue_ui")

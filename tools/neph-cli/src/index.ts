@@ -10,6 +10,7 @@ import { runDepsCommand } from './deps';
 import { runGateCommand } from './gate';
 import { runToolsCommand } from './tools';
 import { runReviewCtrlCommand } from './review-ctrl';
+import { runContextCommand } from './context';
 
 const RPC_CALL = 'return require("neph.rpc").request(...)';
 
@@ -115,6 +116,12 @@ export async function runCommand(transport: NvimTransport | null, command: strin
 
   if (command === 'deps') {
     await runDepsCommand(args);
+    return;
+  }
+
+  if (command === 'context') {
+    // No transport needed — reads the broadcast file written by Neovim.
+    await runContextCommand(args.slice(1));
     return;
   }
 
@@ -404,7 +411,7 @@ if (require.main === module) {
   if (!command) {
     process.stderr.write(
       'Usage: neph <command> [args...]\n' +
-        'Commands: review, connect, set, unset, get, checktime, close-tab, status, spec, ui-select, ui-input, ui-notify, integration, install, uninstall, print-settings, deps, gate, tools\n'
+        'Commands: review, connect, set, unset, get, checktime, close-tab, status, spec, ui-select, ui-input, ui-notify, integration, install, uninstall, print-settings, deps, gate, tools, context\n'
     );
     process.exit(1);
   }
