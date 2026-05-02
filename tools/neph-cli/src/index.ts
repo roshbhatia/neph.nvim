@@ -456,7 +456,7 @@ if (require.main === module) {
         `neph: socket at ${socketPath} no longer exists (Neovim may have exited). ` +
         'Re-run your agent from within a Neovim terminal.\n'
       );
-      if (command !== 'spec' && command !== 'integration' && command !== 'deps' && command !== 'gate' && command !== 'tools' && command !== 'review' && command !== 'connect' && command !== 'install' && command !== 'uninstall' && command !== 'print-settings') {
+      if (command !== 'spec' && command !== 'integration' && command !== 'deps' && command !== 'gate' && command !== 'tools' && command !== 'review' && command !== 'connect' && command !== 'install' && command !== 'uninstall' && command !== 'print-settings' && command !== 'context') {
         process.exit(1);
       }
     }
@@ -473,7 +473,7 @@ if (require.main === module) {
         'Is the neph plugin loaded? Check :NephHealth.\n'
       );
     }
-  } else if (command !== 'spec' && command !== 'integration' && command !== 'deps' && command !== 'gate' && command !== 'tools' && command !== 'install' && command !== 'uninstall' && command !== 'print-settings') {
+  } else if (command !== 'spec' && command !== 'integration' && command !== 'deps' && command !== 'gate' && command !== 'tools' && command !== 'install' && command !== 'uninstall' && command !== 'print-settings' && command !== 'context') {
     // review and connect handle missing transport themselves; other commands need it
     if (command !== 'review' && command !== 'connect') {
       if (discoveryError === 'ambiguous') {
