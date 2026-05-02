@@ -498,11 +498,15 @@ describe("neph.api.review._apply_post_write reject buffer reload", function()
     local buf_call_received = nil
 
     vim.fn.bufnr = function(name)
-      if name == tmp then return fake_bufnr end
+      if name == tmp then
+        return fake_bufnr
+      end
       return orig_bufnr(name)
     end
     vim.api.nvim_buf_is_valid = function(buf)
-      if buf == fake_bufnr then return true end
+      if buf == fake_bufnr then
+        return true
+      end
       return orig_is_valid(buf)
     end
     vim.api.nvim_buf_call = function(buf, fn) -- luacheck: ignore 431
@@ -521,8 +525,11 @@ describe("neph.api.review._apply_post_write reject buffer reload", function()
     vim.api.nvim_buf_is_valid = orig_is_valid
     vim.api.nvim_buf_call = orig_buf_call
 
-    assert.are.equal(fake_bufnr, buf_call_received,
-      "Expected nvim_buf_call to be called for the open buffer so it reloads after revert")
+    assert.are.equal(
+      fake_bufnr,
+      buf_call_received,
+      "Expected nvim_buf_call to be called for the open buffer so it reloads after revert"
+    )
 
     os.remove(tmp)
   end)

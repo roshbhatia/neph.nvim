@@ -88,8 +88,15 @@ describe("claude.launch_args_fn", function()
 
   it("is idempotent — calling twice produces the same args", function()
     local template = vim.json.encode({
-      hooks = { SessionStart = { { hooks = { { type = "command",
-        command = "PATH=$HOME/.local/bin:$PATH neph integration hook claude" } } } } },
+      hooks = {
+        SessionStart = {
+          {
+            hooks = {
+              { type = "command", command = "PATH=$HOME/.local/bin:$PATH neph integration hook claude" },
+            },
+          },
+        },
+      },
     })
     local root = make_temp_root(template)
     local _, args1 = pcall(agent.launch_args_fn, root)
