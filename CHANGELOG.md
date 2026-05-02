@@ -1,5 +1,40 @@
 # Changelog
 
+## [1.2.0](https://github.com/roshbhatia/neph.nvim/compare/v1.1.0...v1.2.0) (2026-05-02)
+
+
+### Features
+
+* add diff review, gate three-mode cycle, and review QoL improvements ([eaf0426](https://github.com/roshbhatia/neph.nvim/commit/eaf04268618162597bddb550c3cbe276ab7b0878))
+* add gate parser with fuzz and contract tests ([b9b9bec](https://github.com/roshbhatia/neph.nvim/commit/b9b9bec92dcf1326a79a3c9f63e5ce54b679239e))
+* **agents:** runtime-only hook injection, fix engine bugs ([a75551b](https://github.com/roshbhatia/neph.nvim/commit/a75551b0a5c494937ff42802151f9c5ba532ba45))
+* **cli:** auto-install agent integrations during build, health command, neph-cli → neph rename ([20747ae](https://github.com/roshbhatia/neph.nvim/commit/20747ae80eae3c3adf9931a931d887984c2453cf))
+* **cli:** frictionless global install — neph install/uninstall/print-settings ([a4bda2f](https://github.com/roshbhatia/neph.nvim/commit/a4bda2f8ac09e1545f5787d6c8160ea4c731ee03))
+* config/init safety with health spec ([8eeb351](https://github.com/roshbhatia/neph.nvim/commit/8eeb351309878a1730cc724c0569d44478354fcf))
+* **config:** integrations.auto_refresh, neoconf schema, e2e task targets ([304861e](https://github.com/roshbhatia/neph.nvim/commit/304861ea7584603d1cbe58b1871a547a89c692a5))
+* **peer-adapters:** claudecode/opencode adapters, auto-context, open-by-default ([8075474](https://github.com/roshbhatia/neph.nvim/commit/8075474cbedff4e967486121b317fcf15e3034bc))
+* review engine improvements with expanded tests ([41762db](https://github.com/roshbhatia/neph.nvim/commit/41762db1fd99aded9d35a69a8a6626d59c39a704))
+
+
+### Bug Fixes
+
+* backend compliance - snacks, wezterm, zellij robustness ([4f0d706](https://github.com/roshbhatia/neph.nvim/commit/4f0d7069bdaa30f2b232a09fe3b9f6c4b94d302a))
+* **cli:** exempt 'context' command from socket discovery ([0b7f027](https://github.com/roshbhatia/neph.nvim/commit/0b7f027b7e7af1ea8b8cd4b1b2e3fde91ac464b2))
+* **cli:** idempotent hook replacement, claude global install ([95dc47e](https://github.com/roshbhatia/neph.nvim/commit/95dc47e78f20c907719da058358b04d1c4dd1ac5))
+* config/init safety with health checks and smoke tests ([fcd1d6f](https://github.com/roshbhatia/neph.nvim/commit/fcd1d6f2eb9e9b068591293e40ab57ce582b69b8))
+* gitignore .neph/, AGENTS.md claude settings docs, integration.ts tweaks ([5b46715](https://github.com/roshbhatia/neph.nvim/commit/5b46715b34291b6d77f05ef755c54e0afa5a24a1))
+* **review:** capture direct buffer edits; reload buffer on reject ([bbda64e](https://github.com/roshbhatia/neph.nvim/commit/bbda64eb8ab0cfb5791884f63acb80b6b592468b))
+* rpc dispatch - truncate method echo, reject non-table params with INVALID_PARAMS ([a1f8a06](https://github.com/roshbhatia/neph.nvim/commit/a1f8a0612bf79ce3f41014258c6695da0544d7d8))
+* rpc dispatch safety with contract tests ([f56d622](https://github.com/roshbhatia/neph.nvim/commit/f56d62264ee6779d40c2ce7f22304a5809c17f58))
+* session lifecycle robustness ([0b92957](https://github.com/roshbhatia/neph.nvim/commit/0b92957f2eeeaef02f231d519634da0b4014be86))
+* **tests:** add explicit vitest imports, prune stale worktrees ([b045dba](https://github.com/roshbhatia/neph.nvim/commit/b045dba03204ed4385fd15e73944fee09adc4eed))
+
+
+### Performance Improvements
+
+* **wezterm:** make activate_pane, kill_pane, wait_for_pane, watch_for_ready async ([4786819](https://github.com/roshbhatia/neph.nvim/commit/478681927aec5722ac690dd8a7aab64c7ddf0012))
+* **wezterm:** remove blocking wezterm cli list from send hot path ([dac910b](https://github.com/roshbhatia/neph.nvim/commit/dac910bd8a16e70a21c1da4038c58bd216d32ce0))
+
 ## [1.1.0](https://github.com/roshbhatia/neph.nvim/compare/v1.0.0...v1.1.0) (2026-04-08)
 
 
