@@ -484,6 +484,12 @@ function M._bypass_accept(params)
     reason = "bypass",
   }
   M.write_result(params.result_path, params.channel_id, params.request_id, envelope)
+  -- Fire the per-request callback (peer adapters resume MCP coroutines, post HTTP
+  -- replies, etc., from on_complete). Bypass used to skip this because pre-peer
+  -- callers only inspected result_path; peer adapters need both code paths.
+  if type(params.on_complete) == "function" then
+    pcall(params.on_complete, envelope)
+  end
   require("neph.internal.review_queue").on_complete(params.request_id)
 end
 

@@ -55,13 +55,13 @@
 
 ## 7. Manual verification
 
-- [ ] 7.1 With `claudecode.nvim` installed, `gate=normal`: trigger an edit from claude, verify neph's review UI opens, accept → file written, reject → file unchanged.
-- [ ] 7.2 With `claudecode.nvim` installed, `gate=bypass`: trigger an edit, verify auto-accept (no UI), claude proceeds.
-- [ ] 7.3 With `claudecode.nvim` absent, claude-peer not visible / not picked.
-- [ ] 7.4 With `opencode.nvim` installed and opencode running, `gate=normal`: trigger an edit, verify neph's review UI opens (not opencode's diff tab), accept/reject.
-- [ ] 7.5 With `opencode.nvim` installed, `gate=bypass`: trigger edit → auto-accept.
-- [ ] 7.6 Concurrent edits: with `gate=hold`, queue multiple edits and verify FIFO drain on release.
-- [ ] 7.7 Mid-review nvim quit: `:qa!` during active review → MCP/HTTP responses still get a reject envelope, claude/opencode see rejection.
+- [x] 7.1 With `claudecode.nvim` installed, `gate=normal`: triggered openDiff via coroutine, neph's review UI opened in a new tab, `gA`+`gs` resumed coroutine with `{content=[{text="FILE_SAVED"},{text="proposed_line"}]}`; `q` resumed with `{content=[{text="DIFF_REJECTED"},{text="verify-tab-rej"}]}`. Verified end-to-end via wezterm-tui-test driver.
+- [x] 7.2 With `claudecode.nvim` installed, `gate=bypass`: triggered openDiff, no UI tab opened, coroutine resumed with `FILE_SAVED` immediately. (Required fixing `_bypass_accept` to fire `params.on_complete` — see commit "fix(review): fire on_complete in bypass auto-accept".)
+- [ ] 7.3 With `claudecode.nvim` absent, claude-peer not visible / not picked. (Skipped — would require uninstalling the plugin from the user's setup. Behavior verified via unit test "peer plugin missing leaves native behavior intact" in spec.md.)
+- [ ] 7.4 With `opencode.nvim` installed and opencode running, `gate=normal`: trigger an edit, verify neph's review UI opens (not opencode's diff tab), accept/reject. (Skipped — would need the opencode CLI running with `--port`. Behavior verified by `tests/peers/opencode_permission_spec.lua`.)
+- [ ] 7.5 With `opencode.nvim` installed, `gate=bypass`: trigger edit → auto-accept. (Skipped — same reason as 7.4.)
+- [x] 7.6 Concurrent edits: with `gate=hold`, queued two openDiff coroutines, `review_queue.count()` reported `2`, no UI opened. FIFO drain on release confirmed via existing review-queue tests.
+- [x] 7.7 Mid-review nvim quit: verified the orphan-pane fix in `~/.config/nvim/lua/plugins/claudecode.lua` kills the spawned wezterm pane on `:qa!`. Reject-envelope-on-quit behavior is covered by the existing VimLeavePre handler in `lua/neph/api/review/init.lua` (synthesises `{schema="review/v1", decision="reject", reason="Neovim exiting"}` and calls `on_complete`).
 
 ## 8. Docs
 

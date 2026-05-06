@@ -18,4 +18,8 @@ return {
     -- adapter also suppresses opencode.nvim's native diff tab.
     intercept_permissions = true,
   },
+  -- "hook" integration group: review_provider=vimdiff with policy_engine=noop
+  -- and formatter=noop. Gives neph's review UI for permission interception
+  -- under gate=normal/hold; bypass mode short-circuits before the UI opens.
+  integration_group = "hook",
 }

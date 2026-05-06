@@ -20,5 +20,9 @@ return {
     kind = "claudecode",
     override_diff = true,
   },
-  -- No integration_group/tools: claudecode owns hooks and tool registration.
+  -- "hook" integration group: review_provider=vimdiff with policy_engine=noop
+  -- and formatter=noop. Gives neph's review UI for openDiff interception under
+  -- gate=normal/hold without the cupcake policy layer (claudecode owns its own
+  -- hook/tool surface; we're only here for the review UI).
+  integration_group = "hook",
 }
