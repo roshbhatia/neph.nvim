@@ -132,8 +132,8 @@ return function(t)
     end)
 
     t.it("accept flow: programmatic gA + gs returns accept", function()
-      if os.getenv("CI") then
-        t.skip("accept flow", "interactive vimdiff e2e skipped in CI")
+      if os.getenv("CI") or #vim.api.nvim_list_uis() == 0 then
+        t.skip("accept flow", "interactive vimdiff e2e skipped in headless/CI")
         return
       end
       local test_file = vim.fn.tempname() .. ".lua"
@@ -171,8 +171,8 @@ return function(t)
     end)
 
     t.it("reject flow: pressing q rejects all undecided hunks", function()
-      if os.getenv("CI") then
-        t.skip("reject flow", "interactive vimdiff e2e skipped in CI")
+      if os.getenv("CI") or #vim.api.nvim_list_uis() == 0 then
+        t.skip("reject flow", "interactive vimdiff e2e skipped in headless/CI")
         return
       end
       local test_file = vim.fn.tempname() .. ".lua"
@@ -219,8 +219,8 @@ return function(t)
     end)
 
     t.it("protocol: stdout is always { decision, content }", function()
-      if os.getenv("CI") then
-        t.skip("protocol", "review queue state isolation not guaranteed in CI")
+      if os.getenv("CI") or #vim.api.nvim_list_uis() == 0 then
+        t.skip("protocol", "review queue state isolation not guaranteed in headless/CI")
         return
       end
       -- Clear any pending review queue state from prior tests

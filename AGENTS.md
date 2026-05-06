@@ -24,11 +24,7 @@ All commands use [Task](https://taskfile.dev/) (modern Make alternative).
 task test
 
 # Lua tests only (uses plenary.nvim)
-nvim --headless \
-  --cmd 'set rtp+=.' \
-  --cmd "set rtp+=~/.local/share/nvim/lazy/plenary.nvim" \
-  -c "PlenaryBustedDirectory tests/ {minimal_init='tests/minimal_init.lua'}" \
-  -c 'qa!'
+bash scripts/run-lua-tests.sh
 
 # TypeScript CLI tests
 task tools:test:neph

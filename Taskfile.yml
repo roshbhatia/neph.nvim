@@ -29,16 +29,12 @@ tasks:
 
   test:
     desc: Run full test suite (Lua plenary/busted + TS vitest + Rego + e2e)
+    deps: [test:lua, tools:test, test:rego, test:e2e]
+
+  test:lua:
+    desc: Run Lua test suite (plenary/busted, sequential)
     cmds:
-      - |
-        nvim --headless \
-          --cmd 'set rtp+=.' \
-          --cmd "set rtp+=${PLENARY_PATH:-~/.local/share/nvim/lazy/plenary.nvim}" \
-          -c "PlenaryBustedDirectory tests/ {minimal_init='tests/minimal_init.lua'}" \
-          -c 'qa!'  # Run Lua tests using plenary.nvim
-      - task tools:test  # Run TypeScript tests for tools
-      - task test:rego  # Run Rego policy tests
-      - task test:e2e  # Run end-to-end tests
+      - bash scripts/run-lua-tests.sh
 
   test:rego:
     desc: Run OPA Rego policy tests
