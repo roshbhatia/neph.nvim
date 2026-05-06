@@ -6,8 +6,8 @@
 --- input UI, and context system; neph provides the picker, gate, review
 --- queue, and history layer on top.
 return {
-  name = "opencode-peer",
-  label = "OpenCode (peer)",
+  name = "opencode",
+  label = "OpenCode",
   icon = "",
   cmd = "opencode",
   type = "peer",

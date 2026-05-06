@@ -10,8 +10,8 @@
 --- through neph's review queue instead of claudecode's native vimdiff
 --- (gate=bypass auto-accepts; cycle <leader>jg to opt back in).
 return {
-  name = "claude-peer",
-  label = "Claude (peer)",
+  name = "claude",
+  label = "Claude",
   icon = "",
   -- cmd is informational only when type=peer; the peer adapter does the launch.
   cmd = "claude",
