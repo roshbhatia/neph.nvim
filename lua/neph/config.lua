@@ -170,9 +170,6 @@ M.defaults = {
     default = { policy_engine = "noop", review_provider = "noop", formatter = "noop" },
     harness = { policy_engine = "cupcake", review_provider = "vimdiff", formatter = "noop" },
     hook = { policy_engine = "noop", review_provider = "vimdiff", formatter = "noop" },
-    -- opencode_sse: review interception via opencode's HTTP permission API + SSE stream.
-    -- No Cupcake required; neph subscribes to the SSE stream on session open.
-    opencode_sse = { policy_engine = "noop", review_provider = "vimdiff", formatter = "noop" },
   },
   integration_default_group = "default",
   integrations = {

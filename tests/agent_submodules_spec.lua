@@ -1,7 +1,19 @@
 local contracts = require("neph.internal.contracts")
 
 describe("neph.agents submodules", function()
-  local agent_names = { "amp", "claude", "codex", "copilot", "crush", "cursor", "gemini", "goose", "opencode", "pi" }
+  -- Submodule file names (canonical claude/opencode are the peer files).
+  local agent_names = {
+    "amp",
+    "claude-peer",
+    "codex",
+    "copilot",
+    "crush",
+    "cursor",
+    "gemini",
+    "goose",
+    "opencode-peer",
+    "pi",
+  }
 
   for _, name in ipairs(agent_names) do
     it(name .. " returns a valid AgentDef", function()
@@ -9,12 +21,11 @@ describe("neph.agents submodules", function()
       assert.has_no.errors(function()
         contracts.validate_agent(def)
       end)
-      assert.are.equal(name, def.name)
     end)
   end
 
   -- Hook agents: intercept via cupcake harness or runtime-injected hooks
-  local hook_agents = { "claude", "copilot", "cursor", "gemini", "opencode", "pi" }
+  local hook_agents = { "copilot", "cursor", "gemini", "pi" }
   for _, name in ipairs(hook_agents) do
     it(name .. " has type = hook", function()
       local def = require("neph.agents." .. name)
@@ -31,6 +42,17 @@ describe("neph.agents submodules", function()
     end)
   end
 
+  -- Peer agents: delegate session lifecycle to a peer plugin
+  local peer_agents = { "claude-peer", "opencode-peer" }
+  for _, name in ipairs(peer_agents) do
+    it(name .. " has type = peer", function()
+      local def = require("neph.agents." .. name)
+      assert.are.equal("peer", def.type)
+      assert.is_table(def.peer)
+      assert.is_string(def.peer.kind)
+    end)
+  end
+
   -- Agents with tools manifests
   local agents_with_tools = { "amp" }
   for _, name in ipairs(agents_with_tools) do
@@ -43,10 +65,18 @@ describe("neph.agents submodules", function()
     end)
   end
 
-  -- Agents without tools (hooks managed via neph CLI or Cupcake native)
-  -- cursor removed from tools: its hook config is per-project via `neph integration toggle cursor`
-  -- pi removed from tools: uses launch_args_fn (-e) for runtime-only extension loading
-  local agents_without_tools = { "claude", "codex", "copilot", "crush", "cursor", "gemini", "goose", "opencode", "pi" }
+  -- Agents without tools (hooks managed via neph CLI or Cupcake native; peer agents own no tools)
+  local agents_without_tools = {
+    "claude-peer",
+    "codex",
+    "copilot",
+    "crush",
+    "cursor",
+    "gemini",
+    "goose",
+    "opencode-peer",
+    "pi",
+  }
   for _, name in ipairs(agents_without_tools) do
     it(name .. " has no tools field", function()
       local def = require("neph.agents." .. name)
@@ -63,12 +93,19 @@ describe("neph.agents submodules", function()
     end)
   end
 
-  -- Claude: integration group assignment
-  describe("claude integration config", function()
-    it("uses the harness integration group", function()
-      local def = require("neph.agents.claude")
-      assert.are.equal("harness", def.integration_group)
-      assert.is_function(def.launch_args_fn)
+  -- Claude (peer): override_diff flag drives diff interception
+  describe("claude-peer integration config", function()
+    it("requests pre-write diff override", function()
+      local def = require("neph.agents.claude-peer")
+      assert.is_true(def.peer.override_diff == true)
+    end)
+  end)
+
+  -- OpenCode (peer): intercept_permissions flag drives permission interception
+  describe("opencode-peer integration config", function()
+    it("requests permission interception", function()
+      local def = require("neph.agents.opencode-peer")
+      assert.is_true(def.peer.intercept_permissions == true)
     end)
   end)
 
@@ -89,8 +126,8 @@ describe("neph.agents submodules", function()
     end)
   end)
 
-  -- Agents with ready_pattern
-  local agents_with_ready_pattern = { "claude", "codex", "crush", "goose" }
+  -- Agents with ready_pattern (peer agents have no terminal of their own to match against)
+  local agents_with_ready_pattern = { "codex", "crush", "goose" }
   for _, name in ipairs(agents_with_ready_pattern) do
     it(name .. " has a valid ready_pattern", function()
       local def = require("neph.agents." .. name)

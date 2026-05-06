@@ -383,24 +383,6 @@ function M.open(termname)
       end
     end)
 
-    -- For opencode_sse agents: subscribe to the opencode SSE event stream so
-    -- neph can intercept writes via the permission API (pre-write, no Cupcake).
-    if agent.integration_group == "opencode_sse" then
-      pcall(function()
-        local sse = require("neph.internal.opencode_sse")
-        local perm = require("neph.reviewers.opencode_permission")
-        local port = sse.discover_port()
-        if port then
-          sse.subscribe(port, function(event_type, data)
-            perm.handle_event(port, event_type, data)
-          end)
-          log.debug("session", "opencode SSE subscribed on port %d", port)
-        else
-          log.debug("session", "opencode SSE: no server found (opencode launched without --port)")
-        end
-      end)
-    end
-
     -- Set on_ready callback to drain queued text.
     -- The queue may already contain entries added before open() was called
     -- (e.g. via ensure_active_and_send racing with a slow open).
@@ -543,14 +525,6 @@ function M.kill_session(termname)
   -- does not replay a prompt that belonged to the killed session.
   pcall(function()
     require("neph.internal.terminal").set_last_prompt(termname, nil)
-  end)
-  -- Unsubscribe opencode SSE stream if this was an SSE-integrated agent
-  pcall(function()
-    local agent = require("neph.internal.agents").get_registered_by_name(termname)
-    if agent and agent.integration_group == "opencode_sse" then
-      require("neph.internal.opencode_sse").unsubscribe()
-      log.debug("session", "opencode SSE unsubscribed for %s", termname)
-    end
   end)
   -- Force-cleanup active review UI if it belongs to this agent
   pcall(function()

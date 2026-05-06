@@ -34,81 +34,100 @@ local function try_require_claudecode()
   return true, mod
 end
 
----@return table|nil tools_mod
-local function try_require_tools()
-  local ok, mod = pcall(require, "claudecode.tools")
-  if not ok then
-    return nil
-  end
-  return mod
-end
-
-local function ensure_diff_override()
+--- Hook `claudecode.diff.open_diff_blocking` so MCP openDiff calls route through
+--- neph's review queue. The function runs inside an MCP coroutine; we yield until
+--- review_queue's on_complete fires, then resume with an MCP-shaped result.
+---
+--- Idempotent: a guard flag prevents double-installation. The original function
+--- is not preserved — falling back to native is unhelpful since this is the only
+--- place we can intercept. If install fails (claudecode.diff missing or the
+--- function is absent), we log a one-time WARN and let claudecode's native UI
+--- handle diffs unmodified.
+local function install_diff_override()
   if override_installed then
     return
   end
-  local tools = try_require_tools()
-  if not tools or type(tools) ~= "table" then
-    log.debug("peers.claudecode", "tools module not available — skipping openDiff override")
+
+  local ok, diff_mod = pcall(require, "claudecode.diff")
+  if not ok or type(diff_mod) ~= "table" or type(diff_mod.open_diff_blocking) ~= "function" then
+    log.warn(
+      "peers.claudecode",
+      "claudecode.diff.open_diff_blocking unavailable — diff override not installed; native UI will be used"
+    )
     return
   end
 
-  local handlers = tools.handlers or tools._handlers
-  if not handlers or type(handlers) ~= "table" then
-    log.debug("peers.claudecode", "no handlers table on claudecode.tools — claudecode API may have changed")
-    return
-  end
-
-  local original_open_diff = handlers.openDiff
-  handlers.openDiff = function(params, deferred_response)
-    local file = params and (params.new_file_path or params.newFilePath or params.file) or nil
-    local proposed = params and (params.new_file_contents or params.newFileContents or params.content) or ""
-
-    if not file or file == "" then
-      if original_open_diff then
-        return original_open_diff(params, deferred_response)
-      end
-      return
+  diff_mod.open_diff_blocking = function(_old_file_path, new_file_path, new_file_contents, tab_name)
+    local co, is_main = coroutine.running()
+    if not co or is_main then
+      error({
+        code = -32000,
+        message = "Internal server error",
+        data = "openDiff must run in coroutine context",
+      })
     end
 
-    local ok, review_queue = pcall(require, "neph.internal.review_queue")
-    if not ok then
-      log.debug("peers.claudecode", "review_queue unavailable — falling back to native openDiff")
-      if original_open_diff then
-        return original_open_diff(params, deferred_response)
-      end
-      return
+    local request_id = ("claudecode:%s:%d"):format(tostring(tab_name), vim.uv.hrtime())
+
+    local rq_ok, review_queue = pcall(require, "neph.internal.review_queue")
+    if not rq_ok then
+      log.warn("peers.claudecode", "review_queue unavailable — synthesising reject for %s", tostring(tab_name))
+      return {
+        content = {
+          { type = "text", text = "DIFF_REJECTED" },
+          { type = "text", text = tostring(tab_name) },
+        },
+      }
     end
 
     review_queue.enqueue({
-      source = "claudecode",
-      file = file,
-      proposed_content = proposed,
-      on_resolved = function(decision)
-        if not deferred_response then
-          return
-        end
-        if decision.status == "accepted" then
-          deferred_response({
+      request_id = request_id,
+      path = new_file_path,
+      content = new_file_contents,
+      agent = "claude",
+      mode = "pre_write",
+      on_complete = function(envelope)
+        local result
+        if envelope and envelope.decision == "accept" then
+          result = {
             content = {
               { type = "text", text = "FILE_SAVED" },
-              { type = "text", text = decision.content or proposed },
+              { type = "text", text = envelope.content or new_file_contents },
             },
-          })
+          }
         else
-          deferred_response({
+          result = {
             content = {
               { type = "text", text = "DIFF_REJECTED" },
-              { type = "text", text = decision.reason or "" },
+              { type = "text", text = tostring(tab_name) },
             },
-          })
+          }
         end
+
+        -- Always vim.schedule the resume — on_complete may fire from libuv
+        -- fast-context (fs_watcher), main loop (UI keymaps), or inline
+        -- (bypass auto-accept). Scheduling normalises all three to the
+        -- main loop, where coroutine.resume + claudecode's deferred
+        -- response system are safe to call.
+        vim.schedule(function()
+          local resume_ok, resume_err = coroutine.resume(co, result)
+          if not resume_ok then
+            log.warn("peers.claudecode", "coroutine.resume failed for %s: %s", tostring(tab_name), tostring(resume_err))
+          end
+          local co_key = tostring(co)
+          if _G.claude_deferred_responses and _G.claude_deferred_responses[co_key] then
+            pcall(_G.claude_deferred_responses[co_key], result)
+            _G.claude_deferred_responses[co_key] = nil
+          end
+        end)
       end,
     })
+
+    return coroutine.yield()
   end
 
   override_installed = true
-  log.debug("peers.claudecode", "installed openDiff override")
+  log.debug("peers.claudecode", "installed open_diff_blocking override")
 end
 
 --- Return true when claudecode.nvim is installed.
@@ -149,7 +168,7 @@ function M.open(termname, agent_config, _cwd)
   end
 
   if agent_config and agent_config.peer and agent_config.peer.override_diff then
-    vim.schedule(ensure_diff_override)
+    vim.schedule(install_diff_override)
   end
 
   return {
@@ -162,21 +181,39 @@ end
 
 ---@param _td table
 ---@param text string
----@param _opts? table
-function M.send(_td, text, _opts)
-  local ok, claudecode = try_require_claudecode()
+---@param opts? {submit?: boolean}
+function M.send(_td, text, opts)
+  local ok = try_require_claudecode()
   if not ok then
     return
   end
-  if type(claudecode.send_at_mention) == "function" then
-    pcall(claudecode.send_at_mention, text)
+  opts = opts or {}
+
+  local term_ok, terminal = pcall(require, "claudecode.terminal")
+  if not term_ok then
+    log.warn("peers.claudecode", "claudecode.terminal not available — cannot send text")
     return
   end
-  if type(claudecode.send) == "function" then
-    pcall(claudecode.send, text)
+
+  -- Make sure the terminal exists and is visible, otherwise there's no chan to send to.
+  if type(terminal.ensure_visible) == "function" then
+    pcall(terminal.ensure_visible)
+  end
+
+  local bufnr = type(terminal.get_active_terminal_bufnr) == "function" and terminal.get_active_terminal_bufnr() or nil
+  if not bufnr or not vim.api.nvim_buf_is_valid(bufnr) then
+    log.warn("peers.claudecode", "no active claude terminal buffer to send to")
     return
   end
-  pcall(vim.cmd, string.format("ClaudeCodeSend %s", vim.fn.escape(text or "", "\\\n\r")))
+
+  local chan = vim.b[bufnr].terminal_job_id
+  if not chan then
+    log.warn("peers.claudecode", "claude terminal has no job_id (chansend impossible)")
+    return
+  end
+
+  local full_text = opts.submit and (text .. "\n") or text
+  pcall(vim.fn.chansend, chan, full_text)
 end
 
 ---@param _td table
@@ -199,47 +236,47 @@ end
 ---@param _td table
 ---@return boolean
 function M.is_visible(_td)
-  local ok, claudecode = try_require_claudecode()
+  local ok = try_require_claudecode()
   if not ok then
     return false
   end
-  if type(claudecode.is_visible) == "function" then
-    local ok_call, visible = pcall(claudecode.is_visible)
-    if ok_call then
-      return visible == true
-    end
+  local term_ok, terminal = pcall(require, "claudecode.terminal")
+  if not term_ok or type(terminal.get_active_terminal_bufnr) ~= "function" then
+    return false
   end
-  return true
+  local bufnr = terminal.get_active_terminal_bufnr()
+  if not bufnr or not vim.api.nvim_buf_is_valid(bufnr) then
+    return false
+  end
+  local info = vim.fn.getbufinfo(bufnr)
+  return info and info[1] and info[1].windows and #info[1].windows > 0 or false
 end
 
 ---@param _td table
 ---@return boolean
 function M.focus(_td)
-  local ok, claudecode = try_require_claudecode()
+  local ok = try_require_claudecode()
   if not ok then
     return false
   end
-  if type(claudecode.focus) == "function" then
-    pcall(claudecode.focus)
-  else
-    pcall(vim.cmd, "ClaudeCodeFocus")
+  local term_ok, terminal = pcall(require, "claudecode.terminal")
+  if term_ok and type(terminal.open) == "function" then
+    pcall(terminal.open)
+    return true
   end
+  pcall(vim.cmd, "ClaudeCodeFocus")
   return true
 end
 
 ---@param _td table
 function M.hide(_td)
-  local ok, claudecode = try_require_claudecode()
+  local ok = try_require_claudecode()
   if not ok then
     return
   end
-  if type(claudecode.hide) == "function" then
-    pcall(claudecode.hide)
-    return
-  end
-  if type(claudecode.toggle) == "function" then
-    pcall(claudecode.toggle)
-    return
+  local term_ok, terminal = pcall(require, "claudecode.terminal")
+  if term_ok and type(terminal.close) == "function" then
+    pcall(terminal.close)
   end
 end
 

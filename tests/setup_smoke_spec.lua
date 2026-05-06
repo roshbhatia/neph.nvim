@@ -42,7 +42,7 @@ describe("setup smoke tests", function()
 
   it("setup with real agent submodules works", function()
     -- Use a few real agent submodules
-    local claude = require("neph.agents.claude")
+    local claude = require("neph.agents.claude-peer")
     local goose = require("neph.agents.goose")
 
     assert.has_no.errors(function()

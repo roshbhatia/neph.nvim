@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### Fixes
+
+- **claude peer diff override now actually works.** The previous implementation looked for `claudecode.tools.handlers` (which doesn't exist) and used the wrong `enqueue` shape — claude's MCP `openDiff` calls fell through to claudecode's native vimdiff every time. Rewritten to hook `claudecode.diff.open_diff_blocking` with a coroutine-aware override that routes diffs through neph's review queue using the canonical `{request_id, path, content, agent, mode, on_complete}` contract.
+- **opencode peer pre-write review interception is wired up.** Previously the `opencode_sse` integration_group existed but no agent reference set it, so the SSE subscription never started. Replaced with a `User OpencodeEvent:permission.asked` autocmd listener inside `lua/neph/peers/opencode.lua` — uses opencode.nvim's existing SSE subscription instead of a parallel one, dispatches edits through neph's review queue, and posts the decision via opencode.nvim's `Server:permit(id, "once"|"reject")` API. Patch-failure auto-allows with a visible WARN notification rather than failing silently.
+
+### Removed
+
+- **`integration_groups.opencode_sse` config entry.** The group was non-functional (no agent ever activated it) and is replaced by the autocmd-based interception in the opencode peer adapter. Anyone who set this in their config will see no behavior change — the interception path it was supposed to enable is now driven directly by `peer.intercept_permissions` on the opencode-peer agent.
+- **`lua/neph/internal/opencode_sse.lua` and `lua/neph/reviewers/opencode_permission.lua`.** Replaced by the leaner User-autocmd listener in `lua/neph/peers/opencode.lua`. The new path uses opencode.nvim's `Server:permit` API instead of curl-shelling and reads the correct `event.properties.metadata.filepath` field name (the deleted module was reading `metadata.path`, which is wrong).
+- **`lua/neph/agents/claude.lua` and `lua/neph/agents/opencode.lua`.** Stale terminal/hook variants that were superseded when `claude` and `opencode` were consolidated to peer agents in an earlier commit. The peer files now ARE the canonical agents.
+
 ## [1.1.0](https://github.com/roshbhatia/neph.nvim/compare/v1.0.0...v1.1.0) (2026-04-08)
 
 

@@ -75,32 +75,14 @@ Each peer adapter SHALL expose: `open(agent, opts)`, `send(agent, text, opts)`, 
 
 ### Requirement: claudecode adapter overrides openDiff to neph review queue
 
-When a `claudecode` peer agent has `peer.override_diff = true`, the adapter SHALL replace `claudecode.tools.handlers.openDiff` (after `claudecode.setup()` runs) with a handler that enqueues a review through `neph.internal.review_queue` and resolves the deferred MCP response based on the user's accept/reject decision.
+When a `claudecode` peer agent has `peer.override_diff = true`, the adapter SHALL replace `claudecode.diff.open_diff_blocking` with a coroutine-aware handler that enqueues a review through `neph.internal.review_queue` using the canonical request shape `{request_id, path, content, agent, mode = "pre_write", on_complete}`. On review completion, the override SHALL resume the MCP coroutine with an MCP-shaped response and pump `_G.claude_deferred_responses[tostring(co)]` for parity with claudecode's deferred-response system.
 
-#### Scenario: openDiff routes to review queue
-
-- **WHEN** Claude Code calls the `openDiff` MCP tool over the websocket
-- **AND** the active claudecode peer agent has `peer.override_diff = true`
-- **THEN** the override handler SHALL extract `oldFile`, `newFile`, `proposed`, `description`
-- **AND** SHALL call `review_queue.enqueue({ source = "claudecode", file = newFile, ... })`
-- **AND** SHALL defer the MCP response until the review resolves
-
-#### Scenario: User accepts in neph review UI
-
-- **WHEN** a deferred openDiff is pending
-- **AND** the user accepts via `ga` / `gA` / `gs` in neph's review UI
-- **THEN** the adapter SHALL resolve the MCP response with `{ accepted = true, content = <accepted-content> }`
-
-#### Scenario: User rejects in neph review UI
-
-- **WHEN** a deferred openDiff is pending
-- **AND** the user rejects via `gr` / `gR`
-- **THEN** the adapter SHALL resolve the MCP response with `{ accepted = false }`
+(Detailed scenarios for this behavior are owned by the `peer-diff-integration` change; this requirement establishes the contract that `frictionless-by-default` introduces and `peer-diff-integration` corrects to actually work.)
 
 #### Scenario: Override disabled
 
 - **WHEN** a claudecode peer agent has `peer.override_diff = false`
-- **THEN** the adapter SHALL NOT replace `openDiff`
+- **THEN** the adapter SHALL NOT replace `open_diff_blocking`
 - **AND** claudecode.nvim's native vimdiff handler SHALL fire as usual
 
 ### Requirement: opencode adapter delegates prompts and lifecycle

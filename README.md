@@ -25,8 +25,8 @@ return {
     dependencies = {
       "folke/snacks.nvim",
       -- Optional peer plugins. Install whichever agents you actually use:
-      -- { "coder/claudecode.nvim",   lazy = true }, -- enables `claude-peer` agent
-      -- { "nickjvandyke/opencode.nvim", lazy = true }, -- enables `opencode-peer` agent
+      -- { "coder/claudecode.nvim",   lazy = true }, -- powers the `claude` agent
+      -- { "nickjvandyke/opencode.nvim", lazy = true }, -- powers the `opencode` agent
     },
     opts = function()
       return {
@@ -94,16 +94,14 @@ neph gate status    # print current state
 
 ### Peer adapters (claudecode.nvim / opencode.nvim)
 
-Some agents have excellent companion plugins that already speak their native protocol (WebSocket/MCP for Claude Code, HTTP/SSE for OpenCode). neph can delegate session lifecycle to those plugins while keeping its review queue, gate, history, and multi-agent UX layered on top.
+`claude` and `opencode` are peer agents — neph delegates session lifecycle to their companion plugins (`coder/claudecode.nvim`, `nickjvandyke/opencode.nvim`) and layers its review queue, gate, history, and multi-agent UX on top.
 
-| Agent           | Type       | Backing plugin                              | What you get                                                                        |
-|-----------------|------------|---------------------------------------------|-------------------------------------------------------------------------------------|
-| `claude`        | hook       | (none — neph terminal + cupcake hooks)      | Existing behavior. Stable.                                                          |
-| `claude-peer`   | peer       | `coder/claudecode.nvim`                     | Real-time selection broadcast, lockfile discovery, MCP `openDiff` routed to neph review queue. |
-| `opencode`      | hook       | (none — neph terminal + opencode SSE)       | Existing behavior. Stable.                                                          |
-| `opencode-peer` | peer       | `nickjvandyke/opencode.nvim`                | Native HTTP/SSE handling, opencode's prompt/context system as the input layer.       |
+| Agent      | Backing plugin                | Pre-write diff routing                                                                                                          |
+|------------|-------------------------------|---------------------------------------------------------------------------------------------------------------------------------|
+| `claude`   | `coder/claudecode.nvim`       | MCP `openDiff` calls hit `claudecode.diff.open_diff_blocking`, which neph wraps to enqueue into its review queue. Coroutine-aware: gate=bypass auto-accepts in the same tick; gate=normal opens neph's review UI in a dedicated tab. |
+| `opencode` | `nickjvandyke/opencode.nvim`  | Listens to opencode.nvim's `User OpencodeEvent:permission.asked` autocmd, applies the unified diff, hands off to neph's review queue, and posts the decision back via opencode.nvim's `Server:permit(id, "once"\|"reject")` API. opencode.nvim's native diff tab is auto-suppressed. |
 
-Install the peer plugin you want and `claude-peer` / `opencode-peer` light up automatically. If the peer plugin is missing you'll see a one-shot notification when you pick the agent — the rest of neph keeps working.
+Install the peer plugin and the agent lights up automatically. If the peer plugin is missing you'll see a one-shot notification when you pick the agent — the rest of neph keeps working.
 
 ### Auto-context broadcast
 

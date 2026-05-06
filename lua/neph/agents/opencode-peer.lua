@@ -13,5 +13,9 @@ return {
   type = "peer",
   peer = {
     kind = "opencode",
+    -- Listen to opencode.nvim's User OpencodeEvent:permission.asked autocmd
+    -- and route file-edit permissions through neph's review queue. The peer
+    -- adapter also suppresses opencode.nvim's native diff tab.
+    intercept_permissions = true,
   },
 }
