@@ -213,16 +213,18 @@ function M.is_visible(_td)
 end
 
 ---@param _td table
+---@return boolean
 function M.focus(_td)
   local ok, claudecode = try_require_claudecode()
   if not ok then
-    return
+    return false
   end
   if type(claudecode.focus) == "function" then
     pcall(claudecode.focus)
-    return
+  else
+    pcall(vim.cmd, "ClaudeCodeFocus")
   end
-  pcall(vim.cmd, "ClaudeCodeFocus")
+  return true
 end
 
 ---@param _td table

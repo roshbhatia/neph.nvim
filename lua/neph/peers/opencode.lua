@@ -105,14 +105,16 @@ function M.is_visible(_td)
 end
 
 ---@param _td table
+---@return boolean
 function M.focus(_td)
   local ok, opencode = try_require_opencode()
   if not ok then
-    return
+    return false
   end
   if type(opencode.focus) == "function" then
     pcall(opencode.focus)
   end
+  return true
 end
 
 ---@param _td table

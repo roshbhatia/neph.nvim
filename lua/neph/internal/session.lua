@@ -288,6 +288,26 @@ function M.open(termname)
     vim.notify("Neph: not initialized (call setup first)", vim.log.levels.ERROR)
     return
   end
+  -- For claude/opencode: redirect to the peer agent when the companion plugin
+  -- is installed, so users never need to explicitly pick the "-peer" variant.
+  local _peer_redirect = { claude = "claude-peer", opencode = "opencode-peer" }
+  local redirect_to = _peer_redirect[termname]
+  if redirect_to then
+    local peer_def = require("neph.internal.agents").get_registered_by_name(redirect_to)
+    if peer_def and peer_def.peer and peer_def.peer.kind then
+      local ok_p, peers_mod = pcall(require, "neph.peers")
+      if ok_p then
+        local adapter = peers_mod.resolve(peer_def.peer.kind)
+        if adapter and type(adapter.is_available) == "function" then
+          local avail = adapter.is_available()
+          if avail then
+            termname = redirect_to
+          end
+        end
+      end
+    end
+  end
+
   local agent = require("neph.internal.agents").get_by_name(termname)
   if not agent then
     vim.notify("Neph: unknown agent – " .. termname, vim.log.levels.ERROR)
@@ -450,7 +470,7 @@ function M.focus(termname)
     M.open(termname)
     return
   end
-  if not backend_for(td).focus(td) then
+  if backend_for(td).focus(td) == false then
     M.open(termname)
     return
   end
