@@ -32,10 +32,6 @@ local active_review = nil
 -- Wire the queue to call our internal open function.
 -- Skip agent-triggered reviews whose agent has no enabled review provider (noop).
 -- Manual reviews (mode == "manual") always open regardless of agent/provider.
---
--- Diff reviews (file edits) always go through the full-screen vimdiff tab.
--- The floating popup is reserved for tool-approval / questionnaire flows
--- exposed via `lua/neph/api/approval.lua` (vim.ui.select-based).
 review_queue.set_open_fn(function(params)
   local is_manual = params.mode == "manual"
   if not is_manual and not review_provider.is_enabled_for(params.agent) then

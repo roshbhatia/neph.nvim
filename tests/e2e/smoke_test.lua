@@ -30,7 +30,7 @@ return function(t)
         send = function() end,
       }
       require("neph").setup({
-        agents = { require("neph.agents.claude-peer") },
+        agents = { require("neph.agents.claude") },
         backend = stub_backend,
       })
     end)

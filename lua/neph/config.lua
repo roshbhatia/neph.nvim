@@ -103,7 +103,6 @@ local M = {}
 ---@field fs_watcher?     neph.FsWatcherConfig  Filesystem watcher for post-write review
 ---@field queue?          neph.ReviewQueueConfig  Sequential review queue
 ---@field pending_notify? boolean               Show notification when review is pending (default: true)
----@field style?          string                Review UI style: "tab" (default for non-peer agents) or "popup" (default for peer agents). Per-agent `review_style` overrides this.
 
 ---@class neph.FsWatcherConfig
 ---@field enable?      boolean    Enable filesystem watcher (default: true)
@@ -167,7 +166,6 @@ M.defaults = {
     pending_notify = true,
     -- nil means "fall back to per-agent default": peer agents → "popup",
     -- everyone else → "tab". Set explicitly to "tab" or "popup" to override.
-    style = nil,
   },
   review_provider = nil,
   integration_groups = {

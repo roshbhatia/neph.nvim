@@ -58,23 +58,12 @@ local ready_queue = {}
 -- Private helpers
 -- ---------------------------------------------------------------------------
 
---- Resolve the dispatch target for a session: either the configured backend
---- or a peer adapter (when td.peer is set, e.g. "claudecode" or "opencode").
---- Falls back to the configured backend when peer resolution fails so the
---- caller never has to nil-check.
----@param td? neph.TermData|table
+--- Return the configured backend. Kept as a function so callers don't need
+--- to plumb the upvalue, and so a future per-agent override can slot in
+--- without rewriting every call site.
+---@param _td? neph.TermData|table
 ---@return table
-local function backend_for(td)
-  if td and td.peer then
-    local ok, peers = pcall(require, "neph.peers")
-    if ok then
-      local adapter = peers.resolve(td.peer)
-      if adapter then
-        return adapter
-      end
-    end
-    log.debug("session", "backend_for: peer %q unavailable, falling back to global backend", tostring(td.peer))
-  end
+local function backend_for(_td)
   return backend
 end
 
@@ -144,8 +133,6 @@ local function build_agent_config(agent)
     full_cmd = full_cmd,
     env = agent.env or {},
     ready_pattern = agent.ready_pattern,
-    -- Forwarded so peer adapters can read e.g. peer.override_diff
-    peer = agent.peer,
   }
 end
 
@@ -337,39 +324,7 @@ function M.open(termname)
 
   log.debug("session", "open: %s (cmd=%s)", termname, agent_config.cmd)
 
-  -- Peer agents bypass the configured backend and dispatch through a peer
-  -- adapter (claudecode.nvim, opencode.nvim, ...). The adapter still returns
-  -- a backend-shaped term_data, so the rest of session.open() proceeds
-  -- unchanged. When the peer plugin is missing, is_available() returns
-  -- false; we surface a one-time notification rather than crashing so other
-  -- agents keep working.
-  local td
-  if agent.type == "peer" and agent.peer and agent.peer.kind then
-    local peers = require("neph.peers")
-    local adapter = peers.resolve(agent.peer.kind)
-    if not adapter then
-      vim.notify(
-        string.format("Neph: peer adapter %q not found for agent %q", agent.peer.kind, termname),
-        vim.log.levels.WARN
-      )
-      terminals[termname] = nil
-      return
-    end
-    if type(adapter.is_available) == "function" then
-      local ok, reason = adapter.is_available()
-      if not ok then
-        vim.notify(
-          string.format("Neph: cannot open %q — %s", termname, reason or "peer adapter unavailable"),
-          vim.log.levels.WARN
-        )
-        terminals[termname] = nil
-        return
-      end
-    end
-    td = adapter.open(termname, agent_config, cwd)
-  else
-    td = backend.open(termname, agent_config, cwd)
-  end
+  local td = backend.open(termname, agent_config, cwd)
   if td then
     terminals[termname] = td
     active_terminal = termname

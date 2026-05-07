@@ -23,10 +23,9 @@ local AGENT_OPTIONAL_FIELDS = {
   ready_pattern = "string",
   integration_group = "string",
   integration_overrides = "table",
-  peer = "table",
 }
 
-local VALID_AGENT_TYPES = { hook = true, terminal = true, extension = true, peer = true }
+local VALID_AGENT_TYPES = { hook = true, terminal = true, extension = true }
 
 ---@type table<string, string>
 local REMOVED_FIELDS = {
@@ -77,51 +76,11 @@ function M.validate_agent(def)
   if def.type ~= nil and not VALID_AGENT_TYPES[def.type] then
     error(
       string.format(
-        "neph: agent '%s' field 'type' must be one of: hook, terminal, extension, peer (got '%s')",
+        "neph: agent '%s' field 'type' must be one of: hook, terminal, extension (got '%s')",
         name,
         def.type
       )
     )
-  end
-
-  -- Peer agents must declare peer.kind so the registry can resolve an adapter.
-  if def.type == "peer" then
-    if type(def.peer) ~= "table" then
-      error(string.format("neph: agent '%s' has type='peer' but peer table is missing", name))
-    end
-    if type(def.peer.kind) ~= "string" or def.peer.kind == "" then
-      error(string.format("neph: agent '%s' has type='peer' but peer.kind is required", name))
-    end
-    if def.peer.override_diff ~= nil and type(def.peer.override_diff) ~= "boolean" then
-      error(
-        string.format(
-          "neph: agent '%s' field 'peer.override_diff' must be boolean, got %s",
-          name,
-          type(def.peer.override_diff)
-        )
-      )
-    end
-    if def.peer.intercept_permissions ~= nil and type(def.peer.intercept_permissions) ~= "boolean" then
-      error(
-        string.format(
-          "neph: agent '%s' field 'peer.intercept_permissions' must be boolean, got %s",
-          name,
-          type(def.peer.intercept_permissions)
-        )
-      )
-    end
-  end
-
-  if def.review_style ~= nil then
-    if def.review_style ~= "tab" and def.review_style ~= "popup" then
-      error(
-        string.format(
-          "neph: agent '%s' field 'review_style' must be 'tab' or 'popup', got '%s'",
-          name,
-          tostring(def.review_style)
-        )
-      )
-    end
   end
 
   if def.tools ~= nil then

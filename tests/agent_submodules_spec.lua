@@ -1,17 +1,16 @@
 local contracts = require("neph.internal.contracts")
 
 describe("neph.agents submodules", function()
-  -- Submodule file names (canonical claude/opencode are the peer files).
   local agent_names = {
     "amp",
-    "claude-peer",
+    "claude",
     "codex",
     "copilot",
     "crush",
     "cursor",
     "gemini",
     "goose",
-    "opencode-peer",
+    "opencode",
     "pi",
   }
 
@@ -24,8 +23,7 @@ describe("neph.agents submodules", function()
     end)
   end
 
-  -- Hook agents: intercept via cupcake harness or runtime-injected hooks
-  local hook_agents = { "copilot", "cursor", "gemini", "pi" }
+  local hook_agents = { "claude", "copilot", "cursor", "gemini", "opencode", "pi" }
   for _, name in ipairs(hook_agents) do
     it(name .. " has type = hook", function()
       local def = require("neph.agents." .. name)
@@ -33,7 +31,6 @@ describe("neph.agents submodules", function()
     end)
   end
 
-  -- Terminal agents: fs_watcher-based interception (no Cupcake hook)
   local terminal_agents = { "amp", "codex", "crush", "goose" }
   for _, name in ipairs(terminal_agents) do
     it(name .. " has type = terminal", function()
@@ -42,18 +39,6 @@ describe("neph.agents submodules", function()
     end)
   end
 
-  -- Peer agents: delegate session lifecycle to a peer plugin
-  local peer_agents = { "claude-peer", "opencode-peer" }
-  for _, name in ipairs(peer_agents) do
-    it(name .. " has type = peer", function()
-      local def = require("neph.agents." .. name)
-      assert.are.equal("peer", def.type)
-      assert.is_table(def.peer)
-      assert.is_string(def.peer.kind)
-    end)
-  end
-
-  -- Agents with tools manifests
   local agents_with_tools = { "amp" }
   for _, name in ipairs(agents_with_tools) do
     it(name .. " has a valid tools manifest", function()
@@ -65,16 +50,15 @@ describe("neph.agents submodules", function()
     end)
   end
 
-  -- Agents without tools (hooks managed via neph CLI or Cupcake native; peer agents own no tools)
   local agents_without_tools = {
-    "claude-peer",
+    "claude",
     "codex",
     "copilot",
     "crush",
     "cursor",
     "gemini",
     "goose",
-    "opencode-peer",
+    "opencode",
     "pi",
   }
   for _, name in ipairs(agents_without_tools) do
@@ -84,7 +68,6 @@ describe("neph.agents submodules", function()
     end)
   end
 
-  -- No agent should have removed fields
   for _, name in ipairs(agent_names) do
     it(name .. " has no send_adapter or integration field", function()
       local def = require("neph.agents." .. name)
@@ -93,31 +76,14 @@ describe("neph.agents submodules", function()
     end)
   end
 
-  -- Claude (peer): override_diff flag drives diff interception
-  describe("claude-peer integration config", function()
-    it("requests pre-write diff override", function()
-      local def = require("neph.agents.claude-peer")
-      assert.is_true(def.peer.override_diff == true)
-    end)
-    it("does not declare review_style (defaults to vimdiff tab)", function()
-      local def = require("neph.agents.claude-peer")
-      assert.is_nil(def.review_style)
+  describe("claude integration config", function()
+    it("uses the harness integration group", function()
+      local def = require("neph.agents.claude")
+      assert.are.equal("harness", def.integration_group)
+      assert.is_function(def.launch_args_fn)
     end)
   end)
 
-  -- OpenCode (peer): intercept_permissions flag drives permission interception
-  describe("opencode-peer integration config", function()
-    it("requests permission interception", function()
-      local def = require("neph.agents.opencode-peer")
-      assert.is_true(def.peer.intercept_permissions == true)
-    end)
-    it("does not declare review_style (defaults to vimdiff tab)", function()
-      local def = require("neph.agents.opencode-peer")
-      assert.is_nil(def.review_style)
-    end)
-  end)
-
-  -- Gemini: integration group assignment
   describe("gemini integration config", function()
     it("uses the hook integration group", function()
       local def = require("neph.agents.gemini")
@@ -126,7 +92,6 @@ describe("neph.agents submodules", function()
     end)
   end)
 
-  -- Amp: integration group assignment
   describe("amp integration config", function()
     it("uses the hook integration group", function()
       local def = require("neph.agents.amp")
@@ -134,8 +99,7 @@ describe("neph.agents submodules", function()
     end)
   end)
 
-  -- Agents with ready_pattern (peer agents have no terminal of their own to match against)
-  local agents_with_ready_pattern = { "codex", "crush", "goose" }
+  local agents_with_ready_pattern = { "claude", "codex", "crush", "goose" }
   for _, name in ipairs(agents_with_ready_pattern) do
     it(name .. " has a valid ready_pattern", function()
       local def = require("neph.agents." .. name)
