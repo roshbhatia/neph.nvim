@@ -76,10 +76,13 @@ function M.get_git_root()
     return git_root_cache[cwd] or nil
   end
 
-  -- Cache miss – run synchronously so the caller gets an immediate result.
-  -- This path is rarely hit in practice because BufEnter pre-warms the cache.
-  local obj = vim.system({ "git", "rev-parse", "--show-toplevel" }, { cwd = cwd, text = true }):wait()
-  if obj.code ~= 0 then
+  -- Cache miss – run synchronously so the caller gets an immediate result,
+  -- but with a hard 1500ms timeout. On weird filesystems (e.g. FUSE-style
+  -- session-manager state dirs that walk the whole path looking for .git)
+  -- this can otherwise hang the entire nvim event loop. On timeout we cache
+  -- `false` so subsequent calls don't re-try the slow path.
+  local obj = vim.system({ "git", "rev-parse", "--show-toplevel" }, { cwd = cwd, text = true }):wait(1500)
+  if not obj or obj.code == nil or obj.code ~= 0 then
     git_root_cache[cwd] = false
     return nil
   end

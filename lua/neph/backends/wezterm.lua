@@ -215,14 +215,27 @@ function M.open(termname, agent_config, cwd)
     vim.fn.shellescape(full_cmd)
   )
 
-  local result = vim.fn.system(spawn_cmd)
-  if vim.v.shell_error ~= 0 then
+  -- Use vim.system with a hard 3s timeout so a hung `wezterm cli` (e.g. on a
+  -- weird filesystem cwd) cannot freeze the whole nvim event loop.
+  -- vim.fn.system is synchronous *without* timeout — replacing it with
+  -- vim.system + :wait(3000) preserves the synchronous interface session.lua
+  -- expects but adds a deadline.
+  local sys_obj = vim.system({ "sh", "-c", spawn_cmd }, { text = true }):wait(3000)
+  if not sys_obj or sys_obj.code == nil then
     vim.notify(
-      "Neph/wezterm: spawn failed (exit " .. vim.v.shell_error .. ") – check :messages or run wezterm CLI manually",
+      "Neph/wezterm: spawn timed out after 3s — check 'wezterm cli list' or restart wezterm",
       vim.log.levels.ERROR
     )
     return nil
   end
+  if sys_obj.code ~= 0 then
+    vim.notify(
+      "Neph/wezterm: spawn failed (exit " .. sys_obj.code .. ") – check :messages or run wezterm CLI manually",
+      vim.log.levels.ERROR
+    )
+    return nil
+  end
+  local result = sys_obj.stdout or ""
 
   local pane_id = tonumber(vim.trim(result))
   if not pane_id then

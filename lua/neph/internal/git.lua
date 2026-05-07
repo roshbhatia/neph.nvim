@@ -4,10 +4,15 @@
 --- All functions are synchronous (vim.system + :wait()) and pure: they
 --- perform no side effects beyond running git processes.
 ---
---- Ported verbatim from sysinit/utils/diff_review/git.lua.
+--- Sync calls use a 5s hard timeout to prevent freezes on weird filesystems
+--- (e.g. session-manager state dirs that walk a long path looking for .git).
+---
+--- Ported from sysinit/utils/diff_review/git.lua.
 ---@brief ]]
 
 local M = {}
+
+local SYNC_TIMEOUT_MS = 5000
 
 local DEFAULT_MERGE_BASE_TARGETS = {
   "origin/HEAD",
@@ -24,7 +29,10 @@ function M.in_git_repo(cwd)
       cwd = cwd,
       text = true,
     })
-    :wait()
+    :wait(SYNC_TIMEOUT_MS)
+  if not result or result.code == nil then
+    return false
+  end
   return result.code == 0 and vim.trim(result.stdout or "") == "true"
 end
 
@@ -41,8 +49,11 @@ function M.git_lines(args, opts)
       cwd = opts.cwd,
       text = true,
     })
-    :wait()
+    :wait(SYNC_TIMEOUT_MS)
 
+  if not result or result.code == nil then
+    return nil, string.format("git %s timed out after %dms", table.concat(args, " "), SYNC_TIMEOUT_MS)
+  end
   if result.code ~= 0 then
     local stderr = vim.trim(result.stderr or "")
     if stderr == "" then
@@ -74,9 +85,11 @@ function M.merge_base(opts)
         cwd = opts.cwd,
         text = true,
       })
-      :wait()
+      :wait(SYNC_TIMEOUT_MS)
 
-    if result.code == 0 then
+    if not result or result.code == nil then
+      last_err = string.format("git merge-base %s timed out after %dms", target, SYNC_TIMEOUT_MS)
+    elseif result.code == 0 then
       local base = vim.trim(result.stdout or "")
       if base ~= "" then
         return base, nil

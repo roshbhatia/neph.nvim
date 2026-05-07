@@ -29,35 +29,13 @@ local review_provider = require("neph.internal.review_provider")
 ---@type neph.ReviewActive|nil
 local active_review = nil
 
---- Resolve the review UI style for a given agent.
----   1. AgentDef.review_style (per-agent override)
----   2. config.review.style    (global)
----   3. fall-back: "popup" for peer agents, "tab" for everyone else
----@param agent_name string|nil
----@return "tab"|"popup"
-local function resolve_review_style(agent_name)
-  if agent_name then
-    local ok, agents = pcall(require, "neph.internal.agents")
-    if ok then
-      local def = agents.get_by_name(agent_name) or agents.get_registered_by_name(agent_name)
-      if def and (def.review_style == "tab" or def.review_style == "popup") then
-        return def.review_style
-      end
-      local cfg = require("neph.config").current
-      if cfg.review and (cfg.review.style == "tab" or cfg.review.style == "popup") then
-        return cfg.review.style
-      end
-      if def and def.type == "peer" then
-        return "popup"
-      end
-    end
-  end
-  return "tab"
-end
-
 -- Wire the queue to call our internal open function.
 -- Skip agent-triggered reviews whose agent has no enabled review provider (noop).
 -- Manual reviews (mode == "manual") always open regardless of agent/provider.
+--
+-- Diff reviews (file edits) always go through the full-screen vimdiff tab.
+-- The floating popup is reserved for tool-approval / questionnaire flows
+-- exposed via `lua/neph/api/approval.lua` (vim.ui.select-based).
 review_queue.set_open_fn(function(params)
   local is_manual = params.mode == "manual"
   if not is_manual and not review_provider.is_enabled_for(params.agent) then
@@ -72,17 +50,6 @@ review_queue.set_open_fn(function(params)
     end
     review_queue.on_complete(params.request_id)
     return
-  end
-
-  -- Manual reviews always use the tab UI (granular hunk control is the point).
-  -- Agent-triggered reviews dispatch on resolved review_style.
-  if not is_manual and resolve_review_style(params.agent) == "popup" then
-    local ok, popup = pcall(require, "neph.api.review.popup")
-    if ok then
-      popup.open(params)
-      return
-    end
-    -- Fall through to tab UI if popup module fails to load.
   end
   M._open_immediate(params)
 end)
