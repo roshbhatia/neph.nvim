@@ -2,7 +2,7 @@
 return {
   name = "opencode",
   label = "OpenCode",
-  icon = "",
+  icon = "",
   cmd = "opencode",
   type = "hook",
   -- "hook" integration_group: review_provider=vimdiff. Without the SSE
