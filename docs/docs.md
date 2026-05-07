@@ -1,15 +1,15 @@
 # Project Documentation
 
 ## Overview
-Neph.nvim is a Neovim plugin for interactive code review using LLMs. It acts as an integration layer, providing terminal management, status bridging, and interactive diff reviews. It ensures agents do not interact with Neovim directly by using an intermediate policy and routing layer.
+Neph.nvim is a Neovim plugin for interactive code review using LLMs. It acts as an integration layer, providing terminal management, status bridging, and interactive diff reviews. It ensures agents do not interact with Neovim directly by using an intermediate policy and routing layer (Cupcake).
 
 ## Architecture
 
-The system enforces a strict boundary where agents interact with the Cupcake policy layer, which invokes a CLI bridge to signal Neovim.
+The system enforces a strict boundary where agents interact with the Cupcake policy layer, which invokes a CLI bridge (`neph-cli`) to signal Neovim.
 
 ```mermaid
 graph TD
-    A[Agents: Claude, Gemini, Pi, OpenCode] -->|Hook/Plugin| B(Cupcake: Policy + Routing)
+    A[Agents: Amp, Claude, Codex, Copilot, Cursor, Gemini, OpenCode, Pi] -->|Hook/Plugin| B(Cupcake: Policy + Routing)
     B -->|neph_review signal| C(neph-cli: Editor Abstraction)
     C -->|Msgpack RPC| D[Neovim: neph.nvim vimdiff]
     D -->|RPC Response| C
@@ -55,4 +55,5 @@ The project uses a custom RPC protocol (`neph-rpc/v1`) between the `neph-cli` an
 | `bus.register` | Registers an extension agent's RPC channel (Internal). |
 
 ## Changelog
+* [2026-05-07 16:48:51]: Updated documentation to include `amp`, `codex`, `copilot`, `cursor`, `opencode`, and `pi` as supported agents due to the recent tools overhaul.
 * [2026-04-07 16:07:50]: Initial documentation created aggregating Architecture, Flows, and RPC API.
