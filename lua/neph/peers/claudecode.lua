@@ -32,7 +32,75 @@ local override_installed = false
 ---@type string|nil
 local pane_id = nil
 
+--- Set briefly between wezterm_pane_cmd returning argv and the deferred
+--- pane_id capture firing (~200 ms). M.send / M.focus / etc. consult this
+--- so they can vim.wait for pane_id rather than fall through to chansend
+--- (which fails silently for external-provider claude).
+---@type boolean
+local pane_pending = false
+
 local PANE_AUGROUP = "NephClaudecodeWezterm"
+
+--- Block briefly until pane_id is captured, returning true if it's now
+--- usable. Used by M.send / M.focus / M.is_visible to dodge the race
+--- between spawn and capture. Hard timeout — never freezes longer than
+--- *timeout_ms* (default 800ms).
+---@param timeout_ms? integer
+---@return boolean ready
+local function wait_for_pane(timeout_ms)
+  if pane_id and pane_id ~= "" then
+    return true
+  end
+  if not pane_pending then
+    return false
+  end
+  vim.wait(timeout_ms or 800, function()
+    return pane_id and pane_id ~= ""
+  end, 25)
+  return pane_id and pane_id ~= "" or false
+end
+
+--- Probe wezterm to verify the tracked pane is still alive. Returns true
+--- when the pane exists in `wezterm cli list`. Hard 500 ms timeout so a
+--- hung wezterm daemon cannot freeze the event loop.
+---@return boolean
+local function pane_is_alive()
+  if not pane_id or pane_id == "" then
+    return false
+  end
+  local obj = vim.system({ "wezterm", "cli", "list", "--format", "json" }, { text = true }):wait(500)
+  if not obj or obj.code == nil or obj.code ~= 0 then
+    -- Couldn't verify — assume alive to avoid spuriously dropping a working pane.
+    return true
+  end
+  local ok, panes = pcall(vim.json.decode, obj.stdout or "[]")
+  if not ok or type(panes) ~= "table" then
+    return true
+  end
+  for _, p in ipairs(panes) do
+    if tostring(p.pane_id) == pane_id then
+      return true
+    end
+  end
+  return false
+end
+
+--- Drop our tracked pane_id and clear claudecode's terminal state so that
+--- the next agent-open spawns a fresh pane. Called when we detect the
+--- pane was killed externally.
+local function drop_pane_state()
+  pane_id = nil
+  pane_pending = false
+  -- Tell claudecode to forget its terminal state too — otherwise its
+  -- internal jobid/pane tracking can leave it thinking claude is still
+  -- "open" and refuse to re-spawn.
+  pcall(function()
+    local term = require("claudecode.terminal")
+    if type(term.close) == "function" then
+      term.close()
+    end
+  end)
+end
 
 ---@return boolean ok, table|string mod_or_reason
 local function try_require_claudecode()
@@ -67,6 +135,10 @@ end
 function M.wezterm_pane_cmd(cmd_string, _env_table)
   local pane_file = vim.fn.tempname() .. ".neph-claude-pane-id"
 
+  -- Reset state in case we're respawning after an external kill.
+  pane_id = nil
+  pane_pending = true
+
   -- Cleanup pane on nvim exit. clear=true makes this idempotent across
   -- repeated calls (e.g. user kills + reopens the agent).
   vim.api.nvim_create_autocmd("VimLeavePre", {
@@ -78,22 +150,25 @@ function M.wezterm_pane_cmd(cmd_string, _env_table)
         vim.fn.jobstart({ "wezterm", "cli", "kill-pane", "--pane-id", pane_id }, { detach = true })
       end
       pane_id = nil
+      pane_pending = false
     end,
   })
 
   -- Capture pane_id after spawn. wezterm cli split-pane prints the new pane_id
   -- to stdout, which our redirect captures into pane_file. The 200ms defer
-  -- gives the CLI time to flush. Fire-and-forget; if the read fails the user
-  -- just won't get text-injection support (graceful degrade).
+  -- gives the CLI time to flush. After the defer fires we set pane_pending
+  -- to false so wait_for_pane returns immediately for callers that arrive late.
   vim.defer_fn(function()
     local f = io.open(pane_file, "r")
     if not f then
       log.debug("peers.claudecode", "wezterm pane_id capture: tempfile not readable")
+      pane_pending = false
       return
     end
     pane_id = (f:read("*l") or ""):gsub("%s+", "")
     f:close()
     pcall(os.remove, pane_file)
+    pane_pending = false
     log.debug("peers.claudecode", "captured wezterm pane_id=%s", tostring(pane_id))
   end, 200)
 
@@ -266,7 +341,24 @@ function M.send(_td, text, opts)
 
   -- Path A: claude is running in an external wezterm pane (we own pane_id
   -- via M.wezterm_pane_cmd). Inject text via `wezterm cli send-text`.
-  if pane_id and pane_id ~= "" then
+  --
+  -- Race: wezterm_pane_cmd captures pane_id ~200ms after the spawn argv
+  -- is returned to claudecode. If the user types fast and submits via
+  -- `<leader>ja` immediately, send arrives before capture. wait_for_pane
+  -- blocks briefly to let the capture finish.
+  if pane_pending or (pane_id and pane_id ~= "") then
+    if not wait_for_pane(800) then
+      log.warn("peers.claudecode", "pane_id never captured — text injection unavailable")
+      return
+    end
+    -- Verify the pane is still alive before sending. If the user manually
+    -- closed it, drop our state so the next session.M.open call respawns.
+    if not pane_is_alive() then
+      log.warn("peers.claudecode", "tracked pane %s is gone — clearing state", tostring(pane_id))
+      vim.notify("Neph: claude pane was closed externally — pick claude again to respawn", vim.log.levels.WARN)
+      drop_pane_state()
+      return
+    end
     local payload = opts.submit and (text .. "\r") or text
     -- Async, fire-and-forget — sending text shouldn't block the event loop.
     -- jobstart preserves arg boundaries; --no-paste keeps line-by-line semantics.
@@ -305,11 +397,13 @@ end
 ---@param _td table
 function M.kill(_td)
   -- Kill the wezterm pane first if we own one. Async to avoid blocking on
-  -- a slow wezterm daemon.
+  -- a slow wezterm daemon. drop_pane_state also calls claudecode's close
+  -- to clear its internal jobid — without that, claudecode would refuse
+  -- to re-spawn on the next agent-open.
   if pane_id and pane_id ~= "" then
     vim.fn.jobstart({ "wezterm", "cli", "kill-pane", "--pane-id", pane_id }, { detach = true })
-    pane_id = nil
   end
+  drop_pane_state()
 
   local ok, claudecode = try_require_claudecode()
   if not ok then
@@ -329,14 +423,21 @@ end
 ---@param _td table
 ---@return boolean
 function M.is_visible(_td)
-  -- When we own the wezterm pane, treat pane_id presence as visibility.
-  -- We deliberately do NOT shell out to `wezterm cli list` here — this
-  -- function is called frequently from session.lua (every focus / open),
-  -- and a synchronous shell-out per call is a freeze risk if wezterm is
-  -- slow. If the pane was killed externally, the next M.send will silently
-  -- fail (already logged). Acceptable trade.
+  -- When we own the wezterm pane, verify it's still alive. If the user
+  -- manually closed it (wezterm hotkey or kill-pane), drop our stale
+  -- state so the next session.M.open spawns a fresh pane.
+  --
+  -- pane_is_alive shells out to `wezterm cli list` with a 500ms timeout.
+  -- This function is called from session.lua on agent-pick/focus paths
+  -- (low frequency), so the cost is acceptable; the timeout caps freeze
+  -- risk if wezterm is unresponsive.
   if pane_id and pane_id ~= "" then
-    return true
+    if pane_is_alive() then
+      return true
+    end
+    log.debug("peers.claudecode", "is_visible: tracked pane %s is gone — dropping state", tostring(pane_id))
+    drop_pane_state()
+    return false
   end
 
   local ok = try_require_claudecode()
@@ -359,7 +460,13 @@ end
 ---@return boolean
 function M.focus(_td)
   -- Wezterm pane: activate via CLI. Async — focusing shouldn't block.
+  -- Verify aliveness first; if the pane was closed externally, drop state
+  -- and return false so the caller falls through to a respawn path.
   if pane_id and pane_id ~= "" then
+    if not pane_is_alive() then
+      drop_pane_state()
+      return false
+    end
     vim.fn.jobstart({ "wezterm", "cli", "activate-pane", "--pane-id", pane_id }, { detach = true })
     return true
   end

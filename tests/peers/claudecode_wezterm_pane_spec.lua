@@ -30,12 +30,33 @@ describe("neph.peers.claudecode wezterm pane integration", function()
       table.insert(jobstart_calls, { cmd = cmd, opts = opts })
       return 1 -- fake job id
     end
+
+    -- Stub vim.system so pane_is_alive() (which checks `wezterm cli list`)
+    -- can be made to report the pane as alive or dead per-test. Default:
+    -- alive — return a JSON list containing pane_id "42".
+    _G.__orig_system = vim.system
+    vim.system = function(cmd, _opts)
+      return {
+        wait = function(_self, _timeout)
+          -- Default: pretend the alive-pane is in the list.
+          return {
+            code = 0,
+            stdout = '[{"pane_id": 42, "title": "Claude"}]',
+            stderr = "",
+          }
+        end,
+      }
+    end
   end)
 
   after_each(function()
     if _G.__orig_jobstart then
       vim.fn.jobstart = _G.__orig_jobstart
       _G.__orig_jobstart = nil
+    end
+    if _G.__orig_system then
+      vim.system = _G.__orig_system
+      _G.__orig_system = nil
     end
     if peer and peer._reset then
       peer._reset()
@@ -59,14 +80,24 @@ describe("neph.peers.claudecode wezterm pane integration", function()
     assert.is_true(#aus >= 1, "expected at least one VimLeavePre autocmd")
   end)
 
+  --- Find the most recent send-text jobstart call (we may issue other
+  --- wezterm CLI invocations too — e.g. activate-pane or kill-pane in
+  --- other tests, though pane_is_alive uses vim.system, not jobstart).
+  local function last_send_text()
+    for i = #jobstart_calls, 1, -1 do
+      local c = jobstart_calls[i].cmd
+      if type(c) == "table" and c[1] == "wezterm" and c[3] == "send-text" then
+        return c
+      end
+    end
+    return nil
+  end
+
   it("M.send dispatches to wezterm cli send-text when pane_id is owned", function()
     peer._set_pane_id("42")
     peer.send(nil, "hello", { submit = true })
-    assert.are.equal(1, #jobstart_calls)
-    local cmd = jobstart_calls[1].cmd
-    assert.are.equal("wezterm", cmd[1])
-    assert.are.equal("cli", cmd[2])
-    assert.are.equal("send-text", cmd[3])
+    local cmd = last_send_text()
+    assert.is_table(cmd, "expected a wezterm cli send-text invocation")
     assert.are.equal("--pane-id", cmd[4])
     assert.are.equal("42", cmd[5])
     assert.are.equal("--no-paste", cmd[6])
@@ -76,8 +107,9 @@ describe("neph.peers.claudecode wezterm pane integration", function()
   it("M.send without submit drops the trailing \\r", function()
     peer._set_pane_id("42")
     peer.send(nil, "hi", { submit = false })
-    assert.are.equal(1, #jobstart_calls)
-    assert.are.equal("hi", jobstart_calls[1].cmd[7])
+    local cmd = last_send_text()
+    assert.is_table(cmd, "expected a wezterm cli send-text invocation")
+    assert.are.equal("hi", cmd[7])
   end)
 
   it("M.send with no pane_id does NOT call wezterm cli", function()
@@ -92,35 +124,51 @@ describe("neph.peers.claudecode wezterm pane integration", function()
   end)
 
   it("M.kill spawns wezterm cli kill-pane and clears pane_id", function()
+    -- Stub claudecode.terminal so drop_pane_state's close() call is a noop.
+    package.loaded["claudecode.terminal"] = { close = function() end }
     peer._set_pane_id("42")
     peer.kill(nil)
-    -- First jobstart should be the kill-pane call.
-    assert.is_true(#jobstart_calls >= 1)
-    local kill = jobstart_calls[1].cmd
-    assert.are.equal("wezterm", kill[1])
-    assert.are.equal("kill-pane", kill[3])
-    assert.are.equal("42", kill[5])
-    -- After kill, is_visible should report false (pane_id cleared, claudecode unstubbed)
+    -- First wezterm jobstart should be the kill-pane call.
+    local kill_cmd
+    for _, c in ipairs(jobstart_calls) do
+      if c.cmd[1] == "wezterm" and c.cmd[3] == "kill-pane" then
+        kill_cmd = c.cmd
+        break
+      end
+    end
+    assert.is_table(kill_cmd, "expected a wezterm cli kill-pane invocation")
+    assert.are.equal("42", kill_cmd[5])
+    -- After kill, is_visible should report false (state cleared)
     assert.is_false(peer.is_visible(nil))
   end)
 
-  it("M.is_visible returns true when pane_id is owned without shelling out", function()
+  it("M.is_visible verifies pane is alive and returns true when present", function()
     peer._set_pane_id("42")
+    -- Default vim.system stub returns a JSON list including pane_id 42.
     assert.is_true(peer.is_visible(nil))
-    -- Crucially, no shell-out to wezterm cli list:
-    for _, c in ipairs(jobstart_calls) do
-      assert.are_not.equal("list", c.cmd[3])
-    end
   end)
 
-  it("M.focus spawns wezterm cli activate-pane when pane_id is owned", function()
+  it("M.is_visible drops state when tracked pane is gone", function()
+    peer._set_pane_id("99")
+    -- vim.system stub returns pane_id 42 only — 99 is not in the list,
+    -- so is_visible should return false AND clear state.
+    assert.is_false(peer.is_visible(nil))
+  end)
+
+  it("M.focus spawns wezterm cli activate-pane when pane_id is owned and alive", function()
     peer._set_pane_id("42")
     local ok = peer.focus(nil)
     assert.is_true(ok)
-    assert.is_true(#jobstart_calls >= 1)
-    local cmd = jobstart_calls[1].cmd
-    assert.are.equal("activate-pane", cmd[3])
-    assert.are.equal("42", cmd[5])
+    -- Find the activate-pane invocation (other jobstarts may occur).
+    local activate_cmd
+    for _, c in ipairs(jobstart_calls) do
+      if c.cmd[1] == "wezterm" and c.cmd[3] == "activate-pane" then
+        activate_cmd = c.cmd
+        break
+      end
+    end
+    assert.is_table(activate_cmd, "expected an activate-pane invocation")
+    assert.are.equal("42", activate_cmd[5])
   end)
 
   it("M.hide is a no-op when pane_id is owned (can't hide a wezterm pane)", function()
