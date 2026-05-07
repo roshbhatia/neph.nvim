@@ -27,6 +27,50 @@
 - **`lua/neph/internal/opencode_sse.lua` and `lua/neph/reviewers/opencode_permission.lua`.** Replaced by the leaner User-autocmd listener in `lua/neph/peers/opencode.lua`. The new path uses opencode.nvim's `Server:permit` API instead of curl-shelling and reads the correct `event.properties.metadata.filepath` field name (the deleted module was reading `metadata.path`, which is wrong).
 - **`lua/neph/agents/claude.lua` and `lua/neph/agents/opencode.lua`.** Stale terminal/hook variants that were superseded when `claude` and `opencode` were consolidated to peer agents in an earlier commit. The peer files now ARE the canonical agents.
 
+## [1.2.0](https://github.com/roshbhatia/neph.nvim/compare/v1.1.0...v1.2.0) (2026-05-07)
+
+
+### Features
+
+* add diff review, gate three-mode cycle, and review QoL improvements ([eaf0426](https://github.com/roshbhatia/neph.nvim/commit/eaf04268618162597bddb550c3cbe276ab7b0878))
+* add gate parser with fuzz and contract tests ([b9b9bec](https://github.com/roshbhatia/neph.nvim/commit/b9b9bec92dcf1326a79a3c9f63e5ce54b679239e))
+* **agents:** runtime-only hook injection, fix engine bugs ([a75551b](https://github.com/roshbhatia/neph.nvim/commit/a75551b0a5c494937ff42802151f9c5ba532ba45))
+* **cli:** auto-install agent integrations during build, health command, neph-cli → neph rename ([20747ae](https://github.com/roshbhatia/neph.nvim/commit/20747ae80eae3c3adf9931a931d887984c2453cf))
+* **cli:** frictionless global install — neph install/uninstall/print-settings ([a4bda2f](https://github.com/roshbhatia/neph.nvim/commit/a4bda2f8ac09e1545f5787d6c8160ea4c731ee03))
+* config/init safety with health spec ([8eeb351](https://github.com/roshbhatia/neph.nvim/commit/8eeb351309878a1730cc724c0569d44478354fcf))
+* **config:** integrations.auto_refresh, neoconf schema, e2e task targets ([304861e](https://github.com/roshbhatia/neph.nvim/commit/304861ea7584603d1cbe58b1871a547a89c692a5))
+* **peer-adapters:** claudecode/opencode adapters, auto-context, open-by-default ([8075474](https://github.com/roshbhatia/neph.nvim/commit/8075474cbedff4e967486121b317fcf15e3034bc))
+* **peers:** route claude/opencode pre-write diffs through neph review queue ([fe1c19c](https://github.com/roshbhatia/neph.nvim/commit/fe1c19c24f1a12b8e247ddfe507aa2ab365ac1d1))
+* review engine improvements with expanded tests ([41762db](https://github.com/roshbhatia/neph.nvim/commit/41762db1fd99aded9d35a69a8a6626d59c39a704))
+* **review:** popup UI, visual-marks selection, wezterm-pane send-path, freeze hardening ([ca4a7ba](https://github.com/roshbhatia/neph.nvim/commit/ca4a7ba20ce3b8d2faafdc049a6b2d886774acac))
+
+
+### Bug Fixes
+
+* **agents:** restore opencode icon (validator rejects empty) ([18b32ea](https://github.com/roshbhatia/neph.nvim/commit/18b32ea5b1505b128fe46bc51872346227807332))
+* backend compliance - snacks, wezterm, zellij robustness ([4f0d706](https://github.com/roshbhatia/neph.nvim/commit/4f0d7069bdaa30f2b232a09fe3b9f6c4b94d302a))
+* **cli:** exempt 'context' command from socket discovery ([0b7f027](https://github.com/roshbhatia/neph.nvim/commit/0b7f027b7e7af1ea8b8cd4b1b2e3fde91ac464b2))
+* **cli:** idempotent hook replacement, claude global install ([95dc47e](https://github.com/roshbhatia/neph.nvim/commit/95dc47e78f20c907719da058358b04d1c4dd1ac5))
+* config/init safety with health checks and smoke tests ([fcd1d6f](https://github.com/roshbhatia/neph.nvim/commit/fcd1d6f2eb9e9b068591293e40ab57ce582b69b8))
+* gitignore .neph/, AGENTS.md claude settings docs, integration.ts tweaks ([5b46715](https://github.com/roshbhatia/neph.nvim/commit/5b46715b34291b6d77f05ef755c54e0afa5a24a1))
+* hard timeouts on sync system calls; revert peer-popup default; new approval module ([476ec66](https://github.com/roshbhatia/neph.nvim/commit/476ec66f266cd5250cb5fb83bfec482e9cb88830))
+* **peers/claudecode:** wait for pane_id capture; verify pane aliveness on send/focus ([912d5e9](https://github.com/roshbhatia/neph.nvim/commit/912d5e909a9b00bfa3eebf1e4435ec5c45b9bc1c))
+* **peers:** set integration_group=hook on peer agents and fire on_complete in bypass ([7bfbb38](https://github.com/roshbhatia/neph.nvim/commit/7bfbb381019c616403dfe8faf30f0c96c281c0e7))
+* **review:** capture direct buffer edits; reload buffer on reject ([bbda64e](https://github.com/roshbhatia/neph.nvim/commit/bbda64eb8ab0cfb5791884f63acb80b6b592468b))
+* rpc dispatch - truncate method echo, reject non-table params with INVALID_PARAMS ([a1f8a06](https://github.com/roshbhatia/neph.nvim/commit/a1f8a0612bf79ce3f41014258c6695da0544d7d8))
+* rpc dispatch safety with contract tests ([f56d622](https://github.com/roshbhatia/neph.nvim/commit/f56d62264ee6779d40c2ce7f22304a5809c17f58))
+* session lifecycle robustness ([0b92957](https://github.com/roshbhatia/neph.nvim/commit/0b92957f2eeeaef02f231d519634da0b4014be86))
+* **session:** break focus/open recursion for peer adapters; enforce peer for claude/opencode ([060d4ca](https://github.com/roshbhatia/neph.nvim/commit/060d4ca9c9bfae1b452abf01886fd82e24ce715f))
+* **tests:** add explicit vitest imports, prune stale worktrees ([b045dba](https://github.com/roshbhatia/neph.nvim/commit/b045dba03204ed4385fd15e73944fee09adc4eed))
+* **test:** stable task test suite with sequential lua runner and headless guards ([81c3697](https://github.com/roshbhatia/neph.nvim/commit/81c36972ccccbe7f5d4bec4f69aad92caa048944))
+* **tests:** wrap review_queue_edge_spec in describe to prevent plenary crash ([1cd265c](https://github.com/roshbhatia/neph.nvim/commit/1cd265c81e796a6a7dfb7bb8e5f9d2dc46e4a909))
+
+
+### Performance Improvements
+
+* **wezterm:** make activate_pane, kill_pane, wait_for_pane, watch_for_ready async ([4786819](https://github.com/roshbhatia/neph.nvim/commit/478681927aec5722ac690dd8a7aab64c7ddf0012))
+* **wezterm:** remove blocking wezterm cli list from send hot path ([dac910b](https://github.com/roshbhatia/neph.nvim/commit/dac910bd8a16e70a21c1da4038c58bd216d32ce0))
+
 ## [1.1.0](https://github.com/roshbhatia/neph.nvim/compare/v1.0.0...v1.1.0) (2026-04-08)
 
 
