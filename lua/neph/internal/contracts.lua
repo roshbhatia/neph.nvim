@@ -92,6 +92,36 @@ function M.validate_agent(def)
     if type(def.peer.kind) ~= "string" or def.peer.kind == "" then
       error(string.format("neph: agent '%s' has type='peer' but peer.kind is required", name))
     end
+    if def.peer.override_diff ~= nil and type(def.peer.override_diff) ~= "boolean" then
+      error(
+        string.format(
+          "neph: agent '%s' field 'peer.override_diff' must be boolean, got %s",
+          name,
+          type(def.peer.override_diff)
+        )
+      )
+    end
+    if def.peer.intercept_permissions ~= nil and type(def.peer.intercept_permissions) ~= "boolean" then
+      error(
+        string.format(
+          "neph: agent '%s' field 'peer.intercept_permissions' must be boolean, got %s",
+          name,
+          type(def.peer.intercept_permissions)
+        )
+      )
+    end
+  end
+
+  if def.review_style ~= nil then
+    if def.review_style ~= "tab" and def.review_style ~= "popup" then
+      error(
+        string.format(
+          "neph: agent '%s' field 'review_style' must be 'tab' or 'popup', got '%s'",
+          name,
+          tostring(def.review_style)
+        )
+      )
+    end
   end
 
   if def.tools ~= nil then

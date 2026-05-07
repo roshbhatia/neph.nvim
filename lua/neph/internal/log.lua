@@ -1,12 +1,22 @@
 ---@mod neph.log Debug logging
 ---@brief [[
---- Lightweight debug logger that appends to /tmp/neph-debug.log.
---- Gated behind vim.g.neph_debug — no-op when disabled.
+--- Lightweight debug logger that appends to /tmp/neph-debug-<pid>.log.
+--- Each line is flushed on write (no buffering) so the log survives even a
+--- hard freeze / SIGKILL. WARN always writes; DEBUG is gated behind
+--- `vim.g.neph_debug` (set explicitly) or `NEPH_DEBUG=1` in the environment.
 ---@brief ]]
 
 local M = {}
 
 local LOG_PATH = "/tmp/neph-debug-" .. vim.fn.getpid() .. ".log"
+
+--- Initialize debug-mode from env if not already set. Called once from
+--- `neph.setup`. Idempotent.
+function M.init_from_env()
+  if vim.g.neph_debug == nil and vim.env and vim.env.NEPH_DEBUG == "1" then
+    vim.g.neph_debug = true
+  end
+end
 
 ---@param module string  Short module name (e.g. "session", "rpc")
 ---@param fmt string     Format string (string.format style)

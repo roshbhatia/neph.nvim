@@ -49,15 +49,20 @@ end
 
 function M.setup() end
 
---- Apply a unified diff to the file's current content via `patch(1)` and return
---- the proposed content. Returns nil if patch is missing, the diff is malformed,
---- or any IO operation fails.
+--- Apply a unified diff asynchronously via `patch(1)` and call *callback*
+--- with the proposed content (string) on success or nil on failure.
+---
+--- The previous synchronous `vim.fn.system` invocation blocked the main loop
+--- inside the `permission.asked` autocmd handler — if patch hung or was slow,
+--- nvim froze. This async variant returns immediately; the autocmd callback
+--- continues from inside `on_exit` once patch completes.
 ---@param file_path string
 ---@param diff_str string
----@return string|nil proposed_content
-local function apply_unified_diff(file_path, diff_str)
+---@param callback fun(proposed: string|nil)
+local function apply_unified_diff_async(file_path, diff_str, callback)
   if type(diff_str) ~= "string" or diff_str == "" then
-    return nil
+    callback(nil)
+    return
   end
 
   local orig_f = io.open(file_path, "r")
@@ -72,7 +77,8 @@ local function apply_unified_diff(file_path, diff_str)
 
   local fo = io.open(tmp_orig, "w")
   if not fo then
-    return nil
+    callback(nil)
+    return
   end
   fo:write(orig_content)
   fo:close()
@@ -80,34 +86,31 @@ local function apply_unified_diff(file_path, diff_str)
   local fp = io.open(tmp_patch, "w")
   if not fp then
     os.remove(tmp_orig)
-    return nil
+    callback(nil)
+    return
   end
   fp:write(diff_str)
   fp:close()
 
-  vim.fn.system(
-    string.format(
-      "patch --no-backup-if-mismatch -s -o %s %s %s 2>/dev/null",
-      vim.fn.shellescape(tmp_out),
-      vim.fn.shellescape(tmp_orig),
-      vim.fn.shellescape(tmp_patch)
-    )
-  )
-
-  local result = nil
-  if vim.v.shell_error == 0 then
-    local fr = io.open(tmp_out, "r")
-    if fr then
-      result = fr:read("*all")
-      fr:close()
-    end
-  end
-
-  os.remove(tmp_orig)
-  os.remove(tmp_patch)
-  pcall(os.remove, tmp_out)
-
-  return result
+  -- Patch async via jobstart — never blocks the event loop.
+  vim.fn.jobstart({ "patch", "--no-backup-if-mismatch", "-s", "-o", tmp_out, tmp_orig, tmp_patch }, {
+    on_exit = function(_, code)
+      local result = nil
+      if code == 0 then
+        local fr = io.open(tmp_out, "r")
+        if fr then
+          result = fr:read("*all")
+          fr:close()
+        end
+      end
+      pcall(os.remove, tmp_orig)
+      pcall(os.remove, tmp_patch)
+      pcall(os.remove, tmp_out)
+      vim.schedule(function()
+        callback(result)
+      end)
+    end,
+  })
 end
 
 --- POST `/permission/<id>/reply` via opencode.nvim's Server API (preferred —
@@ -196,40 +199,44 @@ local function install_permission_listeners()
         return
       end
 
-      local proposed = apply_unified_diff(file_path, diff_str)
-      if not proposed then
-        log.warn("peers.opencode", "patch failed for %s — auto-allowing edit", tostring(file_path))
-        vim.notify(
-          string.format("Neph: could not apply opencode diff for %s — allowing edit", file_path),
-          vim.log.levels.WARN
-        )
-        reply_via_server(port, perm_id, "once")
-        return
-      end
+      -- Apply the diff asynchronously so the autocmd handler returns
+      -- immediately. Otherwise patch(1) would block the event loop until
+      -- it returned — a real freeze risk if patch is slow or pathological.
+      apply_unified_diff_async(file_path, diff_str, function(proposed)
+        if not proposed then
+          log.warn("peers.opencode", "patch failed for %s — auto-allowing edit", tostring(file_path))
+          vim.notify(
+            string.format("Neph: could not apply opencode diff for %s — allowing edit", file_path),
+            vim.log.levels.WARN
+          )
+          reply_via_server(port, perm_id, "once")
+          return
+        end
 
-      local request_id = ("opencode:%s:%d"):format(tostring(perm_id), vim.uv.hrtime())
-      pending_perms[tostring(perm_id)] = request_id
+        local request_id = ("opencode:%s:%d"):format(tostring(perm_id), vim.uv.hrtime())
+        pending_perms[tostring(perm_id)] = request_id
 
-      local rq_ok, review_queue = pcall(require, "neph.internal.review_queue")
-      if not rq_ok then
-        log.warn("peers.opencode", "review_queue unavailable — auto-allowing %s", tostring(file_path))
-        reply_via_server(port, perm_id, "once")
-        pending_perms[tostring(perm_id)] = nil
-        return
-      end
-
-      review_queue.enqueue({
-        request_id = request_id,
-        path = file_path,
-        content = proposed,
-        agent = "opencode",
-        mode = "pre_write",
-        on_complete = function(envelope)
+        local rq_ok, review_queue = pcall(require, "neph.internal.review_queue")
+        if not rq_ok then
+          log.warn("peers.opencode", "review_queue unavailable — auto-allowing %s", tostring(file_path))
+          reply_via_server(port, perm_id, "once")
           pending_perms[tostring(perm_id)] = nil
-          local decision = (envelope and envelope.decision == "accept") and "once" or "reject"
-          reply_via_server(port, perm_id, decision)
-        end,
-      })
+          return
+        end
+
+        review_queue.enqueue({
+          request_id = request_id,
+          path = file_path,
+          content = proposed,
+          agent = "opencode",
+          mode = "pre_write",
+          on_complete = function(envelope)
+            pending_perms[tostring(perm_id)] = nil
+            local decision = (envelope and envelope.decision == "accept") and "once" or "reject"
+            reply_via_server(port, perm_id, decision)
+          end,
+        })
+      end)
     end,
   })
 

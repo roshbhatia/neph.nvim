@@ -25,6 +25,15 @@ local log = require("neph.internal.log")
 ---@type boolean
 local override_installed = false
 
+--- Tracked wezterm pane id when neph spawned the claude CLI in an external
+--- wezterm pane (see `M.wezterm_pane_cmd`). nil when claudecode is using its
+--- in-nvim provider (snacks/native), in which case we fall back to bufnr-based
+--- chansend.
+---@type string|nil
+local pane_id = nil
+
+local PANE_AUGROUP = "NephClaudecodeWezterm"
+
 ---@return boolean ok, table|string mod_or_reason
 local function try_require_claudecode()
   local ok, mod = pcall(require, "claudecode")
@@ -32,6 +41,72 @@ local function try_require_claudecode()
     return false, "claudecode.nvim is not installed"
   end
   return true, mod
+end
+
+--- Public helper for users who want to spawn the claude CLI in a wezterm
+--- split-pane via claudecode's `external` provider. Plug into the user's
+--- claudecode plugin spec like:
+---
+---   terminal = {
+---     provider = "external",
+---     provider_opts = {
+---       external_terminal_cmd = function(cmd, env)
+---         return require("neph.peers.claudecode").wezterm_pane_cmd(cmd, env)
+---       end,
+---     },
+---   }
+---
+--- Returns argv that wraps the claudecode-provided cmd_string in a wezterm
+--- split-pane invocation, redirecting stdout (the new pane_id) to a tempfile
+--- which we read asynchronously so subsequent send/focus/kill ops can target
+--- the pane via `wezterm cli`. Also registers a VimLeavePre autocmd so the
+--- pane is cleaned up when nvim exits.
+---@param cmd_string string  Command to run in the new pane (claudecode-supplied)
+---@param _env_table table?  Reserved; we don't read env here (claudecode handles env)
+---@return string[] argv
+function M.wezterm_pane_cmd(cmd_string, _env_table)
+  local pane_file = vim.fn.tempname() .. ".neph-claude-pane-id"
+
+  -- Cleanup pane on nvim exit. clear=true makes this idempotent across
+  -- repeated calls (e.g. user kills + reopens the agent).
+  vim.api.nvim_create_autocmd("VimLeavePre", {
+    group = vim.api.nvim_create_augroup(PANE_AUGROUP, { clear = true }),
+    once = true,
+    callback = function()
+      if pane_id and pane_id ~= "" then
+        -- jobstart so we don't block VimLeavePre
+        vim.fn.jobstart({ "wezterm", "cli", "kill-pane", "--pane-id", pane_id }, { detach = true })
+      end
+      pane_id = nil
+    end,
+  })
+
+  -- Capture pane_id after spawn. wezterm cli split-pane prints the new pane_id
+  -- to stdout, which our redirect captures into pane_file. The 200ms defer
+  -- gives the CLI time to flush. Fire-and-forget; if the read fails the user
+  -- just won't get text-injection support (graceful degrade).
+  vim.defer_fn(function()
+    local f = io.open(pane_file, "r")
+    if not f then
+      log.debug("peers.claudecode", "wezterm pane_id capture: tempfile not readable")
+      return
+    end
+    pane_id = (f:read("*l") or ""):gsub("%s+", "")
+    f:close()
+    pcall(os.remove, pane_file)
+    log.debug("peers.claudecode", "captured wezterm pane_id=%s", tostring(pane_id))
+  end, 200)
+
+  return {
+    "sh",
+    "-c",
+    string.format(
+      "wezterm cli split-pane --right --cwd %s -- sh -c %s > %s",
+      vim.fn.shellescape(vim.fn.getcwd()),
+      vim.fn.shellescape(cmd_string),
+      vim.fn.shellescape(pane_file)
+    ),
+  }
 end
 
 --- Hook `claudecode.diff.open_diff_blocking` so MCP openDiff calls route through
@@ -189,13 +264,24 @@ function M.send(_td, text, opts)
   end
   opts = opts or {}
 
+  -- Path A: claude is running in an external wezterm pane (we own pane_id
+  -- via M.wezterm_pane_cmd). Inject text via `wezterm cli send-text`.
+  if pane_id and pane_id ~= "" then
+    local payload = opts.submit and (text .. "\r") or text
+    -- Async, fire-and-forget — sending text shouldn't block the event loop.
+    -- jobstart preserves arg boundaries; --no-paste keeps line-by-line semantics.
+    vim.fn.jobstart({ "wezterm", "cli", "send-text", "--pane-id", pane_id, "--no-paste", payload }, { detach = true })
+    return
+  end
+
+  -- Path B: claude is in an in-nvim terminal (snacks/native provider).
+  -- Look up the bufnr via claudecode's terminal API and chansend into it.
   local term_ok, terminal = pcall(require, "claudecode.terminal")
   if not term_ok then
     log.warn("peers.claudecode", "claudecode.terminal not available — cannot send text")
     return
   end
 
-  -- Make sure the terminal exists and is visible, otherwise there's no chan to send to.
   if type(terminal.ensure_visible) == "function" then
     pcall(terminal.ensure_visible)
   end
@@ -218,6 +304,13 @@ end
 
 ---@param _td table
 function M.kill(_td)
+  -- Kill the wezterm pane first if we own one. Async to avoid blocking on
+  -- a slow wezterm daemon.
+  if pane_id and pane_id ~= "" then
+    vim.fn.jobstart({ "wezterm", "cli", "kill-pane", "--pane-id", pane_id }, { detach = true })
+    pane_id = nil
+  end
+
   local ok, claudecode = try_require_claudecode()
   if not ok then
     return
@@ -236,6 +329,16 @@ end
 ---@param _td table
 ---@return boolean
 function M.is_visible(_td)
+  -- When we own the wezterm pane, treat pane_id presence as visibility.
+  -- We deliberately do NOT shell out to `wezterm cli list` here — this
+  -- function is called frequently from session.lua (every focus / open),
+  -- and a synchronous shell-out per call is a freeze risk if wezterm is
+  -- slow. If the pane was killed externally, the next M.send will silently
+  -- fail (already logged). Acceptable trade.
+  if pane_id and pane_id ~= "" then
+    return true
+  end
+
   local ok = try_require_claudecode()
   if not ok then
     return false
@@ -255,6 +358,12 @@ end
 ---@param _td table
 ---@return boolean
 function M.focus(_td)
+  -- Wezterm pane: activate via CLI. Async — focusing shouldn't block.
+  if pane_id and pane_id ~= "" then
+    vim.fn.jobstart({ "wezterm", "cli", "activate-pane", "--pane-id", pane_id }, { detach = true })
+    return true
+  end
+
   local ok = try_require_claudecode()
   if not ok then
     return false
@@ -270,6 +379,13 @@ end
 
 ---@param _td table
 function M.hide(_td)
+  -- We can't hide a wezterm pane without killing it. No-op when we own
+  -- the pane; the user can `<leader>jx` to kill instead. Document this
+  -- behavior in the README.
+  if pane_id and pane_id ~= "" then
+    return
+  end
+
   local ok = try_require_claudecode()
   if not ok then
     return
@@ -285,9 +401,23 @@ function M.cleanup_all()
   pcall(M.kill, nil)
 end
 
+--- Reset wezterm pane state. Testing aid.
+function M._reset_pane_state()
+  pane_id = nil
+  pcall(vim.api.nvim_create_augroup, PANE_AUGROUP, { clear = true })
+end
+
+--- Test seam: forcibly set pane_id (used by tests that exercise the
+--- wezterm-cli dispatch paths without spawning a real pane).
+---@param id string|nil
+function M._set_pane_id(id)
+  pane_id = id
+end
+
 --- Reset internal state. Testing aid.
 function M._reset()
   override_installed = false
+  M._reset_pane_state()
 end
 
 return M

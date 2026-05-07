@@ -52,10 +52,37 @@ local function get_active()
   return active
 end
 
+--- Read the visual-selection bounds from the `'<` and `'>` marks of *buf*.
+--- Returns nil when the marks are unset (both at line 0). Reads
+--- `vim.fn.visualmode()` to populate the kind so block-mode selections expand
+--- correctly. Used by `M.ask` / `M.comment` to capture selections set by a
+--- recent visual gesture — those keymap callbacks fire AFTER nvim has
+--- already exited visual mode, so `vim.fn.mode()` is unreliable.
+---@param buf integer
+---@return {from: integer[], to: integer[], kind: string}|nil
+local function get_visual_marks(buf)
+  local from = vim.api.nvim_buf_get_mark(buf, "<")
+  local to = vim.api.nvim_buf_get_mark(buf, ">")
+  if from[1] == 0 and to[1] == 0 then
+    return nil
+  end
+  if from[1] > to[1] or (from[1] == to[1] and from[2] > to[2]) then
+    from, to = to, from
+  end
+  local kind_map = { v = "char", V = "line", ["\22"] = "block" }
+  return {
+    from = { from[1], from[2] },
+    to = { to[1], to[2] },
+    kind = kind_map[vim.fn.visualmode()] or "char",
+  }
+end
+
 --- Open the input prompt for the active agent.
 ---@param action string
 ---@param default_text string
-local function input_for_active(action, default_text)
+---@param opts? {selection_marks?: table}
+local function input_for_active(action, default_text, opts)
+  opts = opts or {}
   local active = get_active()
   if not active then
     return
@@ -68,6 +95,7 @@ local function input_for_active(action, default_text)
   require("neph.internal.input").create_input(active, agent.icon, {
     action = action,
     default = default_text,
+    selection_marks = opts.selection_marks,
     on_confirm = function(text)
       require("neph.internal.session").ensure_active_and_send(text)
     end,
@@ -92,12 +120,15 @@ function M.kill()
   require("neph.internal.picker").kill_active()
 end
 
---- Open the ask prompt. In visual mode, prefills with +selection context.
+--- Open the ask prompt. When invoked from visual mode, prefills with
+--- `+selection` and captures the selection bounds via marks `'<`/`'>`
+--- (vim.fn.mode() is unreliable from keymap callbacks because the visual
+--- mode has already transitioned to normal by the time we run).
 ---@return nil
 function M.ask()
-  local mode = vim.fn.mode()
-  local default = mode:match("[vV\22]") and "+selection " or "+cursor "
-  input_for_active("Ask", default)
+  local marks = get_visual_marks(vim.api.nvim_get_current_buf())
+  local default = marks and "+selection " or "+cursor "
+  input_for_active("Ask", default, { selection_marks = marks })
 end
 
 --- Open the fix-diagnostics prompt.
@@ -106,12 +137,12 @@ function M.fix()
   input_for_active("Fix diagnostics", "Fix +diagnostics ")
 end
 
---- Open the comment prompt. In visual mode, prefills with +selection context.
+--- Open the comment prompt. Same marks-based selection capture as `M.ask`.
 ---@return nil
 function M.comment()
-  local mode = vim.fn.mode()
-  local default = mode:match("[vV\22]") and "Comment +selection " or "Comment +cursor "
-  input_for_active("Comment", default)
+  local marks = get_visual_marks(vim.api.nvim_get_current_buf())
+  local default = marks and "Comment +selection " or "Comment +cursor "
+  input_for_active("Comment", default, { selection_marks = marks })
 end
 
 --- Open an interactive review of buffer vs disk changes.

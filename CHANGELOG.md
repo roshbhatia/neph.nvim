@@ -2,7 +2,21 @@
 
 ## Unreleased
 
+### Added
+
+- **`review.style = "popup"` opt-in (default for peer agents).** Routine accept/reject now goes through a small floating window with `[a]/[r]/[v]/[q]` single-keys; `[v]` flips to the full vimdiff tab when granular per-hunk control is needed; `[q]`/`<Esc>` defers the review back to the queue. Inline hunks rendered via `engine.compute_hunks` so users see *what* they're approving without leaving the popup. Override via `setup({ review = { style = "tab" } })` or per-agent `review_style = "tab"`.
+- **`require("neph.peers.claudecode").wezterm_pane_cmd` helper** for spawning the claude CLI in a wezterm split-pane via claudecode's `external` provider. Captures pane_id, registers `VimLeavePre` cleanup, and powers send/focus/kill via `wezterm cli` so `<leader>ja`/`<leader>jc`/`<leader>jx` work outside an nvim-managed terminal.
+- **`NEPH_DEBUG=1`** env var enables debug logging that flushes per-line to `/tmp/neph-debug-<pid>.log` (survives hard freezes / kill -9).
+- **`NEPH_WATCHDOG=1`** (or `setup({ watchdog = { enable = true } })`) wraps key callbacks with hrtime measurement and logs WARN when any single call exceeds 200 ms — diagnostic breadcrumb for tracking down freezes.
+
 ### Fixes
+
+- **`<leader>ja` / `<leader>jc` capture the visual selection.** Previously the keymap callback fired AFTER nvim transitioned out of visual mode, so `vim.fn.mode()` returned `"n"` and the prompt fell back to `+cursor` instead of `+selection`. Now reads the `'<` and `'>` marks (which are set correctly across the mode transition) via a new `context.from_marks` constructor that bypasses the live mode check.
+- **Peer-claude `<leader>ja` actually reaches the CLI when using `terminal.provider = "external"`.** The previous `M.send` chansend path required an in-nvim bufnr; wezterm-pane-spawned claude has no bufnr, so every send / focus / kill silently no-op'd. Adapter now dispatches to `wezterm cli send-text` / `activate-pane` / `kill-pane` async (`jobstart`, fire-and-forget — never blocks the event loop) when pane_id is owned, falling back to chansend for in-nvim providers.
+- **opencode peer's `apply_unified_diff` is now async.** The previous `vim.fn.system({"patch", ...})` blocked the main loop inside the `permission.asked` autocmd handler — a freeze risk if `patch` was slow or pathological. Now uses `jobstart` + `on_exit` so the autocmd returns immediately and `review_queue.enqueue` runs from the on_exit callback.
+- **Stale test references to deleted `neph.agents.claude` module.** `tests/agents_launch_args_spec.lua` and `tests/e2e/smoke_test.lua` previously required the deleted module — Plenary reported the failure as ERROR, not FAILURE, and our previous grep filter missed it. Both fixed (use `claude-peer`).
+
+### Earlier follow-ups
 
 - **claude peer diff override now actually works.** The previous implementation looked for `claudecode.tools.handlers` (which doesn't exist) and used the wrong `enqueue` shape — claude's MCP `openDiff` calls fell through to claudecode's native vimdiff every time. Rewritten to hook `claudecode.diff.open_diff_blocking` with a coroutine-aware override that routes diffs through neph's review queue using the canonical `{request_id, path, content, agent, mode, on_complete}` contract.
 - **opencode peer pre-write review interception is wired up.** Previously the `opencode_sse` integration_group existed but no agent reference set it, so the SSE subscription never started. Replaced with a `User OpencodeEvent:permission.asked` autocmd listener inside `lua/neph/peers/opencode.lua` — uses opencode.nvim's existing SSE subscription instead of a parallel one, dispatches edits through neph's review queue, and posts the decision via opencode.nvim's `Server:permit(id, "once"|"reject")` API. Patch-failure auto-allows with a visible WARN notification rather than failing silently.

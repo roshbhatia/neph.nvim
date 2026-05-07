@@ -22,4 +22,6 @@ return {
   -- and formatter=noop. Gives neph's review UI for permission interception
   -- under gate=normal/hold; bypass mode short-circuits before the UI opens.
   integration_group = "hook",
+  -- Peer agents default to the floating popup UI. See claude-peer.lua.
+  review_style = "popup",
 }

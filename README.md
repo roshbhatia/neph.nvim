@@ -103,6 +103,62 @@ neph gate status    # print current state
 
 Install the peer plugin and the agent lights up automatically. If the peer plugin is missing you'll see a one-shot notification when you pick the agent — the rest of neph keeps working.
 
+#### Review UI style: popup vs tab
+
+Peer agents default to a floating-popup review UI for routine accept/reject:
+
+```
+┌──────────────────────────────────────────────────┐
+│ Neph review                                      │
+│                                                  │
+│  claude → write file                             │
+│    ~/proj/foo.lua    +12 / -3   2 hunks          │
+│                                                  │
+│    @@ -3,1 +3,1 @@                               │
+│    - return 42                                   │
+│    + return 100                                  │
+│    ...                                           │
+│                                                  │
+│    [a] accept   [r] reject                       │
+│    [v] view full diff   [q]/[esc] later          │
+└──────────────────────────────────────────────────┘
+```
+
+- `a` — accept the entire change
+- `r` — reject the entire change
+- `v` — close popup and open the full vimdiff tab (granular `ga/gr/gA/gR/gu/gs` keymaps)
+- `q` / `<Esc>` — **defer** (review stays in queue; not the same as reject)
+
+Override via `setup({ review = { style = "tab" } })` for the global default, or `agent.review_style = "tab"` per-agent. Non-peer agents default to the vimdiff tab.
+
+#### Spawning claude in a wezterm pane
+
+If you use wezterm and prefer the claude CLI in a wezterm split-pane (instead of an in-nvim terminal), wire neph's helper into your `claudecode.nvim` config:
+
+```lua
+{ "coder/claudecode.nvim",
+  opts = {
+    auto_start = false,
+    terminal = {
+      provider = "external",
+      provider_opts = {
+        external_terminal_cmd = function(cmd, env)
+          return require("neph.peers.claudecode").wezterm_pane_cmd(cmd, env)
+        end,
+      },
+    },
+  },
+}
+```
+
+The helper captures the new pane_id, registers a `VimLeavePre` autocmd to kill it on exit, and routes `<leader>ja`/`<leader>jc`/`<leader>jx` to the right `wezterm cli` calls (no in-nvim bufnr indirection).
+
+> **Note**: `M.hide` is a no-op when the wezterm pane is owned (you can't hide a pane without killing it). Use `<leader>jx` to kill instead.
+
+#### Diagnostics
+
+If neph ever locks up, set `NEPH_DEBUG=1` before launching nvim — every log line flushes to `/tmp/neph-debug-<pid>.log` so the trail survives even a hard freeze. For finer signal, `NEPH_WATCHDOG=1` enables the slow-callback watchdog (logs WARN if any single instrumented callback runs > 200 ms).
+
 ### Auto-context broadcast
 
 While Neovim is running, neph continuously snapshots the active editor state to a single file:

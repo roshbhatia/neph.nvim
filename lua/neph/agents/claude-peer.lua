@@ -25,4 +25,8 @@ return {
   -- gate=normal/hold without the cupcake policy layer (claudecode owns its own
   -- hook/tool surface; we're only here for the review UI).
   integration_group = "hook",
+  -- Peer agents default to the floating popup UI (light-touch accept/reject
+  -- with a [v]iew-diff escape hatch into the existing vimdiff tab). Override
+  -- via setup({ review = { style = "tab" } }) if you prefer the tab default.
+  review_style = "popup",
 }

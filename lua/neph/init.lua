@@ -244,6 +244,9 @@ function M.setup(opts)
   validate_file_refresh(config.current)
   validate_integration_default_group(config.current)
 
+  require("neph.internal.log").init_from_env()
+  require("neph.internal.watchdog").setup(config.current.watchdog or {})
+
   require("neph.internal.agents").init(agents)
   require("neph.internal.session").setup(config.current, backend)
   require("neph.internal.file_refresh").setup(config.current)

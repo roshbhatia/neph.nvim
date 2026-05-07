@@ -321,4 +321,35 @@ end
 M.Context = Context
 M.new = Context.new
 
+--- Build a context whose `range` field is taken from caller-supplied marks
+--- instead of being recomputed from `vim.fn.mode()`. Used by `api.ask` and
+--- `api.comment` so visual-mode keymap callbacks (where mode has already
+--- transitioned to normal) still capture the just-finished selection.
+---@param buf integer
+---@param marks {from: integer[], to: integer[], kind: string}
+---@return neph.Context
+function M.from_marks(buf, marks)
+  local cur_buf = vim.api.nvim_get_current_buf()
+  local cur_win = vim.api.nvim_get_current_win()
+  local cursor = vim.api.nvim_win_get_cursor(cur_win)
+
+  local cwd
+  local ok, result = pcall(M.get_git_root)
+  if ok and type(result) == "string" then
+    cwd = vim.fs.normalize(result)
+  else
+    cwd = vim.fs.normalize(vim.fn.getcwd())
+  end
+
+  local ctx = {
+    win = cur_win,
+    buf = buf or cur_buf,
+    cwd = cwd,
+    row = cursor[1],
+    col = cursor[2] + 1,
+    range = marks,
+  }
+  return setmetatable({ ctx = ctx, cache = {} }, Context)
+end
+
 return M
