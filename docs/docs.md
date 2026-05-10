@@ -9,7 +9,7 @@ The system enforces a strict boundary where agents interact with the Cupcake pol
 
 ```mermaid
 graph TD
-    A[Agents: Claude, Gemini, Pi, OpenCode] -->|Hook/Plugin| B(Cupcake: Policy + Routing)
+    A[Agents: Amp, Claude, Codex, Copilot, Crush, Cursor, Gemini, Goose, OpenCode, Pi] -->|Hook/Plugin| B(Cupcake: Policy + Routing)
     B -->|neph_review signal| C(neph-cli: Editor Abstraction)
     C -->|Msgpack RPC| D[Neovim: neph.nvim vimdiff]
     D -->|RPC Response| C
@@ -48,11 +48,26 @@ The project uses a custom RPC protocol (`neph-rpc/v1`) between the `neph-cli` an
 |--------|-------------|
 | `review.open` | Opens an interactive vimdiff review. Returns `{ decision, content, hunks, reason }`. |
 | `status.set` | Sets a `vim.g` global variable. |
-| `status.get` | Gets a `vim.g` global variable. |
 | `status.unset` | Unsets a `vim.g` global variable. |
+| `status.get` | Gets a `vim.g` global variable. |
 | `buffers.check` | Calls `:checktime` to sync files. |
 | `tab.close` | Closes the current tab. |
-| `bus.register` | Registers an extension agent's RPC channel (Internal). |
+| `ui.select` | Prompts the user to select an option. |
+| `ui.input` | Prompts the user for text input. |
+| `ui.notify` | Displays a notification message. |
+| `tools.status` | Gets the status of tools. |
+| `tools.install` | Installs a specified tool. |
+| `tools.install_all` | Installs all available tools. |
+| `tools.uninstall` | Uninstalls a specified tool. |
+| `tools.preview` | Previews tools. |
+| `review.status` | Gets the status of the current review. |
+| `review.accept` | Accepts the review or a specific hunk. |
+| `review.reject` | Rejects the review or a specific hunk. |
+| `review.accept_all` | Accepts all hunks in the review. |
+| `review.reject_all` | Rejects all hunks in the review. |
+| `review.submit` | Submits the completed review. |
+| `review.next` | Moves to the next review or hunk. |
 
 ## Changelog
+* [2026-05-10 16:26:51]: Updated architecture diagram to include new agents (Amp, Codex, Copilot, Crush, Cursor, Goose) and synchronized API Endpoints table with protocol.json.
 * [2026-04-07 16:07:50]: Initial documentation created aggregating Architecture, Flows, and RPC API.
