@@ -9,7 +9,7 @@ The system enforces a strict boundary where agents interact with the Cupcake pol
 
 ```mermaid
 graph TD
-    A[Agents: Claude, Gemini, Pi, OpenCode] -->|Hook/Plugin| B(Cupcake: Policy + Routing)
+    A[Agents: Claude, Gemini, Pi, OpenCode, Amp, Codex, Copilot, Crush, Cursor, Goose] -->|Hook/Plugin| B(Cupcake: Policy + Routing)
     B -->|neph_review signal| C(neph-cli: Editor Abstraction)
     C -->|Msgpack RPC| D[Neovim: neph.nvim vimdiff]
     D -->|RPC Response| C
@@ -47,12 +47,28 @@ The project uses a custom RPC protocol (`neph-rpc/v1`) between the `neph-cli` an
 | Method | Description |
 |--------|-------------|
 | `review.open` | Opens an interactive vimdiff review. Returns `{ decision, content, hunks, reason }`. |
+| `review.status` | Returns the status of the current review. |
+| `review.accept` | Accepts the current review or a specific hunk. |
+| `review.reject` | Rejects the current review or a specific hunk. |
+| `review.accept_all` | Accepts all hunks in the current review. |
+| `review.reject_all` | Rejects all hunks in the current review. |
+| `review.submit` | Submits the current review. |
+| `review.next` | Navigates to the next hunk or review item. |
 | `status.set` | Sets a `vim.g` global variable. |
 | `status.get` | Gets a `vim.g` global variable. |
 | `status.unset` | Unsets a `vim.g` global variable. |
 | `buffers.check` | Calls `:checktime` to sync files. |
 | `tab.close` | Closes the current tab. |
+| `ui.select` | Opens a UI selection prompt. |
+| `ui.input` | Opens a UI input prompt. |
+| `ui.notify` | Displays a notification message. |
+| `tools.status` | Returns the status of installed tools. |
+| `tools.install` | Installs a specific tool. |
+| `tools.install_all` | Installs all available tools. |
+| `tools.uninstall` | Uninstalls a specific tool. |
+| `tools.preview` | Previews available tools. |
 | `bus.register` | Registers an extension agent's RPC channel (Internal). |
 
 ## Changelog
+* [2026-05-12 16:32:14]: Updated API Endpoints and Architecture agents to reflect latest project state.
 * [2026-04-07 16:07:50]: Initial documentation created aggregating Architecture, Flows, and RPC API.
