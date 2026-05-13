@@ -9,7 +9,7 @@ The system enforces a strict boundary where agents interact with the Cupcake pol
 
 ```mermaid
 graph TD
-    A[Agents: Claude, Gemini, Pi, OpenCode] -->|Hook/Plugin| B(Cupcake: Policy + Routing)
+    A[Agents: Amp, Claude, Codex, Copilot, Cursor, Gemini, OpenCode, Pi] -->|Hook/Plugin| B(Cupcake: Policy + Routing)
     B -->|neph_review signal| C(neph-cli: Editor Abstraction)
     C -->|Msgpack RPC| D[Neovim: neph.nvim vimdiff]
     D -->|RPC Response| C
@@ -52,7 +52,22 @@ The project uses a custom RPC protocol (`neph-rpc/v1`) between the `neph-cli` an
 | `status.unset` | Unsets a `vim.g` global variable. |
 | `buffers.check` | Calls `:checktime` to sync files. |
 | `tab.close` | Closes the current tab. |
-| `bus.register` | Registers an extension agent's RPC channel (Internal). |
+| `ui.select` | Parameters: `request_id`, `channel_id`, `title`, `options`. |
+| `ui.input` | Parameters: `request_id`, `channel_id`, `title`, `default`. |
+| `ui.notify` | Parameters: `message`, `level`. |
+| `tools.status` | No parameters. |
+| `tools.install` | Parameters: `name`. |
+| `tools.install_all` | No parameters. |
+| `tools.uninstall` | Parameters: `name`. |
+| `tools.preview` | No parameters. |
+| `review.status` | No parameters. |
+| `review.accept` | Optional parameters: `idx`. |
+| `review.reject` | Optional parameters: `idx`, `reason`. |
+| `review.accept_all` | No parameters. |
+| `review.reject_all` | Optional parameters: `reason`. |
+| `review.submit` | No parameters. |
+| `review.next` | No parameters. |
 
 ## Changelog
 * [2026-04-07 16:07:50]: Initial documentation created aggregating Architecture, Flows, and RPC API.
+* [2026-05-13 16:56:37]: Updated Architecture diagram to include new agents (Amp, Codex, Copilot, Cursor) and expanded API Endpoints table to reflect new UI, tools, and review queue RPC methods.
