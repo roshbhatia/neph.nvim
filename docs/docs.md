@@ -9,7 +9,7 @@ The system enforces a strict boundary where agents interact with the Cupcake pol
 
 ```mermaid
 graph TD
-    A[Agents: Claude, Gemini, Pi, OpenCode] -->|Hook/Plugin| B(Cupcake: Policy + Routing)
+    A[Agents: Claude, Gemini, Pi, OpenCode, Amp, Codex, Copilot, Crush, Cursor, Goose] -->|Hook/Plugin| B(Cupcake: Policy + Routing)
     B -->|neph_review signal| C(neph-cli: Editor Abstraction)
     C -->|Msgpack RPC| D[Neovim: neph.nvim vimdiff]
     D -->|RPC Response| C
@@ -52,7 +52,22 @@ The project uses a custom RPC protocol (`neph-rpc/v1`) between the `neph-cli` an
 | `status.unset` | Unsets a `vim.g` global variable. |
 | `buffers.check` | Calls `:checktime` to sync files. |
 | `tab.close` | Closes the current tab. |
-| `bus.register` | Registers an extension agent's RPC channel (Internal). |
+| `ui.select` | Displays a UI selection prompt. |
+| `ui.input` | Displays a UI input prompt. |
+| `ui.notify` | Displays a notification message. |
+| `tools.status` | Returns the installation status of all agent tools. |
+| `tools.install` | Installs a specific agent tool by name. |
+| `tools.install_all` | Installs all available agent tools. |
+| `tools.uninstall` | Uninstalls a specific agent tool. |
+| `tools.preview` | Previews agent tool installation actions. |
+| `review.status` | Returns the current active review status and hunk tally. |
+| `review.accept` | Accepts the specified hunk or the next undecided one. |
+| `review.reject` | Rejects the specified hunk or the next undecided one. |
+| `review.accept_all` | Accepts all remaining undecided hunks. |
+| `review.reject_all` | Rejects all remaining undecided hunks. |
+| `review.submit` | Finalizes and submits the active review. |
+| `review.next` | Jumps to the next undecided hunk in the active review. |
 
 ## Changelog
+* [2026-05-17 16:20:12]: Updated Architecture diagram with new agents and expanded API Endpoints table with `ui.*`, `tools.*`, and `review.*` methods.
 * [2026-04-07 16:07:50]: Initial documentation created aggregating Architecture, Flows, and RPC API.
