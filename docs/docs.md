@@ -54,5 +54,22 @@ The project uses a custom RPC protocol (`neph-rpc/v1`) between the `neph-cli` an
 | `tab.close` | Closes the current tab. |
 | `bus.register` | Registers an extension agent's RPC channel (Internal). |
 
+| `ui.select` | Opens a UI selection dialog. |
+| `ui.input` | Opens a UI input dialog. |
+| `ui.notify` | Sends a notification to Neovim. |
+| `tools.status` | Gets tools status. |
+| `tools.install` | Installs a tool. |
+| `tools.install_all` | Installs all tools. |
+| `tools.uninstall` | Uninstalls a tool. |
+| `tools.preview` | Previews tool operations. |
+| `review.status` | Gets review status. |
+| `review.accept` | Accepts a review hunk. |
+| `review.reject` | Rejects a review hunk. |
+| `review.accept_all` | Accepts all review hunks. |
+| `review.reject_all` | Rejects all review hunks. |
+| `review.submit` | Submits the review. |
+| `review.next` | Moves to next review hunk. |
+
 ## Changelog
 * [2026-04-07 16:07:50]: Initial documentation created aggregating Architecture, Flows, and RPC API.
+* [2026-05-23 16:29:15]: Updated API endpoints due to protocol.json changes.
