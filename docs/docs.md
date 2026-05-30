@@ -9,7 +9,7 @@ The system enforces a strict boundary where agents interact with the Cupcake pol
 
 ```mermaid
 graph TD
-    A[Agents: Claude, Gemini, Pi, OpenCode] -->|Hook/Plugin| B(Cupcake: Policy + Routing)
+    A[Agents: Amp, Claude, Codex, Copilot, Crush, Cursor, Gemini, Goose, OpenCode, Pi] -->|Hook/Plugin| B(Cupcake: Policy + Routing)
     B -->|neph_review signal| C(neph-cli: Editor Abstraction)
     C -->|Msgpack RPC| D[Neovim: neph.nvim vimdiff]
     D -->|RPC Response| C
@@ -53,6 +53,22 @@ The project uses a custom RPC protocol (`neph-rpc/v1`) between the `neph-cli` an
 | `buffers.check` | Calls `:checktime` to sync files. |
 | `tab.close` | Closes the current tab. |
 | `bus.register` | Registers an extension agent's RPC channel (Internal). |
+| `ui.select` | Params: `request_id`, `channel_id`, `title`, `options`. Async: True. |
+| `ui.input` | Params: `request_id`, `channel_id`, `title`, `default`. Async: True. |
+| `ui.notify` | Params: `message`, `level`. Async: False. |
+| `tools.status` | Async: False. |
+| `tools.install` | Params: `name`. Async: False. |
+| `tools.install_all` | Async: False. |
+| `tools.uninstall` | Params: `name`. Async: False. |
+| `tools.preview` | Async: False. |
+| `review.status` | Async: False. |
+| `review.accept` | Optional Params: `idx`. Async: False. |
+| `review.reject` | Optional Params: `idx`, `reason`. Async: False. |
+| `review.accept_all` | Async: False. |
+| `review.reject_all` | Optional Params: `reason`. Async: False. |
+| `review.submit` | Async: False. |
+| `review.next` | Async: False. |
 
 ## Changelog
 * [2026-04-07 16:07:50]: Initial documentation created aggregating Architecture, Flows, and RPC API.
+* [2026-05-30 16:25:15]: Updated Architecture diagram to include all agents and added missing RPC endpoints to the API table.
