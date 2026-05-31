@@ -9,7 +9,7 @@ The system enforces a strict boundary where agents interact with the Cupcake pol
 
 ```mermaid
 graph TD
-    A[Agents: Claude, Gemini, Pi, OpenCode] -->|Hook/Plugin| B(Cupcake: Policy + Routing)
+    A[Agents: Amp, Claude, Codex, Copilot, Crush, Cursor, Gemini, Goose, OpenCode, Pi] -->|Hook/Plugin| B(Cupcake: Policy + Routing)
     B -->|neph_review signal| C(neph-cli: Editor Abstraction)
     C -->|Msgpack RPC| D[Neovim: neph.nvim vimdiff]
     D -->|RPC Response| C
@@ -46,13 +46,28 @@ The project uses a custom RPC protocol (`neph-rpc/v1`) between the `neph-cli` an
 
 | Method | Description |
 |--------|-------------|
-| `review.open` | Opens an interactive vimdiff review. Returns `{ decision, content, hunks, reason }`. |
-| `status.set` | Sets a `vim.g` global variable. |
-| `status.get` | Gets a `vim.g` global variable. |
-| `status.unset` | Unsets a `vim.g` global variable. |
 | `buffers.check` | Calls `:checktime` to sync files. |
+| `review.accept` |  |
+| `review.accept_all` |  |
+| `review.next` |  |
+| `review.open` | Opens an interactive vimdiff review. Returns `{ decision, content, hunks, reason }`. |
+| `review.reject` |  |
+| `review.reject_all` |  |
+| `review.status` |  |
+| `review.submit` |  |
+| `status.get` | Gets a `vim.g` global variable. |
+| `status.set` | Sets a `vim.g` global variable. |
+| `status.unset` | Unsets a `vim.g` global variable. |
 | `tab.close` | Closes the current tab. |
-| `bus.register` | Registers an extension agent's RPC channel (Internal). |
+| `tools.install` |  |
+| `tools.install_all` |  |
+| `tools.preview` |  |
+| `tools.status` |  |
+| `tools.uninstall` |  |
+| `ui.input` |  |
+| `ui.notify` |  |
+| `ui.select` |  |
 
 ## Changelog
 * [2026-04-07 16:07:50]: Initial documentation created aggregating Architecture, Flows, and RPC API.
+* [2026-05-31 16:29:44]: Updated architecture diagram agents and API endpoints.
