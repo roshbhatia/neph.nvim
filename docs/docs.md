@@ -9,7 +9,7 @@ The system enforces a strict boundary where agents interact with the Cupcake pol
 
 ```mermaid
 graph TD
-    A[Agents: Claude, Gemini, Pi, OpenCode] -->|Hook/Plugin| B(Cupcake: Policy + Routing)
+    A[Agents: Claude, Cursor, Gemini, Copilot, Pi, OpenCode, Amp, Goose, Codex, Crush] -->|Hook/Plugin| B(Cupcake: Policy + Routing)
     B -->|neph_review signal| C(neph-cli: Editor Abstraction)
     C -->|Msgpack RPC| D[Neovim: neph.nvim vimdiff]
     D -->|RPC Response| C
@@ -47,12 +47,27 @@ The project uses a custom RPC protocol (`neph-rpc/v1`) between the `neph-cli` an
 | Method | Description |
 |--------|-------------|
 | `review.open` | Opens an interactive vimdiff review. Returns `{ decision, content, hunks, reason }`. |
-| `status.set` | Sets a `vim.g` global variable. |
-| `status.get` | Gets a `vim.g` global variable. |
-| `status.unset` | Unsets a `vim.g` global variable. |
+| `status.set` | Sets a `vim.g` global variable. Parameters: `name`, `value`. |
+| `status.unset` | Unsets a `vim.g` global variable. Parameters: `name`. |
+| `status.get` | Gets a `vim.g` global variable. Parameters: `name`. |
 | `buffers.check` | Calls `:checktime` to sync files. |
 | `tab.close` | Closes the current tab. |
-| `bus.register` | Registers an extension agent's RPC channel (Internal). |
+| `ui.select` | Select UI option. Parameters: `request_id`, `channel_id`, `title`, `options`. |
+| `ui.input` | Input UI. Parameters: `request_id`, `channel_id`, `title`, `default`. |
+| `ui.notify` | Notify UI. Parameters: `message`, `level`. |
+| `tools.status` | Get tools status. |
+| `tools.install` | Install tool. Parameters: `name`. |
+| `tools.install_all` | Install all tools. |
+| `tools.uninstall` | Uninstall tool. Parameters: `name`. |
+| `tools.preview` | Preview tools. |
+| `review.status` | Get review status. |
+| `review.accept` | Accept review. Optional Parameters: `idx`. |
+| `review.reject` | Reject review. Optional Parameters: `idx`, `reason`. |
+| `review.accept_all` | Accept all reviews. |
+| `review.reject_all` | Reject all reviews. Optional Parameters: `reason`. |
+| `review.submit` | Submit review. |
+| `review.next` | Next review. |
 
 ## Changelog
+* [2026-06-04 16:21:09]: Updated API Endpoints and Architecture to reflect new UI/tools/review RPC methods and supported agents.
 * [2026-04-07 16:07:50]: Initial documentation created aggregating Architecture, Flows, and RPC API.
