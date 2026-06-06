@@ -48,11 +48,27 @@ The project uses a custom RPC protocol (`neph-rpc/v1`) between the `neph-cli` an
 |--------|-------------|
 | `review.open` | Opens an interactive vimdiff review. Returns `{ decision, content, hunks, reason }`. |
 | `status.set` | Sets a `vim.g` global variable. |
-| `status.get` | Gets a `vim.g` global variable. |
 | `status.unset` | Unsets a `vim.g` global variable. |
+| `status.get` | Gets a `vim.g` global variable. |
 | `buffers.check` | Calls `:checktime` to sync files. |
 | `tab.close` | Closes the current tab. |
-| `bus.register` | Registers an extension agent's RPC channel (Internal). |
+| `ui.select` | Prompts the user with a selection UI menu. |
+| `ui.input` | Prompts the user for text input. |
+| `ui.notify` | Displays a notification to the user. |
+| `tools.status` | Gets the installation status of agent tools. |
+| `tools.install` | Installs tools for a specific agent. |
+| `tools.install_all` | Installs tools for all available agents. |
+| `tools.uninstall` | Uninstalls tools for a specific agent. |
+| `tools.preview` | Previews the tools available for agents. |
+| `review.status` | Gets the status of the currently active interactive review. |
+| `review.accept` | Accepts a specific hunk or the next undecided hunk in the review. |
+| `review.reject` | Rejects a specific hunk or the next undecided hunk in the review. |
+| `review.accept_all` | Accepts all remaining undecided hunks in the review. |
+| `review.reject_all` | Rejects all remaining undecided hunks in the review. |
+| `review.submit` | Finalizes and submits the current interactive review. |
+| `review.next` | Jumps to the next undecided hunk in the review. |
 
 ## Changelog
 * [2026-04-07 16:07:50]: Initial documentation created aggregating Architecture, Flows, and RPC API.
+
+* [2026-06-06 16:05:06]: Updated API Endpoints section with UI, tools, and review control RPC methods.
