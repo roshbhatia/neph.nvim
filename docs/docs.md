@@ -46,13 +46,28 @@ The project uses a custom RPC protocol (`neph-rpc/v1`) between the `neph-cli` an
 
 | Method | Description |
 |--------|-------------|
-| `review.open` | Opens an interactive vimdiff review. Returns `{ decision, content, hunks, reason }`. |
-| `status.set` | Sets a `vim.g` global variable. |
-| `status.get` | Gets a `vim.g` global variable. |
-| `status.unset` | Unsets a `vim.g` global variable. |
-| `buffers.check` | Calls `:checktime` to sync files. |
-| `tab.close` | Closes the current tab. |
-| `bus.register` | Registers an extension agent's RPC channel (Internal). |
+| `review.open` | Opens an interactive vimdiff review. `params=["request_id", "path", "content"]`, `optional=["channel_id", "result_path", "agent", "mode"]`, `async=true` |
+| `status.set` | Sets a `vim.g` global variable. `params=["name", "value"]`, `async=false` |
+| `status.get` | Gets a `vim.g` global variable. `params=["name"]`, `async=false` |
+| `status.unset` | Unsets a `vim.g` global variable. `params=["name"]`, `async=false` |
+| `buffers.check` | Calls `:checktime` to sync files. `params=[]`, `async=false` |
+| `tab.close` | Closes the current tab. `params=[]`, `async=false` |
+| `ui.select` | UI interaction to select an option. `params=["request_id", "channel_id", "title", "options"]`, `async=true` |
+| `ui.input` | UI interaction to get user input. `params=["request_id", "channel_id", "title", "default"]`, `async=true` |
+| `ui.notify` | UI interaction to show a notification. `params=["message", "level"]`, `async=false` |
+| `tools.status` | Get tools status. `params=[]`, `async=false` |
+| `tools.install` | Install a tool. `params=["name"]`, `async=false` |
+| `tools.install_all` | Install all tools. `params=[]`, `async=false` |
+| `tools.uninstall` | Uninstall a tool. `params=["name"]`, `async=false` |
+| `tools.preview` | Preview tools. `params=[]`, `async=false` |
+| `review.status` | Get review status. `params=[]`, `async=false` |
+| `review.accept` | Accept a review hunk. `params=[]`, `optional=["idx"]`, `async=false` |
+| `review.reject` | Reject a review hunk. `params=[]`, `optional=["idx", "reason"]`, `async=false` |
+| `review.accept_all` | Accept all review hunks. `params=[]`, `async=false` |
+| `review.reject_all` | Reject all review hunks. `params=[]`, `optional=["reason"]`, `async=false` |
+| `review.submit` | Submit the review. `params=[]`, `async=false` |
+| `review.next` | Go to the next review hunk. `params=[]`, `async=false` |
 
 ## Changelog
+* [2026-06-07 16:33:08]: Updated API Endpoints to sync with protocol.json.
 * [2026-04-07 16:07:50]: Initial documentation created aggregating Architecture, Flows, and RPC API.
