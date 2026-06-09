@@ -66,7 +66,9 @@ describe("claude.launch_args_fn", function()
     cleanup(root)
 
     assert.truthy(written, "settings file should be written")
-    assert.truthy(content:find(neph_bin, 1, true), "absolute neph path should appear in settings")
+    -- When vim.json.encode writes the content, it may escape the forward slashes in the path.
+    local neph_bin_escaped = neph_bin:gsub("/", "\\/")
+    assert.truthy(content:find(neph_bin, 1, true) or content:find(neph_bin_escaped, 1, true), "absolute neph path should appear in settings")
     assert.falsy(content:find("PATH=", 1, true), "PATH= prefix should be gone")
   end)
 

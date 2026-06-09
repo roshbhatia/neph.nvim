@@ -300,8 +300,10 @@ function M._open_immediate(params)
   local aug = vim.api.nvim_create_augroup(augroup_name, { clear = true })
   vim.api.nvim_create_autocmd("TabClosed", {
     group = aug,
-    callback = function()
-      if vim.api.nvim_tabpage_is_valid(ui_state.tab) then
+    callback = function(args)
+      local closed_tab_nr = tonumber(args.match)
+      local our_tab_nr = vim.api.nvim_tabpage_is_valid(ui_state.tab) and vim.api.nvim_tabpage_get_number(ui_state.tab) or nil
+      if closed_tab_nr and our_tab_nr and closed_tab_nr ~= our_tab_nr then
         return -- not our tab; keep listening
       end
       vim.api.nvim_del_augroup_by_name(augroup_name)
