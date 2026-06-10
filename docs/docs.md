@@ -48,11 +48,26 @@ The project uses a custom RPC protocol (`neph-rpc/v1`) between the `neph-cli` an
 |--------|-------------|
 | `review.open` | Opens an interactive vimdiff review. Returns `{ decision, content, hunks, reason }`. |
 | `status.set` | Sets a `vim.g` global variable. |
-| `status.get` | Gets a `vim.g` global variable. |
 | `status.unset` | Unsets a `vim.g` global variable. |
+| `status.get` | Gets a `vim.g` global variable. |
 | `buffers.check` | Calls `:checktime` to sync files. |
 | `tab.close` | Closes the current tab. |
-| `bus.register` | Registers an extension agent's RPC channel (Internal). |
+| `ui.select` | UI interaction: select. |
+| `ui.input` | UI interaction: input. |
+| `ui.notify` | UI interaction: notify. |
+| `tools.status` | Tool management: status. |
+| `tools.install` | Tool management: install. |
+| `tools.install_all` | Tool management: install_all. |
+| `tools.uninstall` | Tool management: uninstall. |
+| `tools.preview` | Tool management: preview. |
+| `review.status` | Review control: status. |
+| `review.accept` | Review control: accept. |
+| `review.reject` | Review control: reject. |
+| `review.accept_all` | Review control: accept_all. |
+| `review.reject_all` | Review control: reject_all. |
+| `review.submit` | Review control: submit. |
+| `review.next` | Review control: next. |
 
 ## Changelog
+* [2026-06-10 16:11:38]: Updated API Endpoints to reflect current `protocol.json`.
 * [2026-04-07 16:07:50]: Initial documentation created aggregating Architecture, Flows, and RPC API.
