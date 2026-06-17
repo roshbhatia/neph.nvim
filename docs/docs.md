@@ -53,6 +53,22 @@ The project uses a custom RPC protocol (`neph-rpc/v1`) between the `neph-cli` an
 | `buffers.check` | Calls `:checktime` to sync files. |
 | `tab.close` | Closes the current tab. |
 | `bus.register` | Registers an extension agent's RPC channel (Internal). |
+| `ui.select` | Shows a selection list. |
+| `ui.input` | Shows a text input prompt. |
+| `ui.notify` | Displays a notification. |
+| `tools.status` | Returns the installation status of agent tools. |
+| `tools.install` | Installs tools for a specific agent. |
+| `tools.install_all` | Installs tools for all available agents. |
+| `tools.uninstall` | Uninstalls tools for a specific agent. |
+| `tools.preview` | Shows a dry-run preview of what tools.install would change. |
+| `review.status` | Returns the status of the active review, including hunk tallies. |
+| `review.accept` | Accepts a specified hunk or the next undecided hunk. |
+| `review.reject` | Rejects a specified hunk or the next undecided hunk. |
+| `review.accept_all` | Accepts all remaining undecided hunks. |
+| `review.reject_all` | Rejects all remaining undecided hunks. |
+| `review.submit` | Submits the active review session. |
+| `review.next` | Jumps to the next undecided hunk. |
 
 ## Changelog
+* [2026-06-17 16:13:04]: Updated API Endpoints due to addition of UI, tools, and review control methods.
 * [2026-04-07 16:07:50]: Initial documentation created aggregating Architecture, Flows, and RPC API.
