@@ -198,3 +198,6 @@ luac.out
 # Un-ignore openspec (tracked in repo)
 !openspec/
 .claude/
+nvim-linux64/
+opa
+nvim-linux64.tar.gz
