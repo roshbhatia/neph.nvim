@@ -52,7 +52,23 @@ The project uses a custom RPC protocol (`neph-rpc/v1`) between the `neph-cli` an
 | `status.unset` | Unsets a `vim.g` global variable. |
 | `buffers.check` | Calls `:checktime` to sync files. |
 | `tab.close` | Closes the current tab. |
-| `bus.register` | Registers an extension agent's RPC channel (Internal). |
+| `ui.select` | Shows a selection list. |
+| `ui.input` | Shows a text input prompt. |
+| `ui.notify` | Displays a notification. |
+| `tools.status` | Returns the status of installed agent tools. |
+| `tools.install` | Installs tools for a single agent. |
+| `tools.install_all` | Installs all tools for all agents. |
+| `tools.uninstall` | Uninstalls tools for a single agent. |
+| `tools.preview` | Returns a string preview of agent tool specs. |
+| `review.status` | Returns the status of an active review. |
+| `review.accept` | Accepts a specific undecided hunk or the next one. |
+| `review.reject` | Rejects a specific undecided hunk or the next one. |
+| `review.accept_all` | Accepts all remaining undecided hunks. |
+| `review.reject_all` | Rejects all remaining undecided hunks. |
+| `review.submit` | Finalizes the review session. |
+| `review.next` | Jumps to the next undecided hunk. |
+
 
 ## Changelog
 * [2026-04-07 16:07:50]: Initial documentation created aggregating Architecture, Flows, and RPC API.
+* [2026-06-21 16:06:02]: Updated API Endpoints section due to removal of bus.register and addition of ui.*, tools.*, and review.* methods.
