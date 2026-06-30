@@ -47,12 +47,28 @@ The project uses a custom RPC protocol (`neph-rpc/v1`) between the `neph-cli` an
 | Method | Description |
 |--------|-------------|
 | `review.open` | Opens an interactive vimdiff review. Returns `{ decision, content, hunks, reason }`. |
+| `review.status` | Gets the status of an ongoing review. |
+| `review.accept` | Accepts a specific hunk in a review. |
+| `review.reject` | Rejects a specific hunk in a review. |
+| `review.accept_all`| Accepts all hunks in a review. |
+| `review.reject_all`| Rejects all hunks in a review. |
+| `review.submit` | Submits the review decision. |
+| `review.next` | Moves to the next hunk in the review. |
 | `status.set` | Sets a `vim.g` global variable. |
 | `status.get` | Gets a `vim.g` global variable. |
 | `status.unset` | Unsets a `vim.g` global variable. |
 | `buffers.check` | Calls `:checktime` to sync files. |
 | `tab.close` | Closes the current tab. |
+| `ui.select` | Shows a selection list UI component. |
+| `ui.input` | Shows a text input prompt UI component. |
+| `ui.notify` | Displays a notification to the user. |
+| `tools.status` | Retrieves status information for installed tools. |
+| `tools.install` | Installs a specific tool. |
+| `tools.install_all`| Installs all registered tools. |
+| `tools.uninstall` | Uninstalls a specific tool. |
+| `tools.preview` | Retrieves a preview of tool actions. |
 | `bus.register` | Registers an extension agent's RPC channel (Internal). |
 
 ## Changelog
 * [2026-04-07 16:07:50]: Initial documentation created aggregating Architecture, Flows, and RPC API.
+* [2026-06-30 16:30:05]: Updated API Endpoints table to include new `ui.*`, `tools.*`, and `review.*` RPC methods.
